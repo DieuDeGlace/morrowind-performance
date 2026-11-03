@@ -117,6 +117,12 @@ try {
     foreach ($copyright in Get-ChildItem "$installedDeps/share" -Filter copyright -Recurse -File) {
         Copy-Item -LiteralPath $copyright.FullName -Destination "$licenses/$($copyright.Directory.Name).txt" -Force
     }
+    Copy-Item "$repoRoot/CI/licenses/*" $licenses -Force
+    $redist = Join-Path $env:VCToolsRedistDir 'vc_redist.x64.exe'
+    if (Test-Path -LiteralPath $redist) {
+        New-Item -ItemType Directory -Path "$packageDir/redist" -Force | Out-Null
+        Copy-Item -LiteralPath $redist -Destination "$packageDir/redist/" -Force
+    }
     $commit = & git rev-parse HEAD
     "Commit $commit`nConfiguration Release`nArchitecture x64`nBuilt $([DateTime]::UtcNow.ToString('yyyy-MM-dd'))" |
         Set-Content "$packageDir/BUILD-INFO.txt" -Encoding utf8
