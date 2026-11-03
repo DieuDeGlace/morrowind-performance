@@ -49,8 +49,6 @@ namespace SceneUtil
 
         void enableOutdoorMode();
 
-        void updateCastingMasks(unsigned int outdoorMask, unsigned int indoorMask);
-
     protected:
         static ShadowManager* sInstance;
 

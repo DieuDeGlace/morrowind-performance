@@ -111,6 +111,12 @@ try {
     Assert-NativeExit 'Stage portable Release'
     Copy-Item "$repoRoot/PERFORMANCE-BUILD.md" $packageDir -Force
     Copy-Item "$repoRoot/files/performance-preset.cfg" $packageDir -Force
+    $licenses = Join-Path $packageDir 'licenses'
+    New-Item -ItemType Directory -Path $licenses -Force | Out-Null
+    Copy-Item "$repoRoot/extern/maskedoc/license.txt" "$licenses/masked-occlusion-culling.txt" -Force
+    foreach ($copyright in Get-ChildItem "$installedDeps/share" -Filter copyright -Recurse -File) {
+        Copy-Item -LiteralPath $copyright.FullName -Destination "$licenses/$($copyright.Directory.Name).txt" -Force
+    }
     $commit = & git rev-parse HEAD
     "Commit $commit`nConfiguration Release`nArchitecture x64`nBuilt $([DateTime]::UtcNow.ToString('yyyy-MM-dd'))" |
         Set-Content "$packageDir/BUILD-INFO.txt" -Encoding utf8

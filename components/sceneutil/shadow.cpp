@@ -235,11 +235,4 @@ namespace SceneUtil
             mShadowTechnique->enableShadows();
         mShadowSettings->setCastsShadowTraversalMask(mOutdoorShadowCastingMask);
     }
-
-    void ShadowManager::updateCastingMasks(unsigned int outdoorMask, unsigned int indoorMask)
-    {
-        mOutdoorShadowCastingMask = outdoorMask;
-        mIndoorShadowCastingMask = indoorMask;
-        mShadowSettings->setCastsShadowTraversalMask(mOutdoorShadowCastingMask);
-    }
 }

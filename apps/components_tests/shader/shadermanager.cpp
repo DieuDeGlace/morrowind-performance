@@ -41,6 +41,35 @@ namespace
         }
     };
 
+    TEST_F(ShaderManagerTest, growing_shadow_reservation_keeps_other_slots_distinct)
+    {
+        mManager.setMaxTextureUnits(16);
+        const int originalShadows = mManager.reserveGlobalTextureUnits(ShaderManager::Slot::ShadowMaps, 1);
+        const int depth = mManager.reserveGlobalTextureUnits(ShaderManager::Slot::OpaqueDepthTexture);
+        const int color = mManager.reserveGlobalTextureUnits(ShaderManager::Slot::OpaqueColorTexture);
+        const int sky = mManager.reserveGlobalTextureUnits(ShaderManager::Slot::SkyTexture);
+        const int shadows = mManager.reserveGlobalTextureUnits(ShaderManager::Slot::ShadowMaps, 4);
+        for (const int other : { depth, color, sky })
+            EXPECT_TRUE(other < shadows || other >= shadows + 4);
+        EXPECT_EQ(depth, mManager.reserveGlobalTextureUnits(ShaderManager::Slot::OpaqueDepthTexture));
+        EXPECT_EQ(color, mManager.reserveGlobalTextureUnits(ShaderManager::Slot::OpaqueColorTexture));
+        EXPECT_EQ(sky, mManager.reserveGlobalTextureUnits(ShaderManager::Slot::SkyTexture));
+        EXPECT_LE(mManager.getAvailableTextureUnits(), std::min({ depth, color, sky, shadows }));
+        EXPECT_NE(originalShadows, shadows);
+    }
+
+    TEST_F(ShaderManagerTest, failed_shadow_growth_preserves_existing_reservations)
+    {
+        mManager.setMaxTextureUnits(8);
+        const int shadows = mManager.reserveGlobalTextureUnits(ShaderManager::Slot::ShadowMaps, 2);
+        const int depth = mManager.reserveGlobalTextureUnits(ShaderManager::Slot::OpaqueDepthTexture);
+        const int available = mManager.getAvailableTextureUnits();
+        EXPECT_THROW(mManager.reserveGlobalTextureUnits(ShaderManager::Slot::ShadowMaps, 7), std::runtime_error);
+        EXPECT_EQ(shadows, mManager.reserveGlobalTextureUnits(ShaderManager::Slot::ShadowMaps, 2));
+        EXPECT_EQ(depth, mManager.reserveGlobalTextureUnits(ShaderManager::Slot::OpaqueDepthTexture));
+        EXPECT_EQ(available, mManager.getAvailableTextureUnits());
+    }
+
     TEST_F(ShaderManagerTest, get_shader_with_empty_content_should_succeed)
     {
         const std::string content;
