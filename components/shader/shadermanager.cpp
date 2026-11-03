@@ -693,18 +693,41 @@ namespace Shader
         if (unit.index >= 0 && unit.count >= count)
             return unit.index;
 
-        // Release old units before reallocating (supports runtime cascade count changes)
-        if (unit.index >= 0)
-            mReservedTextureUnits -= unit.count;
-
-        if (getAvailableTextureUnits() < count + 1)
+        // A shadow-map reservation can grow after other renderer slots have
+        // been allocated. Find a free contiguous range without moving those
+        // slots or reusing texture units that they still own.
+        const auto slotIndex = static_cast<int>(slot);
+        int firstUnit = mMaxTextureUnits - count;
+        for (; firstUnit >= 1; --firstUnit)
+        {
+            bool overlaps = false;
+            for (int i = 0; i < static_cast<int>(Slot::SLOT_COUNT); ++i)
+            {
+                const auto& other = mReservedTextureUnitsBySlot[i];
+                if (i != slotIndex && other.index >= 0 && firstUnit < other.index + other.count
+                    && other.index < firstUnit + count)
+                {
+                    overlaps = true;
+                    break;
+                }
+            }
+            if (!overlaps)
+                break;
+        }
+        if (firstUnit < 1)
             throw std::runtime_error("Can't reserve texture unit; no available units");
-        mReservedTextureUnits += count;
 
-        unit.index = mMaxTextureUnits - mReservedTextureUnits;
+        unit.index = firstUnit;
         unit.count = count;
+        mReservedTextureUnitsBySlot[slotIndex] = unit;
 
-        mReservedTextureUnitsBySlot[static_cast<int>(slot)] = unit;
+        // Model textures use units below every global reservation. Count holes
+        // as reserved too, so getAvailableTextureUnits cannot expose a used unit.
+        int lowestUnit = mMaxTextureUnits;
+        for (const auto& reserved : mReservedTextureUnitsBySlot)
+            if (reserved.index >= 0)
+                lowestUnit = std::min(lowestUnit, reserved.index);
+        mReservedTextureUnits = mMaxTextureUnits - lowestUnit;
 
         std::string_view slotDescr;
         switch (slot)

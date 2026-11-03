@@ -12,6 +12,44 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# OPENMW_ANDROID_NDK_R26_EXPERIMENTAL_FORMAT
+# Android NDK r26b ships a libc++ 17 snapshot whose <format> implementation is
+# still hidden by _LIBCPP_HAS_NO_INCOMPLETE_FORMAT unless the libc++
+# experimental-library gate is enabled. Keep the existing Android toolchain
+# unchanged during the 0.51 migration and enable the vendor gate explicitly.
+if (ANDROID AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:-fexperimental-library>")
+
+    # OPENMW_ANDROID_NDK_R26_FORMAT_PROBE
+    # Fail during CMake configuration, before the long OpenMW compile, unless
+    # this exact NDK can compile and link the formatting forms OpenMW uses.
+    include(CheckCXXSourceCompiles)
+    set(_openmw_saved_required_flags "${CMAKE_REQUIRED_FLAGS}")
+    set(_openmw_saved_required_libraries "${CMAKE_REQUIRED_LIBRARIES}")
+    set(CMAKE_REQUIRED_FLAGS "${CMAKE_REQUIRED_FLAGS} -fexperimental-library")
+    list(APPEND CMAKE_REQUIRED_LIBRARIES c++experimental)
+    check_cxx_source_compiles([=[
+        #include <format>
+        #include <string>
+        int main()
+        {
+            const std::string a = std::format("value={}", 42);
+            const std::string b = std::format("{:.3f}", 1.25f);
+            return (a.empty() || b.empty()) ? 1 : 0;
+        }
+    ]=] OPENMW_ANDROID_NDK_R26_STD_FORMAT_WORKS)
+    set(CMAKE_REQUIRED_FLAGS "${_openmw_saved_required_flags}")
+    set(CMAKE_REQUIRED_LIBRARIES "${_openmw_saved_required_libraries}")
+    unset(_openmw_saved_required_flags)
+    unset(_openmw_saved_required_libraries)
+
+    if (NOT OPENMW_ANDROID_NDK_R26_STD_FORMAT_WORKS)
+        message(FATAL_ERROR
+            "Android NDK r26 std::format probe failed. The toolchain must support "
+            "-fexperimental-library and libc++experimental before OpenMW 0.51 can be built.")
+    endif()
+endif()
+
 include(GNUInstallDirs)
 
 option(OPENMW_GL4ES_MANUAL_INIT "Manually initialize gl4es. This is more reliable on platforms without a windowing system. Requires gl4es to be configured with -DNOEGL=ON -DNO_LOADER=ON -DNO_INIT_CONSTRUCTOR=ON." OFF)

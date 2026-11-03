@@ -155,6 +155,14 @@ if(BUILD_OPENMW)
 
     target_link_libraries(openmw openmw-lib)
 
+
+    # OPENMW_ANDROID_NDK_R26_EXPERIMENTAL_FORMAT_LINK
+    # NDK r26b keeps the gated format implementation's out-of-line support in
+    # libc++experimental.a. Keep the extra library Android-only.
+    if (ANDROID)
+        target_link_libraries(openmw c++experimental)
+    endif()
+
     # Workaround necessary to ensure osgAnimation::MatrixLinearSampler dynamic casts work under Clang
     # NOTE: it's unclear whether the broken behavior is spec-compliant
     if (CMAKE_CXX_COMPILER_ID STREQUAL Clang)
@@ -219,6 +227,13 @@ endif()
 
 if (ANDROID)
     target_link_libraries(openmw-lib EGL android log z)
+
+    if (BUILD_OPENMW)
+        # Force static OSG plugin objects into libopenmw.so on Android.
+        find_package(OSGPlugins REQUIRED COMPONENTS ${USED_OSG_PLUGINS})
+        list(APPEND OPENSCENEGRAPH_LIBRARIES ${OSGPlugins_LIBRARIES})
+        target_link_libraries(openmw ${OPENSCENEGRAPH_LIBRARIES} freetype jpeg png)
+    endif()
 endif (ANDROID)
 
 if (USE_SYSTEM_TINYXML)
