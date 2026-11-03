@@ -17,7 +17,7 @@ try {
     $vsRoot = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
     if (-not $vsRoot) { throw 'Install Visual Studio 2022 Build Tools with the C++ workload.' }
     $devCmd = Join-Path $vsRoot 'Common7/Tools/VsDevCmd.bat'
-    $devEnv = & cmd.exe /d /s /c "`"`"$devCmd`" -no_logo -arch=x64 -host_arch=x64 >nul && set`""
+    $devEnv = & cmd.exe /d /c "`"$devCmd`" -no_logo -arch=x64 -host_arch=x64 >nul && set"
     Assert-NativeExit 'Initialize MSVC'
     foreach ($line in $devEnv) {
         if ($line -match '^([^=]+)=(.*)$') {

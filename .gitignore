@@ -94,3 +94,4 @@ Thumbs.db
 ## Performance release output
 /release/
 /aqtinstall.log
+/build-windows-release.log
