@@ -303,7 +303,6 @@ namespace MWGui
         getWidget(mClusteredLightingButton, "ClusteredLightingButton");
         getWidget(mLightsResetButton, "LightsResetButton");
         getWidget(mMaxLights, "MaxLights");
-        getWidget(mShadowResolution, "ShadowResolution");
         getWidget(mShadowUpdateInterval, "ShadowUpdateInterval");
         getWidget(mScriptFilter, "ScriptFilter");
         getWidget(mScriptList, "ScriptList");
@@ -356,8 +355,6 @@ namespace MWGui
             += MyGUI::newDelegate(this, &SettingsWindow::onLightsResetButtonClicked);
         mMaxLights->eventComboChangePosition += MyGUI::newDelegate(this, &SettingsWindow::onMaxLightsChanged);
 
-        mShadowResolution->eventComboChangePosition
-            += MyGUI::newDelegate(this, &SettingsWindow::onShadowResolutionChanged);
         mShadowUpdateInterval->eventComboChangePosition
             += MyGUI::newDelegate(this, &SettingsWindow::onShadowUpdateIntervalChanged);
         mActorShadowsButton->eventMouseButtonClick += MyGUI::newDelegate(this, &SettingsWindow::onShadowsButtonClicked);
@@ -433,18 +430,6 @@ namespace MWGui
 
         updateMaxLightsComboBox(mMaxLights);
 
-        {
-            const int res = Settings::shadows().mShadowMapResolution;
-            constexpr int resValues[] = { 256, 512, 1024, 2048, 4096 };
-            for (size_t i = 0; i < 5; ++i)
-            {
-                if (resValues[i] == res)
-                {
-                    mShadowResolution->setIndexSelected(i);
-                    break;
-                }
-            }
-        }
         {
             const int interval = Settings::shadows().mShadowUpdateInterval;
             if (interval >= 1 && interval <= 4)
@@ -684,25 +669,12 @@ namespace MWGui
         configureWidgets(mMainWidget, false);
     }
 
-    void SettingsWindow::onShadowResolutionChanged(MyGUI::ComboBox* /*sender*/, size_t pos)
-    {
-        constexpr int resValues[] = { 256, 512, 1024, 2048, 4096 };
-        if (pos < 5)
-        {
-            Settings::shadows().mShadowMapResolution.set(resValues[pos]);
-            apply();
-        }
-    }
-
     void SettingsWindow::onShadowUpdateIntervalChanged(MyGUI::ComboBox* /*sender*/, size_t pos)
     {
         if (pos != MyGUI::ITEM_NONE)
         {
             Settings::shadows().mShadowUpdateInterval.set(static_cast<int>(pos + 1));
             apply();
-
-            MWBase::Environment::get().getWindowManager()->interactiveMessageBox(
-                "#{OMWEngine:ChangeRequiresRestart}", { "#{Interface:OK}" }, true);
         }
     }
 

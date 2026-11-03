@@ -2,6 +2,7 @@
 #include <components/shader/shadermanager.hpp>
 #include <components/testing/util.hpp>
 
+#include <algorithm>
 #include <fstream>
 
 #include <gtest/gtest.h>

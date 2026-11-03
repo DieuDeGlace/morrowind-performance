@@ -63,7 +63,6 @@ namespace MWGui
         MyGUI::ComboBox* mShadowMapResolution;
         bool mShowShadowPlanesMethodWarning{ true };
 
-        MyGUI::ComboBox* mShadowResolution;
         MyGUI::ComboBox* mShadowUpdateInterval;
 
         MyGUI::ComboBox* mPrimaryLanguage;
@@ -108,7 +107,6 @@ namespace MWGui
         void onLightsResetButtonClicked(MyGUI::Widget* sender);
         void onMaxLightsChanged(MyGUI::ComboBox* sender, size_t pos);
 
-        void onShadowResolutionChanged(MyGUI::ComboBox* sender, size_t pos);
         void onShadowUpdateIntervalChanged(MyGUI::ComboBox* sender, size_t pos);
 
         void onPrimaryLanguageChanged(MyGUI::ComboBox* sender, size_t pos) { onLanguageChanged(0, sender, pos); }
