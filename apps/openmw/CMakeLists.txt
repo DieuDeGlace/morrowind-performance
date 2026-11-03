@@ -22,8 +22,8 @@ add_openmw_dir (mwrender
     creatureanimation effectmanager util renderinginterface pathgrid rendermode weaponanimation screenshotmanager
     bulletdebugdraw globalmap characterpreview camera localmap water terrainstorage ripplesimulation
     renderbin actoranimation landmanager navmesh actorspaths recastmesh fogmanager objectpaging groundcover
-    postprocessor pingpongcull luminancecalculator pingpongcanvas transparentpass precipitationocclusion ripples
-    actorutil distortion animationpriority bonegroup blendmask animblendcontroller occlusionculling
+    postprocessor pingpongcull luminancecalculator pingpongcanvas transparentpass opaqueblit waterawaretransparentbin precipitationocclusion ripples
+    actorutil distortion animationpriority bonegroup blendmask animblendcontroller texturereport occlusionculling
     )
 
 add_openmw_dir (mwinput
@@ -59,19 +59,19 @@ add_openmw_dir (mwscript
     )
 
 add_openmw_dir (mwlua
-    luamanagerimp object objectlists userdataserializer luaevents engineevents objectvariant loadscripts contentbindings
+    objectcache luamanagerimp object objectlists userdataserializer luaevents engineevents objectvariant loadscripts contentbindings
     context menuscripts globalscripts localscripts playerscripts luabindings objectbindings cellbindings coremwscriptbindings
     mwscriptbindings camerabindings vfsbindings uibindings soundbindings inputbindings nearbybindings dialoguebindings
     postprocessingbindings stats recordstore debugbindings corebindings worldbindings worker landbindings magicbindings factionbindings
     classbindings itemdata inputprocessor animationbindings birthsignbindings racebindings markupbindings weatherbindings regionbindings
-    types/types types/door types/item types/actor types/container types/lockable types/weapon types/npc
+    types/types types/door types/item types/actor types/container types/lockable types/weapon types/npc types/bodypart
     types/creature types/player types/activator types/book types/lockpick types/probe types/apparatus
     types/potion types/ingredient types/misc types/repair types/armor types/light types/static
-    types/clothing types/levelledlist types/terminal
+    types/clothing types/levelledlist types/terminal magictypebindings
     )
 
 add_openmw_dir (mwsound
-    soundmanagerimp openaloutput ffmpegdecoder sound soundbuffer sounddecoder soundoutput
+    soundmanagerimp openaloutput ffmpegdecoder headcache warmqueue sound soundbuffer sounddecoder soundoutput
     loudness movieaudiofactory alext efx efxpresets regionsoundselector watersoundupdater
     )
 
@@ -99,7 +99,7 @@ add_openmw_dir (mwclass
     )
 
 add_openmw_dir (mwmechanics
-    mechanicsmanagerimp stat creaturestats magiceffects movement actorutil spelllist
+    mechanicsmanagerimp stat creaturestats magiceffects movement movingtarget actorutil spelllist
     drawstate spells activespells npcstats aipackage aisequence aipursue alchemy aiwander aitravel aifollow aiavoiddoor aibreathe
     aicast aiescort aiface aiactivate aicombat recharge repair enchanting pathfinding pathgrid security spellcasting spellresistance
     disease pickpocket levelledlist combat steering obstacle autocalcspell difficultyscaling aicombataction summoning
@@ -271,6 +271,6 @@ if (BUILD_WITH_CODE_COVERAGE)
     endif()
 endif()
 
-if (WIN32 AND BUILD_OPENMW)
-    INSTALL(TARGETS openmw RUNTIME DESTINATION ".")
+if (NOT APPLE AND BUILD_OPENMW)
+    install(TARGETS openmw ${runtime_dependency_arguments})
 endif()

@@ -7,8 +7,9 @@ Makefile
 makefile
 build*/
 prebuilt
+ccache/
 
-##windows build process
+## build process
 /deps
 /MSVC*
 
@@ -89,3 +90,7 @@ venv/
 ## operating system files
 .DS_Store
 Thumbs.db
+
+## Performance release output
+/release/
+/aqtinstall.log

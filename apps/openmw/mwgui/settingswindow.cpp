@@ -1,6 +1,7 @@
 #include "settingswindow.hpp"
 
 #include <array>
+#include <cmath>
 
 #include <unicode/locid.h>
 
@@ -62,26 +63,6 @@ namespace
         return "#{OMWEngine:TextureFilteringOther}";
     }
 
-    MyGUI::UString lightingMethodToStr(SceneUtil::LightingMethod method)
-    {
-        std::string_view result;
-        switch (method)
-        {
-            case SceneUtil::LightingMethod::FFP:
-                result = "#{OMWEngine:LightingMethodLegacy}";
-                break;
-            case SceneUtil::LightingMethod::PerObjectUniform:
-                result = "#{OMWEngine:LightingMethodShadersCompatibility}";
-                break;
-            case SceneUtil::LightingMethod::SingleUBO:
-            default:
-                result = "#{OMWEngine:LightingMethodShaders}";
-                break;
-        }
-
-        return MyGUI::LanguageManager::getInstance().replaceTags(MyGUI::UString(result));
-    }
-
     bool sortResolutions(std::pair<int, int> left, std::pair<int, int> right)
     {
         if (left.first == right.first)
@@ -112,16 +93,17 @@ namespace
         return widget->getUserString("SettingValueType");
     }
 
-    void getSettingMinMax(MyGUI::Widget* widget, float& min, float& max)
+    template <class T>
+    void getSettingMinMax(MyGUI::Widget* widget, T& min, T& max)
     {
         const char* settingMin = "SettingMin";
         const char* settingMax = "SettingMax";
-        min = 0.f;
-        max = 1.f;
+        min = 0;
+        max = 1;
         if (!widget->getUserString(settingMin).empty())
-            min = MyGUI::utility::parseFloat(widget->getUserString(settingMin));
+            min = MyGUI::utility::parseValue<T>(widget->getUserString(settingMin));
         if (!widget->getUserString(settingMax).empty())
-            max = MyGUI::utility::parseFloat(widget->getUserString(settingMax));
+            max = MyGUI::utility::parseValue<T>(widget->getUserString(settingMax));
     }
 
     void updateMaxLightsComboBox(MyGUI::ComboBox* box)
@@ -135,6 +117,39 @@ namespace
             box->setIndexSelected((maxLights / increment) - 1);
         else
             box->setIndexSelected(MyGUI::ITEM_NONE);
+    }
+
+    void updateAnisotropyComboBox(MyGUI::ComboBox* box)
+    {
+        const int anisotropy = Settings::general().mAnisotropy;
+        if (anisotropy <= 1)
+            box->setIndexSelected(0);
+        else if (anisotropy <= 2)
+            box->setIndexSelected(1);
+        else if (anisotropy <= 4)
+            box->setIndexSelected(2);
+        else if (anisotropy <= 8)
+            box->setIndexSelected(3);
+        else
+            box->setIndexSelected(4);
+    }
+
+    void updateShadowMapResolutionComboBox(MyGUI::ComboBox* box)
+    {
+        const int resolution = Settings::shadows().mShadowMapResolution;
+        if (resolution == 512)
+            box->setIndexSelected(0);
+        else if (resolution == 1024)
+            box->setIndexSelected(1);
+        else if (resolution == 2048)
+            box->setIndexSelected(2);
+        else if (resolution == 4096)
+            box->setIndexSelected(3);
+        else
+        {
+            box->addItem(std::to_string(resolution), resolution);
+            box->setIndexSelected(4);
+        }
     }
 
     void updateSliderLabel(MyGUI::ScrollBar* scroller, MyGUI::TextBox* textBox,
@@ -175,7 +190,7 @@ namespace MWGui
                 std::string_view valueType = getSettingValueType(current);
                 std::vector<icu::UnicodeString> argNames;
                 std::vector<icu::Formattable> args;
-                if (valueType == "Float" || valueType == "Integer" || valueType == "Cell")
+                if (valueType == "Float" || valueType == "Cell")
                 {
                     // TODO: ScrollBar isn't meant for this. should probably use a dedicated FloatSlider widget
                     float min, max;
@@ -188,24 +203,26 @@ namespace MWGui
                         argNames.emplace_back("cells");
                         args.emplace_back(value / Constants::CellSizeInUnits);
                     }
-                    else if (valueType == "Float")
+                    else
                     {
                         value = Settings::get<float>(getSettingCategory(current), getSettingName(current));
                         argNames.emplace_back("value");
                         args.emplace_back(value);
                     }
-                    else
-                    {
-                        const int intValue = Settings::get<int>(getSettingCategory(current), getSettingName(current));
-                        argNames.emplace_back("value");
-                        args.emplace_back(intValue);
-                        value = static_cast<float>(intValue);
-                    }
 
                     value = std::clamp(value, min, max);
                     value = (value - min) / (max - min);
 
-                    scroll->setScrollPosition(static_cast<size_t>(value * (scroll->getScrollRange() - 1)));
+                    scroll->setScrollPosition(static_cast<size_t>(std::round(value * (scroll->getScrollRange() - 1))));
+                }
+                else if (valueType == "Integer")
+                {
+                    int min, max;
+                    getSettingMinMax(scroll, min, max);
+                    const int value = Settings::get<int>(getSettingCategory(current), getSettingName(current));
+                    argNames.emplace_back("value");
+                    args.emplace_back(value);
+                    scroll->setScrollPosition(static_cast<size_t>(std::clamp(value, min, max) - min));
                 }
                 else
                 {
@@ -270,13 +287,12 @@ namespace MWGui
         getWidget(mVSyncModeList, "VSyncModeList");
         getWidget(mWindowBorderButton, "WindowBorderButton");
         getWidget(mTextureFilteringButton, "TextureFilteringButton");
+        getWidget(mAnisotropy, "Anisotropy");
         getWidget(mControlsBox, "ControlsBox");
         getWidget(mResetControlsButton, "ResetControlsButton");
         getWidget(mKeyboardSwitch, "KeyboardButton");
         getWidget(mControllerSwitch, "ControllerButton");
         getWidget(mWaterRefractionButton, "WaterRefractionButton");
-        getWidget(mSunlightScatteringButton, "SunlightScatteringButton");
-        getWidget(mWobblyShoresButton, "WobblyShoresButton");
         getWidget(mWaterTextureSize, "WaterTextureSize");
         getWidget(mWaterReflectionDetail, "WaterReflectionDetail");
         getWidget(mWaterRainRippleDetail, "WaterRainRippleDetail");
@@ -284,7 +300,7 @@ namespace MWGui
         getWidget(mSecondaryLanguage, "SecondaryLanguage");
         getWidget(mGmstOverridesL10n, "GmstOverridesL10nButton");
         getWidget(mWindowModeHint, "WindowModeHint");
-        getWidget(mLightingMethodButton, "LightingMethodButton");
+        getWidget(mClusteredLightingButton, "ClusteredLightingButton");
         getWidget(mLightsResetButton, "LightsResetButton");
         getWidget(mMaxLights, "MaxLights");
         getWidget(mShadowResolution, "ShadowResolution");
@@ -295,6 +311,15 @@ namespace MWGui
         getWidget(mScriptView, "ScriptView");
         getWidget(mScriptAdapter, "ScriptAdapter");
         getWidget(mScriptDisabled, "ScriptDisabled");
+        getWidget(mClassicFalloffWidget, "ClassicFalloffWidget");
+        getWidget(mMinimumBrightnessText, "MinimumBrightnessText");
+        getWidget(mMinimumBrightnessScroll, "MinimumBrightnessScroll");
+        getWidget(mActorShadowsButton, "ActorShadowsButton");
+        getWidget(mPlayerShadowsButton, "PlayerShadowsButton");
+        getWidget(mTerrainShadowsButton, "TerrainShadowsButton");
+        getWidget(mObjectShadowsButton, "ObjectShadowsButton");
+        getWidget(mShadowPlanesComputationMethod, "ShadowPlanesComputationMethod");
+        getWidget(mShadowMapResolution, "ShadowMapResolution");
 
 #ifndef WIN32
         // hide gamma controls since it currently does not work under Linux
@@ -317,10 +342,9 @@ namespace MWGui
         mOkButton->eventMouseButtonClick += MyGUI::newDelegate(this, &SettingsWindow::onOkButtonClicked);
         mTextureFilteringButton->eventComboChangePosition
             += MyGUI::newDelegate(this, &SettingsWindow::onTextureFilteringChanged);
+        mAnisotropy->eventComboChangePosition += MyGUI::newDelegate(this, &SettingsWindow::onAnisotropyChanged);
         mResolutionList->eventListChangePosition += MyGUI::newDelegate(this, &SettingsWindow::onResolutionSelected);
 
-        mWaterRefractionButton->eventMouseButtonClick
-            += MyGUI::newDelegate(this, &SettingsWindow::onRefractionButtonClicked);
         mWaterTextureSize->eventComboChangePosition
             += MyGUI::newDelegate(this, &SettingsWindow::onWaterTextureSizeChanged);
         mWaterReflectionDetail->eventComboChangePosition
@@ -328,8 +352,6 @@ namespace MWGui
         mWaterRainRippleDetail->eventComboChangePosition
             += MyGUI::newDelegate(this, &SettingsWindow::onWaterRainRippleDetailChanged);
 
-        mLightingMethodButton->eventComboChangePosition
-            += MyGUI::newDelegate(this, &SettingsWindow::onLightingMethodButtonChanged);
         mLightsResetButton->eventMouseButtonClick
             += MyGUI::newDelegate(this, &SettingsWindow::onLightsResetButtonClicked);
         mMaxLights->eventComboChangePosition += MyGUI::newDelegate(this, &SettingsWindow::onMaxLightsChanged);
@@ -338,6 +360,17 @@ namespace MWGui
             += MyGUI::newDelegate(this, &SettingsWindow::onShadowResolutionChanged);
         mShadowUpdateInterval->eventComboChangePosition
             += MyGUI::newDelegate(this, &SettingsWindow::onShadowUpdateIntervalChanged);
+        mActorShadowsButton->eventMouseButtonClick += MyGUI::newDelegate(this, &SettingsWindow::onShadowsButtonClicked);
+        mPlayerShadowsButton->eventMouseButtonClick
+            += MyGUI::newDelegate(this, &SettingsWindow::onShadowsButtonClicked);
+        mTerrainShadowsButton->eventMouseButtonClick
+            += MyGUI::newDelegate(this, &SettingsWindow::onShadowsButtonClicked);
+        mObjectShadowsButton->eventMouseButtonClick
+            += MyGUI::newDelegate(this, &SettingsWindow::onShadowsButtonClicked);
+        mShadowPlanesComputationMethod->eventComboChangePosition
+            += MyGUI::newDelegate(this, &SettingsWindow::onComputeSceneBoundsChanged);
+        mShadowMapResolution->eventComboChangePosition
+            += MyGUI::newDelegate(this, &SettingsWindow::onShadowMapResolutionChanged);
 
         mWindowModeList->eventComboChangePosition += MyGUI::newDelegate(this, &SettingsWindow::onWindowModeChanged);
         mVSyncModeList->eventComboChangePosition += MyGUI::newDelegate(this, &SettingsWindow::onVSyncModeChanged);
@@ -382,6 +415,7 @@ namespace MWGui
 
         mTextureFilteringButton->setCaptionWithReplacing(
             textureFilteringToStr(Settings::general().mTextureMipmap, Settings::general().mTextureMinFilter));
+        updateAnisotropyComboBox(mAnisotropy);
 
         int waterTextureSize = Settings::water().mRttSize;
         if (waterTextureSize >= 512)
@@ -396,10 +430,6 @@ namespace MWGui
 
         const int waterRainRippleDetail = Settings::water().mRainRippleDetail;
         mWaterRainRippleDetail->setIndexSelected(waterRainRippleDetail);
-
-        const bool waterRefraction = Settings::water().mRefraction;
-        mSunlightScatteringButton->setEnabled(waterRefraction);
-        mWobblyShoresButton->setEnabled(waterRefraction);
 
         updateMaxLightsComboBox(mMaxLights);
 
@@ -420,6 +450,15 @@ namespace MWGui
             if (interval >= 1 && interval <= 4)
                 mShadowUpdateInterval->setIndexSelected(static_cast<size_t>(interval - 1));
         }
+        const std::string& shadowMethod = Settings::shadows().mComputeSceneBounds;
+        if (shadowMethod == "bounds")
+            mShadowPlanesComputationMethod->setIndexSelected(0);
+        else if (shadowMethod == "primitives")
+            mShadowPlanesComputationMethod->setIndexSelected(1);
+        else
+            mShadowPlanesComputationMethod->setIndexSelected(2);
+
+        updateShadowMapResolutionComboBox(mShadowMapResolution);
 
         const Settings::WindowMode windowMode = Settings::video().mWindowMode;
         mWindowBorderButton->setEnabled(
@@ -549,14 +588,6 @@ namespace MWGui
         }
     }
 
-    void SettingsWindow::onRefractionButtonClicked(MyGUI::Widget* /*sender*/)
-    {
-        const bool refractionEnabled = Settings::water().mRefraction;
-
-        mSunlightScatteringButton->setEnabled(refractionEnabled);
-        mWobblyShoresButton->setEnabled(refractionEnabled);
-    }
-
     void SettingsWindow::onWaterTextureSizeChanged(MyGUI::ComboBox* /*sender*/, size_t pos)
     {
         int size = 0;
@@ -579,21 +610,6 @@ namespace MWGui
     void SettingsWindow::onWaterRainRippleDetailChanged(MyGUI::ComboBox* /*sender*/, size_t pos)
     {
         Settings::water().mRainRippleDetail.set(static_cast<int>(pos));
-        apply();
-    }
-
-    void SettingsWindow::onLightingMethodButtonChanged(MyGUI::ComboBox* sender, size_t pos)
-    {
-        if (pos == MyGUI::ITEM_NONE)
-            return;
-
-        sender->setCaptionWithReplacing(sender->getItemNameAt(sender->getIndexSelected()));
-
-        MWBase::Environment::get().getWindowManager()->interactiveMessageBox(
-            "#{OMWEngine:ChangeRequiresRestart}", { "#{Interface:OK}" }, true);
-
-        Settings::shaders().mLightingMethod.set(
-            Settings::parseLightingMethod(*sender->getItemDataAt<std::string>(pos)));
         apply();
     }
 
@@ -701,17 +717,16 @@ namespace MWGui
 
         Settings::shaders().mForcePerPixelLighting.reset();
         Settings::shaders().mClassicFalloff.reset();
+        Settings::shaders().mParticlePointLighting.reset();
+        Settings::shaders().mClampLighting.reset();
         Settings::shaders().mMatchSunlightToSun.reset();
-        Settings::shaders().mLightBoundsMultiplier.reset();
+        Settings::shaders().mLightRadiusMultiplier.reset();
         Settings::shaders().mMaximumLightDistance.reset();
         Settings::shaders().mLightFadeStart.reset();
         Settings::shaders().mMinimumInteriorBrightness.reset();
         Settings::shaders().mMaxLights.reset();
-        Settings::shaders().mLightingMethod.reset();
+        Settings::shaders().mClusteredLighting.reset();
 
-        const SceneUtil::LightingMethod lightingMethod = Settings::shaders().mLightingMethod;
-        const std::size_t lightIndex = mLightingMethodButton->findItemIndexWith(lightingMethodToStr(lightingMethod));
-        mLightingMethodButton->setIndexSelected(lightIndex);
         updateMaxLightsComboBox(mMaxLights);
 
         apply();
@@ -765,6 +780,112 @@ namespace MWGui
         apply();
     }
 
+    void SettingsWindow::onAnisotropyChanged(MyGUI::ComboBox* /*sender*/, size_t pos)
+    {
+        if (pos == MyGUI::ITEM_NONE)
+            return;
+
+        auto& generalSettings = Settings::general();
+        switch (pos)
+        {
+            case 0:
+                generalSettings.mAnisotropy.set(0);
+                break;
+            case 1:
+                generalSettings.mAnisotropy.set(2);
+                break;
+            case 2:
+                generalSettings.mAnisotropy.set(4);
+                break;
+            case 3:
+                generalSettings.mAnisotropy.set(8);
+                break;
+            case 4:
+                generalSettings.mAnisotropy.set(16);
+                break;
+            default:
+                Log(Debug::Warning) << "Unexpected anisotropy option pos " << pos;
+                break;
+        }
+
+        apply();
+    }
+
+    void SettingsWindow::onShadowsButtonClicked(MyGUI::Widget* /*sender*/)
+    {
+        auto& shadowSettings = Settings::shadows();
+        shadowSettings.mEnableShadows.set(shadowSettings.mActorShadows || shadowSettings.mPlayerShadows
+            || shadowSettings.mTerrainShadows || shadowSettings.mObjectShadows);
+        apply();
+    }
+
+    void SettingsWindow::onComputeSceneBoundsChanged(MyGUI::ComboBox* sender, size_t pos)
+    {
+        if (pos == MyGUI::ITEM_NONE)
+            return;
+
+        if (pos == 1 && mShowShadowPlanesMethodWarning)
+        {
+            MWBase::Environment::get().getWindowManager()->interactiveMessageBox(
+                "#{OMWEngine:ShadowPlanesComputationMethodWarning}", { "#{Interface:OK}" }, true);
+            mShowShadowPlanesMethodWarning = false;
+        }
+
+        auto& shadowSettings = Settings::shadows();
+        switch (pos)
+        {
+            case 0:
+                shadowSettings.mComputeSceneBounds.set("bounds");
+                break;
+            case 1:
+                shadowSettings.mComputeSceneBounds.set("primitives");
+                break;
+            case 2:
+                shadowSettings.mComputeSceneBounds.set("none");
+                break;
+            default:
+                Log(Debug::Warning) << "Unexpected shadow planes computation method pos " << pos;
+                break;
+        }
+
+        apply();
+    }
+
+    void SettingsWindow::onShadowMapResolutionChanged(MyGUI::ComboBox* sender, size_t pos)
+    {
+        if (pos == MyGUI::ITEM_NONE)
+            return;
+
+        auto& shadowSettings = Settings::shadows();
+        switch (pos)
+        {
+            case 0:
+                shadowSettings.mShadowMapResolution.set(512);
+                break;
+            case 1:
+                shadowSettings.mShadowMapResolution.set(1024);
+                break;
+            case 2:
+                shadowSettings.mShadowMapResolution.set(2048);
+                break;
+            case 3:
+                shadowSettings.mShadowMapResolution.set(4096);
+                break;
+            case 4:
+            {
+                int* resolution = sender->getItemDataAt<int>(4);
+                if (resolution)
+                    shadowSettings.mShadowMapResolution.set(*resolution);
+                break;
+            }
+            default:
+                Log(Debug::Warning) << "Unexpected shadow map resolution pos " << pos;
+                break;
+        }
+
+        apply();
+    }
+
     void SettingsWindow::onResChange(int /*width*/, int /*height*/)
     {
         center();
@@ -778,7 +899,7 @@ namespace MWGui
             std::vector<icu::UnicodeString> argNames;
             std::vector<icu::Formattable> args;
             std::string_view valueType = getSettingValueType(scroller);
-            if (valueType == "Float" || valueType == "Integer" || valueType == "Cell")
+            if (valueType == "Float" || valueType == "Cell")
             {
                 float value = pos / float(scroller->getScrollRange() - 1);
 
@@ -792,19 +913,21 @@ namespace MWGui
                     argNames.emplace_back("cells");
                     args.emplace_back(value / Constants::CellSizeInUnits);
                 }
-                else if (valueType == "Float")
+                else
                 {
                     Settings::get<float>(getSettingCategory(scroller), getSettingName(scroller)).set(value);
                     argNames.emplace_back("value");
                     args.emplace_back(value);
                 }
-                else
-                {
-                    int intValue = static_cast<int>(value);
-                    Settings::get<int>(getSettingCategory(scroller), getSettingName(scroller)).set(intValue);
-                    argNames.emplace_back("value");
-                    args.emplace_back(intValue);
-                }
+            }
+            else if (valueType == "Integer")
+            {
+                int min, max;
+                getSettingMinMax(scroller, min, max);
+                const int value = min + static_cast<int>(pos);
+                Settings::get<int>(getSettingCategory(scroller), getSettingName(scroller)).set(value);
+                argNames.emplace_back("value");
+                args.emplace_back(value);
             }
             else
             {
@@ -828,6 +951,8 @@ namespace MWGui
         MWBase::Environment::get().getInputManager()->processChangedSettings(changed);
         MWBase::Environment::get().getMechanicsManager()->processChangedSettings(changed);
         Settings::Manager::resetPendingChanges();
+
+        updateLightSettings();
     }
 
     void SettingsWindow::onKeyboardSwitchClicked(MyGUI::Widget* /*sender*/)
@@ -897,26 +1022,15 @@ namespace MWGui
 
     void SettingsWindow::updateLightSettings()
     {
-        auto lightingMethod = MWBase::Environment::get().getResourceSystem()->getSceneManager()->getLightingMethod();
-        MyGUI::UString lightingMethodStr = lightingMethodToStr(lightingMethod);
+        mClusteredLightingButton->setEnabled(
+            MWBase::Environment::get().getResourceSystem()->getSceneManager()->isClusteredLightingSupported());
 
-        mLightingMethodButton->removeAllItems();
+        const bool isClustered = Settings::shaders().mClusteredLighting;
+        const bool isClassic = !isClustered && Settings::shaders().mClassicFalloff;
 
-        std::array<SceneUtil::LightingMethod, 3> methods = {
-            SceneUtil::LightingMethod::FFP,
-            SceneUtil::LightingMethod::PerObjectUniform,
-            SceneUtil::LightingMethod::SingleUBO,
-        };
-
-        for (const auto& method : methods)
-        {
-            if (!MWBase::Environment::get().getResourceSystem()->getSceneManager()->isSupportedLightingMethod(method))
-                continue;
-
-            mLightingMethodButton->addItem(
-                lightingMethodToStr(method), SceneUtil::LightManager::getLightingMethodString(method));
-        }
-        mLightingMethodButton->setIndexSelected(mLightingMethodButton->findItemIndexWith(lightingMethodStr));
+        mClassicFalloffWidget->setVisible(!isClustered);
+        mMinimumBrightnessText->setVisible(!isClassic);
+        mMinimumBrightnessScroll->setVisible(!isClassic);
     }
 
     void SettingsWindow::updateWindowModeSettings()
@@ -926,7 +1040,10 @@ namespace MWGui
 
         mWindowModeList->setIndexSelected(windowModeIndex);
 
-        if (windowMode != Settings::WindowMode::Windowed && windowModeIndex != MyGUI::ITEM_NONE)
+        mWindowBorderButton->setEnabled(windowMode == Settings::WindowMode::Windowed);
+
+        // Windowed fullscreen uses the desktop size, which need not match an exclusive fullscreen mode.
+        if (windowMode == Settings::WindowMode::Fullscreen)
         {
             // check if this resolution is supported in fullscreen
             if (mResolutionList->getIndexSelected() != MyGUI::ITEM_NONE)
@@ -967,8 +1084,6 @@ namespace MWGui
                     Settings::video().mResolutionY.set(fallbackY);
                 }
             }
-
-            mWindowBorderButton->setEnabled(false);
         }
 
         if (windowMode == Settings::WindowMode::WindowedFullscreen)

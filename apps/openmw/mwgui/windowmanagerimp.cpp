@@ -6,6 +6,8 @@
 #include <filesystem>
 #include <thread>
 
+#include <osg/Image>
+#include <osg/ref_ptr>
 #include <osgViewer/Viewer>
 
 #include <MyGUI_ClipboardManager.h>
@@ -63,6 +65,8 @@
 #include "../mwbase/statemanager.hpp"
 #include "../mwbase/world.hpp"
 
+#include "../mwrender/localmap.hpp"
+#include "../mwrender/renderingmanager.hpp"
 #include "../mwrender/vismask.hpp"
 
 #include "../mwworld/cellstore.hpp"
@@ -148,9 +152,10 @@ namespace MWGui
     }
 
     WindowManager::WindowManager(SDL_Window* window, osgViewer::Viewer* viewer, osg::Group* guiRoot,
-        Resource::ResourceSystem* resourceSystem, SceneUtil::WorkQueue* workQueue, const std::filesystem::path& logpath,
-        bool consoleOnlyScripts, Translation::Storage& translationDataStorage, ToUTF8::FromType encoding,
-        bool exportFonts, const std::string& versionDescription, bool useShaders, Files::ConfigurationManager& cfgMgr)
+        Resource::ResourceSystem* resourceSystem, const std::shared_ptr<SceneUtil::WorkQueue>& workQueue,
+        const std::filesystem::path& logpath, bool consoleOnlyScripts, Translation::Storage& translationDataStorage,
+        ToUTF8::FromType encoding, bool exportFonts, const std::string& versionDescription,
+        Files::ConfigurationManager& cfgMgr)
         : mOldUpdateMask(0)
         , mOldCullMask(0)
         , mStore(nullptr)
@@ -192,6 +197,7 @@ namespace MWGui
         , mHudEnabled(true)
         , mCursorVisible(true)
         , mCursorActive(true)
+        , mCursorInteractionEnabled(false)
         , mPlayerBounty(-1)
         , mGuiModes()
         , mGarbageDialogs()
@@ -304,8 +310,7 @@ namespace MWGui
         mVideoWrapper = std::make_unique<SDLUtil::VideoWrapper>(window, viewer);
         mVideoWrapper->setGammaContrast(Settings::video().mGamma, Settings::video().mContrast);
 
-        if (useShaders)
-            mGuiPlatform->getRenderManagerPtr()->enableShaders(mResourceSystem->getSceneManager()->getShaderManager());
+        mGuiPlatform->getRenderManagerPtr()->enableShaders(mResourceSystem->getSceneManager()->getShaderManager());
 
         mStatsWatcher = std::make_unique<StatsWatcher>();
     }
@@ -329,7 +334,7 @@ namespace MWGui
         mGuiModeStates[GM_MainMenu] = GuiModeState(menu.get());
         mWindows.push_back(std::move(menu));
 
-        mLocalMapRender = std::make_unique<MWRender::LocalMap>(mViewer->getSceneData()->asGroup());
+        mLocalMapRender = MWBase::Environment::get().getWorld()->getRenderingManager()->createLocalMap();
         auto map = std::make_unique<MapWindow>(mCustomMarkers, mDragAndDrop.get(), mLocalMapRender.get(), mWorkQueue);
         mMap = map.get();
         mWindows.push_back(std::move(map));
@@ -341,8 +346,7 @@ namespace MWGui
         mWindows.push_back(std::move(statsWindow));
         trackWindow(mStatsWindow, makeStatsWindowSettingValues());
 
-        auto inventoryWindow = std::make_unique<InventoryWindow>(
-            *mDragAndDrop, *mItemTransfer, mViewer->getSceneData()->asGroup(), mResourceSystem);
+        auto inventoryWindow = std::make_unique<InventoryWindow>(*mDragAndDrop, *mItemTransfer);
         mInventoryWindow = inventoryWindow.get();
         mWindows.push_back(std::move(inventoryWindow));
 
@@ -530,7 +534,7 @@ namespace MWGui
 
         mHud->setVisible(true);
 
-        mCharGen = std::make_unique<CharacterCreation>(mViewer->getSceneData()->asGroup(), mResourceSystem);
+        mCharGen = std::make_unique<CharacterCreation>();
 
         updatePinnedWindows();
 
@@ -556,7 +560,7 @@ namespace MWGui
             disallowAll();
 
             mStatsWatcher->removeListener(mCharGen.get());
-            mCharGen = std::make_unique<CharacterCreation>(mViewer->getSceneData()->asGroup(), mResourceSystem);
+            mCharGen = std::make_unique<CharacterCreation>();
             mStatsWatcher->addListener(mCharGen.get());
         }
         else
@@ -653,12 +657,14 @@ namespace MWGui
 
         MWBase::Environment::get().getInputManager()->changeInputMode(!gameMode);
 
-        mInputBlocker->setVisible(gameMode);
+        mInputBlocker->setVisible(gameMode && !mCursorInteractionEnabled);
 
         if (loading)
             setCursorVisible(mMessageBoxManager && mMessageBoxManager->isInteractiveMessageBox());
         else
             setCursorVisible(!gameMode);
+
+        updateMouseEmulationCursor();
 
         if (gameMode)
             setKeyFocusWidget(nullptr);
@@ -1062,6 +1068,8 @@ namespace MWGui
         if (mInventoryTabsOverlay && mInventoryTabsOverlay->isVisible())
             mInventoryTabsOverlay->onFrame(frameDuration);
 
+        updateMouseEmulationCursor();
+
         if (!gameRunning)
             return;
 
@@ -1229,6 +1237,13 @@ namespace MWGui
         mCursorActive = active;
     }
 
+    void WindowManager::setCursorInteractionEnabled(bool enabled)
+    {
+        mCursorInteractionEnabled = enabled;
+        if (mInputBlocker)
+            mInputBlocker->setVisible(!isGuiMode() && !mCursorInteractionEnabled);
+    }
+
     void WindowManager::onRetrieveTag(const MyGUI::UString& tag, MyGUI::UString& result)
     {
         std::string_view tagView = tag;
@@ -1355,8 +1370,12 @@ namespace MWGui
         for (const auto& window : mWindows)
             window->onResChange(x, y);
 
+        LuaUi::updateAllElementCoords();
+
         // Re-apply any controller-specific window changes.
         reapplyActiveControllerWindow();
+
+        MWBase::Environment::get().getLuaManager()->viewportResized(x, y);
 
         // TODO: check if any windows are now off-screen and move them back if so
     }
@@ -1378,7 +1397,8 @@ namespace MWGui
 
     void WindowManager::onCursorChange(std::string_view name)
     {
-        mCursorManager->cursorChanged(name);
+        mMyGuiCursor = name;
+        mCursorManager->cursorChanged(mLuaCursorOverride.empty() ? name : mLuaCursorOverride);
     }
 
     void WindowManager::pushGuiMode(GuiMode mode)
@@ -1770,7 +1790,7 @@ namespace MWGui
 
     void WindowManager::allowMouse()
     {
-        mInputBlocker->setVisible(!isGuiMode());
+        mInputBlocker->setVisible(!isGuiMode() && !mCursorInteractionEnabled);
     }
 
     void WindowManager::notifyInputActionBound()
@@ -1846,6 +1866,37 @@ namespace MWGui
         onCursorChange(name);
     }
 
+    void WindowManager::createLuaCursor(const std::string& name, const std::string& path, int width, int height,
+        int hotspotX, int hotspotY, double rotation)
+    {
+        osg::ref_ptr<osg::Image> image = mResourceSystem->getImageManager()->getImage(VFS::Path::Normalized(path));
+        if (!image.valid())
+        {
+            Log(Debug::Warning) << "Failed to load Lua cursor texture: " << path;
+            return;
+        }
+        mCursorManager->createCursor(name, rotation, image, hotspotX, hotspotY, width, height);
+    }
+
+    void WindowManager::removeLuaCursor(const std::string& name)
+    {
+        if (mLuaCursorOverride == name)
+            mLuaCursorOverride.clear();
+        mCursorManager->removeCursor(name);
+        mCursorManager->cursorChanged(getCurrentCursorName());
+    }
+
+    void WindowManager::setLuaCursorOverride(const std::string& name)
+    {
+        mLuaCursorOverride = name;
+        mCursorManager->cursorChanged(getCurrentCursorName());
+    }
+
+    std::string WindowManager::getCurrentCursorName() const
+    {
+        return mLuaCursorOverride.empty() ? mMyGuiCursor : mLuaCursorOverride;
+    }
+
     void WindowManager::showSoulgemDialog(MWWorld::Ptr item)
     {
         mSoulgemDialog->show(item);
@@ -1873,10 +1924,26 @@ namespace MWGui
 
     void WindowManager::onKeyFocusChanged(MyGUI::Widget* widget)
     {
-        bool isEditBox = widget && widget->castType<MyGUI::EditBox>(false);
-        LuaUi::WidgetExtension* luaWidget = dynamic_cast<LuaUi::WidgetExtension*>(widget);
-        bool capturesInput = luaWidget ? luaWidget->isTextInput() : isEditBox;
-        if (widget && capturesInput)
+        bool capturesInput = false;
+        if (widget)
+        {
+            LuaUi::WidgetExtension* luaWidget = dynamic_cast<LuaUi::WidgetExtension*>(widget);
+            if (luaWidget)
+                capturesInput = luaWidget->isTextInput();
+            else
+                capturesInput = widget->castType<MyGUI::EditBox>(false);
+        }
+
+        // The SDL_IsTextInputActive() check helps to avoid duplicate calls in SDL2.
+        // This may no longer be required when switching to SDL3 where the function
+        // has also been renamed to SDL_TextInputActive() and returns bool instead
+        // of SDL_bool.
+
+        const bool inputActive = SDL_IsTextInputActive() == SDL_TRUE;
+        if (capturesInput == inputActive)
+            return;
+
+        if (capturesInput)
             SDL_StartTextInput();
         else
             SDL_StopTextInput();
@@ -1904,6 +1971,24 @@ namespace MWGui
     bool WindowManager::getCursorVisible()
     {
         return mCursorVisible && mCursorActive;
+    }
+
+    void WindowManager::updateMouseEmulationCursor()
+    {
+        if (!mHud)
+            return;
+
+        bool mouseEmulation = MWBase::Environment::get().getInputManager()->joystickLastUsed()
+            && MWBase::Environment::get().getInputManager()->isGamepadGuiCursorEnabled();
+
+        bool showCursor = mouseEmulation && Settings::hud().mMouseEmulationCursor && getCursorVisible();
+        mHud->setMouseEmulationCursorVisible(showCursor);
+
+        if (showCursor)
+        {
+            MyGUI::IntPoint pos = MyGUI::InputManager::getInstance().getMousePosition();
+            mHud->setMouseEmulationCursorPosition(pos.left, pos.top);
+        }
     }
 
     void WindowManager::trackWindow(Layout* layout, const WindowSettingValues& settings)
@@ -2078,6 +2163,9 @@ namespace MWGui
 
         mVideoBackground->setVisible(true);
 
+        if (mInputBlocker)
+            mInputBlocker->setVisible(false);
+
         bool cursorWasVisible = mCursorVisible;
         setCursorVisible(false);
 
@@ -2104,6 +2192,8 @@ namespace MWGui
             {
                 if (mVideoWidget->isPaused())
                     mVideoWidget->resume();
+
+                mVideoWidget->commitFrame();
 
                 mViewer->eventTraversal();
                 mViewer->updateTraversal();
@@ -2438,14 +2528,21 @@ namespace MWGui
 
             if (image.valid())
             {
-                // everything looks good, send it to the cursor manager
-                const Uint8 hotspotX = static_cast<Uint8>(imgSetPointer->getHotSpot().left);
-                const Uint8 hotspotY = static_cast<Uint8>(imgSetPointer->getHotSpot().top);
-                int rotation = imgSetPointer->getRotation();
-                MyGUI::IntSize pointerSize = imgSetPointer->getSize();
+                // scale the cursor to the interface scaling factor
+                const float guiUiScale = Settings::gui().mScalingFactor;
 
-                mCursorManager->createCursor(imgSetPointer->getResourceName(), rotation, image, hotspotX, hotspotY,
-                    pointerSize.width, pointerSize.height);
+                // everything looks good, send it to the cursor manager
+                const Uint8 hotspotX = static_cast<Uint8>(guiUiScale * imgSetPointer->getHotSpot().left);
+                const Uint8 hotspotY = static_cast<Uint8>(guiUiScale * imgSetPointer->getHotSpot().top);
+
+                MyGUI::IntSize pointerSize = imgSetPointer->getSize();
+                const Uint8 width = static_cast<Uint8>(guiUiScale * pointerSize.width);
+                const Uint8 height = static_cast<Uint8>(guiUiScale * pointerSize.height);
+
+                int rotation = imgSetPointer->getRotation();
+
+                mCursorManager->createCursor(
+                    imgSetPointer->getResourceName(), rotation, image, hotspotX, hotspotY, width, height);
             }
         }
     }

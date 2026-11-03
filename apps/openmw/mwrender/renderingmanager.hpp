@@ -8,15 +8,16 @@
 #include <components/settings/settings.hpp>
 #include <components/vfs/pathutil.hpp>
 
-#include <osg/Light>
 #include <osg/ref_ptr>
 
 #include <osgUtil/IncrementalCompileOperation>
 
 #include <deque>
+#include <map>
 #include <memory>
 #include <span>
 #include <unordered_map>
+#include <vector>
 
 namespace osg
 {
@@ -65,6 +66,10 @@ namespace SceneUtil
     class WorkQueue;
     class LightManager;
     class UnrefQueue;
+    class PerViewUniformStateUpdater;
+    class SharedUniformStateUpdater;
+    class StateUpdater;
+    class Light;
 }
 
 namespace DetourNavigator
@@ -78,6 +83,7 @@ namespace MWWorld
 {
     class GroundcoverStore;
     class Cell;
+    class WeatherStore;
 }
 
 namespace Debug
@@ -87,9 +93,6 @@ namespace Debug
 
 namespace MWRender
 {
-    class StateUpdater;
-    class SharedUniformStateUpdater;
-    class PerViewUniformStateUpdater;
     class IntersectionVisitorWithIgnoreList;
 
     class EffectManager;
@@ -109,12 +112,15 @@ namespace MWRender
     class ObjectPaging;
     class Groundcover;
     class PostProcessor;
+    class InventoryPreview;
+    class RaceSelectionPreview;
+    class LocalMap;
 
     class RenderingManager : public MWRender::RenderingInterface
     {
     public:
         RenderingManager(osgViewer::Viewer* viewer, osg::ref_ptr<osg::Group> rootNode,
-            Resource::ResourceSystem* resourceSystem, SceneUtil::WorkQueue* workQueue,
+            Resource::ResourceSystem* resourceSystem, const std::shared_ptr<SceneUtil::WorkQueue>& workQueue,
             DetourNavigator::Navigator& navigator, const MWWorld::GroundcoverStore& groundcoverStore,
             SceneUtil::UnrefQueue& unrefQueue);
         ~RenderingManager();
@@ -125,10 +131,14 @@ namespace MWRender
 
         Resource::ResourceSystem* getResourceSystem();
 
-        SceneUtil::WorkQueue* getWorkQueue();
+        std::unique_ptr<InventoryPreview> createInventoryPreview(const MWWorld::Ptr& character);
+        std::unique_ptr<RaceSelectionPreview> createRaceSelectionPreview();
+        std::unique_ptr<LocalMap> createLocalMap();
+
+        const std::shared_ptr<SceneUtil::WorkQueue>& getWorkQueue() const;
         Terrain::World* getTerrain();
 
-        void preloadCommonAssets();
+        void preloadCommonAssets(const MWWorld::WeatherStore&);
 
         double getReferenceTime() const;
 
@@ -142,7 +152,7 @@ namespace MWRender
         int skyGetSecundaPhase() const;
         void skySetMoonColour(bool red);
 
-        const osg::Vec4f& getSunLightPosition() const { return mSunLight->getPosition(); }
+        const osg::Vec4f& getSunLightPosition() const;
         void setSunDirection(const osg::Vec3f& direction);
         void setSunColour(const osg::Vec4f& diffuse, const osg::Vec4f& specular, float sunVis);
         void setNight(bool isNight) { mNight = isNight; }
@@ -168,8 +178,8 @@ namespace MWRender
         void setWaterEnabled(bool enabled);
         void setWaterHeight(float level);
 
-        /// Take a screenshot of w*h onto the given image, not including the GUI.
-        void screenshot(osg::Image* image, int w, int h);
+        /// Take a screenshot of w*h, not including the GUI, encoded as JPEG. Empty on failure.
+        std::vector<char> screenshot(int w, int h);
 
         struct RayResult
         {
@@ -182,15 +192,19 @@ namespace MWRender
         };
 
         RayResult castRay(const osg::Vec3f& origin, const osg::Vec3f& dest, bool ignorePlayer,
-            bool ignoreActors = false, std::span<const MWWorld::Ptr> ignoreList = {});
+            bool ignoreActors = false, bool ignoreTerrain = false, std::span<const MWWorld::Ptr> ignoreList = {});
 
         /// Return the object under the mouse cursor / crosshair position, given by nX and nY normalized screen
         /// coordinates, where (0,0) is the top left corner.
-        RayResult castCameraToViewportRay(
-            const float nX, const float nY, float maxDistance, bool ignorePlayer, bool ignoreActors = false);
+        RayResult castCameraToViewportRay(const float nX, const float nY, float maxDistance, bool ignorePlayer,
+            bool ignoreActors = false, bool ignoreTerrain = false);
 
         /// Get normalized screen coordinates of the bounding box's summit, where (0,0) is the top left corner
         osg::Vec2f getScreenCoords(const osg::BoundingBox& bb);
+
+        /// Get the bounding box of the object's scene graph, leaving out nodes in ignoreMask. Invalid if the object
+        /// is not in the scene.
+        osg::BoundingBox getObjectBounds(const MWWorld::Ptr& ptr, unsigned int ignoreMask) const;
 
         void setSkyEnabled(bool enabled);
 
@@ -282,11 +296,16 @@ namespace MWRender
 
         void setNavMeshMode(Settings::NavMeshRenderMode value);
 
+        void setProjectionOffset(const osg::Vec2f& offset)
+        {
+            mProjectionOffset = offset;
+            mUpdateProjectionMatrix = true;
+        }
+        osg::Vec2f getProjectionOffset() const { return mProjectionOffset; }
+
     private:
         void updateTextureFiltering();
         void updateAmbient();
-        void setFogColor(const osg::Vec4f& color);
-
         struct WorldspaceChunkMgr
         {
             std::unique_ptr<Terrain::World> mTerrain;
@@ -305,7 +324,7 @@ namespace MWRender
         const bool mSkyBlending;
 
         osg::ref_ptr<osgUtil::IntersectionVisitor> getIntersectionVisitor(osgUtil::Intersector* intersector,
-            bool ignorePlayer, bool ignoreActors, std::span<const MWWorld::Ptr> ignoreList = {});
+            bool ignorePlayer, bool ignoreActors, bool ignoreTerrain, std::span<const MWWorld::Ptr> ignoreList = {});
 
         osg::ref_ptr<IntersectionVisitorWithIgnoreList> mIntersectionVisitor;
 
@@ -314,9 +333,9 @@ namespace MWRender
         osg::ref_ptr<SceneUtil::LightManager> mSceneRoot;
         Resource::ResourceSystem* mResourceSystem;
 
-        osg::ref_ptr<SceneUtil::WorkQueue> mWorkQueue;
+        std::shared_ptr<SceneUtil::WorkQueue> mWorkQueue;
 
-        osg::ref_ptr<osg::Light> mSunLight;
+        std::shared_ptr<SceneUtil::Light> mSunLight;
 
         DetourNavigator::Navigator& mNavigator;
         std::unique_ptr<NavMesh> mNavMesh;
@@ -340,14 +359,14 @@ namespace MWRender
         osg::ref_ptr<SceneOcclusionCallback> mSceneOcclusionCallback;
         std::unique_ptr<Terrain::TerrainOccluder> mTerrainOccluder;
         osg::ref_ptr<PostProcessor> mPostProcessor;
-        osg::ref_ptr<NpcAnimation> mPlayerAnimation;
+        std::unique_ptr<NpcAnimation> mPlayerAnimation;
         osg::ref_ptr<SceneUtil::PositionAttitudeTransform> mPlayerNode;
         std::unique_ptr<Camera> mCamera;
         osg::ref_ptr<Debug::DebugDrawer> mDebugDraw;
 
-        osg::ref_ptr<StateUpdater> mStateUpdater;
-        osg::ref_ptr<SharedUniformStateUpdater> mSharedUniformStateUpdater;
-        osg::ref_ptr<PerViewUniformStateUpdater> mPerViewUniformStateUpdater;
+        osg::ref_ptr<SceneUtil::StateUpdater> mStateUpdater;
+        osg::ref_ptr<SceneUtil::SharedUniformStateUpdater> mSharedUniformStateUpdater;
+        osg::ref_ptr<SceneUtil::PerViewUniformStateUpdater> mPerViewUniformStateUpdater;
 
         osg::Vec4f mAmbientColor;
         float mNightEyeFactor;
@@ -360,7 +379,9 @@ namespace MWRender
         float mFirstPersonFieldOfView;
         bool mUpdateProjectionMatrix = false;
         bool mNight = false;
+        osg::Vec2f mProjectionOffset;
         const MWWorld::GroundcoverStore& mGroundCoverStore;
+        std::map<std::string, std::string> mAppliedShadowDefines;
 
         void operator=(const RenderingManager&);
         RenderingManager(const RenderingManager&);

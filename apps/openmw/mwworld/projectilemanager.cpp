@@ -6,6 +6,7 @@
 #include <sstream>
 
 #include <osg/PositionAttitudeTransform>
+#include <osg/Vec2f>
 
 #include <components/debug/debuglog.hpp>
 
@@ -41,6 +42,7 @@
 #include "../mwworld/worldmodel.hpp"
 
 #include "../mwbase/environment.hpp"
+#include "../mwbase/luamanager.hpp"
 #include "../mwbase/soundmanager.hpp"
 #include "../mwbase/windowmanager.hpp"
 #include "../mwbase/world.hpp"
@@ -62,8 +64,59 @@
 
 namespace
 {
+    float getMagicBoltSpeed(float effectSpeed, const MWWorld::Ptr& caster, bool normaliseRaceSpeed)
+    {
+        const MWWorld::ESMStore& store = *MWBase::Environment::get().getESMStore();
+        static const float fTargetSpellMaxSpeed
+            = store.get<ESM::GameSetting>().find("fTargetSpellMaxSpeed")->mValue.getFloat();
+        float speed = fTargetSpellMaxSpeed * effectSpeed;
+        if (!normaliseRaceSpeed && !caster.isEmpty() && caster.getClass().isNpc())
+        {
+            const auto npc = caster.get<ESM::NPC>()->mBase;
+            const auto race = store.get<ESM::Race>().find(npc->mRace);
+            speed *= npc->isMale() ? race->mData.mMaleWeight : race->mData.mFemaleWeight;
+        }
+        return speed;
+    }
+
+    // Only lead on targets that are far enough away ( > 512 units) that have moved
+    // more than 1 unit per frame. A high estimate of 30 fps is taken here
+    bool shouldLeadTarget(const osg::Vec3f& casterPos, const MWMechanics::MovingTarget& target)
+    {
+        constexpr float minLeadDistance = 512.f;
+        constexpr float minLeadSpeed = 30.f * 30.f;
+
+        return target.mVelocity.length2() > minLeadSpeed && (target.mPosition - casterPos).length() > minLeadDistance;
+    }
+
+    // Predict where a moving target will be when a projectile launched from launchPos reaches it.
+    // Like in Morrowind, the target is only led horizontally, but by its full speed,
+    // so moving vertically (e.g. jumping) makes the lead longer.
+    osg::Vec3f predictHitPosition(
+        const osg::Vec3f& launchPos, const MWMechanics::MovingTarget& target, float projectileSpeed)
+    {
+        // Morrowind overestimates the speed of a target it leads by this factor
+        constexpr float targetSpeedMultiplier = 1.25f;
+
+        osg::Vec2f direction(target.mVelocity.x(), target.mVelocity.y());
+        if (projectileSpeed <= 0.f || direction.normalize() <= 1e-6f)
+            return target.mPosition;
+
+        const osg::Vec3f leadVelocity = osg::Vec3f(direction, 0.f) * target.mVelocity.length() * targetSpeedMultiplier;
+
+        // Estimate the flight time to the current position, then refine it once using the predicted position
+        osg::Vec3f predicted = target.mPosition;
+        for (int i = 0; i < 2; ++i)
+        {
+            const osg::Vec2f offset(predicted.x() - launchPos.x(), predicted.y() - launchPos.y());
+            const float flightTime = offset.length() / projectileSpeed;
+            predicted = target.mPosition + leadVelocity * flightTime;
+        }
+        return predicted;
+    }
+
     ESM::EffectList getMagicBoltData(std::vector<ESM::RefId>& projectileIDs, std::set<ESM::RefId>& sounds, float& speed,
-        std::string& texture, std::string& sourceName, const ESM::RefId& id)
+        VFS::Path::NormalizedView& texture, std::string& sourceName, const ESM::RefId& id)
     {
         const MWWorld::ESMStore& esmStore = *MWBase::Environment::get().getESMStore();
         const ESM::EffectList* effects;
@@ -122,7 +175,7 @@ namespace
             const ESM::MagicEffect* magicEffect
                 = MWBase::Environment::get().getESMStore()->get<ESM::MagicEffect>().find(
                     effects->mList.begin()->mData.mEffectID);
-            texture = magicEffect->mParticle;
+            texture = magicEffect->mParticle.getNormalized();
         }
 
         // insert a VFX_Multiple projectile if there are multiple projectile effects
@@ -215,7 +268,8 @@ namespace MWWorld
     };
 
     void ProjectileManager::createModel(State& state, VFS::Path::NormalizedView model, const osg::Vec3f& pos,
-        const osg::Quat& orient, bool rotate, bool createLight, osg::Vec4 lightDiffuseColor, const std::string& texture)
+        const osg::Quat& orient, bool rotate, bool createLight, osg::Vec4 lightDiffuseColor,
+        VFS::Path::NormalizedView texture)
     {
         state.mNode = new osg::PositionAttitudeTransform;
         state.mNode->setNodeMask(MWRender::Mask_Effect);
@@ -247,21 +301,20 @@ namespace MWWorld
                 attachTo->accept(findVisitor);
                 if (findVisitor.mFoundNode)
                     mResourceSystem->getSceneManager()->getInstance(
-                        Misc::ResourceHelpers::correctMeshPath(VFS::Path::Normalized(weapon->mModel)),
-                        findVisitor.mFoundNode);
+                        Misc::ResourceHelpers::correctMeshPath(weapon->mModel.getNormalized()), findVisitor.mFoundNode);
             }
         }
 
         if (createLight)
         {
-            osg::ref_ptr<osg::Light> projectileLight(new osg::Light);
-            projectileLight->setAmbient(osg::Vec4(1.0f, 1.0f, 1.0f, 1.0f));
-            projectileLight->setDiffuse(lightDiffuseColor);
-            projectileLight->setSpecular(osg::Vec4(0.0f, 0.0f, 0.0f, 0.0f));
-            projectileLight->setConstantAttenuation(0.f);
-            projectileLight->setLinearAttenuation(0.1f);
-            projectileLight->setQuadraticAttenuation(0.f);
-            projectileLight->setPosition(osg::Vec4(pos, 1.0));
+            SceneUtil::Light projectileLight;
+            projectileLight.setAmbient(osg::Vec4(1.0f, 1.0f, 1.0f, 1.0f));
+            projectileLight.setDiffuse(lightDiffuseColor);
+            projectileLight.setSpecular(osg::Vec4(0.0f, 0.0f, 0.0f, 0.0f));
+            projectileLight.setConstantAttenuation(0.f);
+            projectileLight.setLinearAttenuation(0.1f);
+            projectileLight.setQuadraticAttenuation(0.f);
+            projectileLight.setPosition(osg::Vec4(pos, 1.0));
 
             SceneUtil::LightSource* projectileLightSource = new SceneUtil::LightSource;
             projectileLightSource->setNodeMask(MWRender::Mask_Lighting);
@@ -280,7 +333,7 @@ namespace MWWorld
         SceneUtil::AssignControllerSourcesVisitor assignVisitor(state.mEffectAnimationTime);
         state.mNode->accept(assignVisitor);
 
-        MWRender::overrideFirstRootTexture(VFS::Path::toNormalized(texture), mResourceSystem, *projectile);
+        MWRender::overrideFirstRootTexture(texture, mResourceSystem, *projectile);
     }
 
     void ProjectileManager::update(State& state, float duration)
@@ -288,8 +341,9 @@ namespace MWWorld
         state.mEffectAnimationTime->addTime(duration);
     }
 
-    void ProjectileManager::launchMagicBolt(
-        const ESM::RefId& spellId, const Ptr& caster, const osg::Vec3f& fallbackDirection, ESM::RefNum item)
+    void ProjectileManager::launchMagicBolt(const ESM::RefId& spellId, const Ptr& caster,
+        const osg::Vec3f& fallbackDirection, ESM::RefNum item,
+        const std::optional<MWMechanics::MovingTarget>& movingTarget)
     {
         osg::Vec3f pos = caster.getRefData().getPosition().asVec3();
         if (caster.getClass().isActor())
@@ -317,7 +371,7 @@ namespace MWWorld
         MWBase::Environment::get().getWorldModel()->registerPtr(caster);
         state.mCaster = caster.getCellRef().getRefNum();
 
-        std::string texture;
+        VFS::Path::NormalizedView texture;
 
         state.mEffects = getMagicBoltData(
             state.mIdMagic, state.mSoundIds, state.mSpeed, texture, state.mSourceName, state.mSpellId);
@@ -332,7 +386,22 @@ namespace MWWorld
             return;
         }
 
-        MWWorld::ManualRef ref(*MWBase::Environment::get().getESMStore(), state.mIdMagic.at(0));
+        if (movingTarget.has_value() && caster.getClass().isActor())
+        {
+            osg::Vec3f aimPosition = movingTarget->mPosition;
+            if (shouldLeadTarget(caster.getRefData().getPosition().asVec3(), *movingTarget))
+            {
+                const float speed = getMagicBoltSpeed(state.mSpeed, caster, Settings::game().mNormaliseRaceSpeed);
+                aimPosition = predictHitPosition(pos, *movingTarget, speed);
+            }
+
+            const osg::Vec3f direction = aimPosition - pos;
+            if (direction.length2() > 0)
+                orient.makeRotate(osg::Vec3f(0, 1, 0), direction);
+        }
+
+        const MWWorld::ESMStore& esmStore = *MWBase::Environment::get().getESMStore();
+        MWWorld::ManualRef ref(esmStore, state.mIdMagic.at(0));
         MWWorld::Ptr ptr = ref.getPtr();
 
         osg::Vec4 lightDiffuseColor = getMagicBoltLightDiffuseColor(state.mEffects);
@@ -353,8 +422,8 @@ namespace MWWorld
         // shape
         if (state.mIdMagic.size() > 1)
         {
-            model = Misc::ResourceHelpers::correctMeshPath(VFS::Path::Normalized(
-                MWBase::Environment::get().getESMStore()->get<ESM::Weapon>().find(state.mIdMagic[1])->mModel));
+            model = Misc::ResourceHelpers::correctMeshPath(
+                esmStore.get<ESM::Weapon>().find(state.mIdMagic[1])->mModel.getNormalized());
         }
         state.mProjectileId = mPhysics->addProjectile(caster, pos, model, true);
         state.mToDelete = false;
@@ -362,7 +431,7 @@ namespace MWWorld
     }
 
     void ProjectileManager::launchProjectile(const Ptr& actor, const ConstPtr& projectile, const osg::Vec3f& pos,
-        const osg::Quat& orient, const Ptr& bow, float speed, float attackStrength)
+        const osg::Quat& orient, const Ptr& bow, float speed, float attackStrength, float attackWindUp)
     {
         ProjectileState state;
         state.mCaster = actor.getCellRef().getRefNum();
@@ -371,6 +440,7 @@ namespace MWWorld
         state.mIdArrow = projectile.getCellRef().getRefId();
         state.mCasterHandle = actor;
         state.mAttackStrength = attackStrength;
+        state.mAttackWindUp = attackWindUp;
 
         MWWorld::ManualRef ref(*MWBase::Environment::get().getESMStore(), projectile.getCellRef().getRefId());
         MWWorld::Ptr ptr = ref.getPtr();
@@ -465,17 +535,8 @@ namespace MWWorld
                 }
             }
 
-            const auto& store = *MWBase::Environment::get().getESMStore();
             osg::Quat orient = magicBoltState.mNode->getAttitude();
-            static float fTargetSpellMaxSpeed
-                = store.get<ESM::GameSetting>().find("fTargetSpellMaxSpeed")->mValue.getFloat();
-            float speed = fTargetSpellMaxSpeed * magicBoltState.mSpeed;
-            if (!normaliseRaceSpeed && !caster.isEmpty() && caster.getClass().isNpc())
-            {
-                const auto npc = caster.get<ESM::NPC>()->mBase;
-                const auto race = store.get<ESM::Race>().find(npc->mRace);
-                speed *= npc->isMale() ? race->mData.mMaleWeight : race->mData.mFemaleWeight;
-            }
+            const float speed = getMagicBoltSpeed(magicBoltState.mSpeed, caster, normaliseRaceSpeed);
             osg::Vec3f direction = orient * osg::Vec3f(0, 1, 0);
             direction.normalize();
             projectile->setVelocity(direction * speed);
@@ -508,8 +569,7 @@ namespace MWWorld
                 continue;
             // gravity constant - must be way lower than the gravity affecting actors, since we're not
             // simulating aerodynamics at all
-            projectileState.mVelocity
-                -= osg::Vec3f(0, 0, Constants::GravityConst * Constants::UnitsPerMeter * 0.1f) * duration;
+            projectileState.mVelocity -= osg::Vec3f(0, 0, Constants::GravityUnits * 0.1f) * duration;
 
             projectile->setVelocity(projectileState.mVelocity);
 
@@ -566,11 +626,11 @@ namespace MWWorld
             if (projectile->getHitWater())
                 mRendering->emitWaterRipple(hitPosition);
 
-            MWMechanics::projectileHit(
-                caster, target, bow, projectileRef.getPtr(), hitPosition, projectileState.mAttackStrength);
+            MWMechanics::projectileHit(caster, target, bow, projectileRef.getPtr(), hitPosition,
+                projectileState.mAttackStrength, projectileState.mAttackWindUp);
             projectileState.mToDelete = true;
         }
-        const MWWorld::ESMStore& esmStore = *MWBase::Environment::get().getESMStore();
+
         for (auto& magicBoltState : mMagicBolts)
         {
             if (magicBoltState.mToDelete)
@@ -594,22 +654,19 @@ namespace MWWorld
 
             assert(target != caster);
 
-            MWMechanics::CastSpell cast(caster, target);
-            cast.mHitPosition = !active ? Misc::Convert::makeOsgVec3f(projectile->getHitPosition()) : pos;
-            cast.mId = magicBoltState.mSpellId;
-            cast.mSourceName = magicBoltState.mSourceName;
-            cast.mItem = magicBoltState.mItem;
-            // Grab original effect list so the indices are correct
-            const ESM::EffectList* effects;
-            if (const ESM::Spell* spell = esmStore.get<ESM::Spell>().search(magicBoltState.mSpellId))
-                effects = &spell->mEffects;
-            else
+            auto hitPos = !active ? Misc::Convert::makeOsgVec3f(projectile->getHitPosition()) : pos;
+            auto hitNormal = Misc::Convert::makeOsgVec3f(projectile->getHitNormal());
+
+            if (projectile->getHitWater())
+                mRendering->emitWaterRipple(hitPos);
+
+            if (active)
             {
-                MWWorld::ManualRef ref(esmStore, magicBoltState.mSpellId);
-                const MWWorld::Ptr& ptr = ref.getPtr();
-                effects = &esmStore.get<ESM::Enchantment>().find(ptr.getClass().getEnchantment(ptr))->mEffects;
+                hitNormal = projectile->velocity();
+                hitNormal.normalize();
             }
-            cast.inflict(target, *effects, ESM::RT_Target);
+            MWBase::Environment::get().getLuaManager()->magicProjectileHit(
+                magicBoltState.mSpellId, caster, magicBoltState.mItem, target, hitPos, hitNormal);
 
             magicBoltState.mToDelete = true;
         }
@@ -677,6 +734,7 @@ namespace MWWorld
             state.mBowId = projectile.mBowId;
             state.mVelocity = projectile.mVelocity;
             state.mAttackStrength = projectile.mAttackStrength;
+            state.mAttackWindUp = projectile.mAttackWindUp;
 
             state.save(writer);
 
@@ -715,6 +773,7 @@ namespace MWWorld
             state.mVelocity = esm.mVelocity;
             state.mIdArrow = esm.mId;
             state.mAttackStrength = esm.mAttackStrength;
+            state.mAttackWindUp = esm.mAttackWindUp;
             state.mToDelete = false;
 
             VFS::Path::Normalized model;
@@ -751,7 +810,7 @@ namespace MWWorld
             state.mCaster = esm.mCaster;
             state.mToDelete = false;
             state.mItem = esm.mItem;
-            std::string texture;
+            VFS::Path::NormalizedView texture;
 
             try
             {

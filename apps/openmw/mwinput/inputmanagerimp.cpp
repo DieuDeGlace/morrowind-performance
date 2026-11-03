@@ -1,7 +1,5 @@
 #include "inputmanagerimp.hpp"
 
-#include <osgViewer/ViewerEventHandlers>
-
 #include <components/esm3/esmreader.hpp>
 #include <components/esm3/esmwriter.hpp>
 #include <components/sdlutil/sdlinputwrapper.hpp>
@@ -24,15 +22,14 @@
 
 namespace MWInput
 {
-    InputManager::InputManager(SDL_Window* window, osg::ref_ptr<osgViewer::Viewer> viewer,
-        osg::ref_ptr<osgViewer::ScreenCaptureHandler> screenCaptureHandler, const std::filesystem::path& userFile,
-        bool userFileExists, const std::filesystem::path& userControllerBindingsFile,
-        const std::filesystem::path& controllerBindingsFile, bool grab)
+    InputManager::InputManager(SDL_Window* window, std::unique_ptr<SDLUtil::InputWrapper> inputWrapper,
+        std::function<void()> takeScreenshot, const std::filesystem::path& userFile, bool userFileExists,
+        const std::filesystem::path& userControllerBindingsFile, const std::filesystem::path& controllerBindingsFile)
         : mControlsDisabled(false)
-        , mInputWrapper(std::make_unique<SDLUtil::InputWrapper>(window, viewer, grab))
+        , mInputWrapper(std::move(inputWrapper))
         , mBindingsManager(std::make_unique<BindingsManager>(userFile, userFileExists))
         , mControlSwitch(std::make_unique<ControlSwitch>())
-        , mActionManager(std::make_unique<ActionManager>(mBindingsManager.get(), viewer, screenCaptureHandler))
+        , mActionManager(std::make_unique<ActionManager>(mBindingsManager.get(), std::move(takeScreenshot)))
         , mKeyboardManager(std::make_unique<KeyboardManager>(mBindingsManager.get()))
         , mMouseManager(std::make_unique<MouseManager>(mBindingsManager.get(), mInputWrapper.get(), window))
         , mControllerManager(std::make_unique<ControllerManager>(
@@ -106,17 +103,48 @@ namespace MWInput
 
     void InputManager::changeInputMode(bool guiMode)
     {
-        mControllerManager->setGuiCursorEnabled(guiMode);
-        mMouseManager->setGuiCursorEnabled(guiMode);
-        mGyroManager->setGuiCursorEnabled(guiMode);
-        mMouseManager->setMouseLookEnabled(!guiMode);
         if (guiMode)
             MWBase::Environment::get().getWindowManager()->showCrosshair(false);
 
         bool isCursorVisible
             = guiMode && (!mControllerManager->joystickLastUsed() || mControllerManager->gamepadGuiCursorEnabled());
         MWBase::Environment::get().getWindowManager()->setCursorVisible(isCursorVisible);
+
+        if (!guiMode)
+            setCursorMode(MWBase::CursorMode::Locked);
+        else if (MWBase::Environment::get().getWindowManager()->containsMode(MWGui::GM_MainMenu)
+            || MWBase::Environment::get().getWindowManager()->isConsoleMode())
+            setCursorMode(MWBase::CursorMode::Free);
+        else
+            setCursorMode(Settings::input().mGrabCursor ? MWBase::CursorMode::Confined : MWBase::CursorMode::Free);
         // if not in gui mode, the camera decides whether to show crosshair or not.
+    }
+
+    void InputManager::setCursorMode(MWBase::CursorMode mode)
+    {
+        const bool guiCursorEnabled = mode != MWBase::CursorMode::Locked;
+        mControllerManager->setGuiCursorEnabled(guiCursorEnabled);
+        mMouseManager->setGuiCursorEnabled(guiCursorEnabled);
+        mGyroManager->setGuiCursorEnabled(guiCursorEnabled);
+        mMouseManager->setMouseLookEnabled(!guiCursorEnabled);
+        MWBase::Environment::get().getWindowManager()->setCursorInteractionEnabled(guiCursorEnabled);
+        mBindingsManager->setPlayerControlsEnabled(!guiCursorEnabled);
+        mMouseManager->setCursorMode(mode);
+    }
+
+    MWBase::CursorMode InputManager::getCursorMode() const
+    {
+        return mMouseManager->getCursorMode();
+    }
+
+    void InputManager::setCursorPosition(const osg::Vec2f& position)
+    {
+        mMouseManager->setCursorPosition(position);
+    }
+
+    osg::Vec2f InputManager::getCursorPosition() const
+    {
+        return mMouseManager->getCursorPosition();
     }
 
     void InputManager::processChangedSettings(const Settings::CategorySettingVector& changed)
@@ -191,6 +219,24 @@ namespace MWInput
 
     void InputManager::warpMouseToWidget(MyGUI::Widget* widget)
     {
+        // This is currently used to simulate mouse movement when the gamepad UI is used.
+        // Sometimes this is called in reaction to layout changes.
+        // It's a bad idea to do this if the user triggered one with the actual mouse.
+
+        // Don't warp if a gamepad wasn't in use when this was triggered.
+        if (!joystickLastUsed())
+            return;
+
+        // Don't warp if the mouse button is actively being held.
+        // TODO: this should be a method somewhere so that it can be reused in, e.g., Lua bindings
+        if (SDL_GetMouseState(nullptr, nullptr) & SDL_BUTTON_LMASK)
+            return;
+
+        // Don't warp if an emulated mouse press is occurring.
+        if (isGamepadGuiCursorEnabled() && isControllerButtonPressed(SDL_CONTROLLER_BUTTON_A))
+            return;
+
+        MWBase::Environment::get().getWindowManager()->setCursorVisible(false);
         mMouseManager->warpMouseToWidget(widget);
         mMouseManager->injectMouseMove(1, 0, 0);
         MWBase::Environment::get().getWindowManager()->setCursorActive(true);

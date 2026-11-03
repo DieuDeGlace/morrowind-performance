@@ -15,6 +15,28 @@
 namespace LuaUtil
 {
     class ScriptTracker;
+    class ScriptsContainer;
+    using ScriptsContainerLifetime = std::shared_ptr<ScriptsContainer*>;
+
+    // Immutable ScriptsContainerLifetime
+    class ScriptsContainerWeakPtr
+    {
+        ScriptsContainerLifetime mWeakPtr;
+
+    public:
+        explicit ScriptsContainerWeakPtr(ScriptsContainerLifetime ptr)
+            : mWeakPtr(std::move(ptr))
+        {
+        }
+
+        ScriptsContainer* operator*() const noexcept
+        {
+            if (auto ptr = mWeakPtr.get())
+                return *ptr;
+            // this shouldn't happen unless you use it after a move or try to be funny by constructing from nullptr
+            return nullptr;
+        }
+    };
 
     // ScriptsContainer is a base class for all scripts containers (LocalScripts,
     // GlobalScripts, PlayerScripts, etc). Each script runs in a separate sandbox.
@@ -101,7 +123,8 @@ namespace LuaUtil
         bool hasScript(int scriptId) const;
         void removeScript(int scriptId);
 
-        void processTimers(double simulationTime, double gameTime);
+        // While paused, only real-time timers are processed
+        void processTimers(double simulationTime, double gameTime, double realTime, bool isPaused = false);
 
         // Calls `onUpdate` (if present) for every script in the container.
         // Handlers are called in the same order as scripts were added.
@@ -139,8 +162,8 @@ namespace LuaUtil
         void registerTimerCallback(int scriptId, std::string_view callbackName, sol::main_protected_function callback);
 
         // Sets up a timer, that can be automatically saved and loaded.
-        //   type - the type of timer, either SIMULATION_TIME or GAME_TIME.
-        //   time - the absolute game time (in seconds or in hours) when the timer should be executed.
+        //   type - the type of timer: SIMULATION_TIME, GAME_TIME, or REAL_TIME.
+        //   time - the absolute time (in seconds) when the timer should be executed.
         //   scriptPath - script path in VFS is used as script id. The script with the given path should already present
         //   in the container. callbackName - callback (should be registered in advance) for this timer. callbackArg -
         //   parameter for the callback (should be serializable).
@@ -149,10 +172,12 @@ namespace LuaUtil
 
         // Creates a timer. `callback` is an arbitrary Lua function. These timers are called "unsavable"
         // because they can not be stored in saves. I.e. loading a saved game will not fully restore the state.
+        // type can be SIMULATION_TIME, GAME_TIME, or REAL_TIME.
+        // REAL_TIME timers run even when the game is paused.
         void setupUnsavableTimer(TimerType type, double time, int scriptId, sol::main_protected_function callback);
 
-        // Informs that new frame is started. Needed to track Lua instruction count per frame.
-        void statsNextFrame();
+        // decayedInstructionCount applies deferred decay.
+        void statsNextFrame() { ++mStatsFrame; }
 
         struct ScriptStats
         {
@@ -163,6 +188,8 @@ namespace LuaUtil
         static int64_t getInstanceCount() { return sInstanceCount; }
 
         virtual bool isActive() const { return false; }
+
+        ScriptsContainerWeakPtr getWeakPointer() const;
 
     protected:
         // Call a function on an interface.
@@ -244,6 +271,7 @@ namespace LuaUtil
             std::map<int64_t, sol::main_protected_function> mTemporaryCallbacks;
             VFS::Path::Normalized mPath;
             ScriptStats mStats;
+            int64_t mStatsFrame = 0; // frame mStats was last brought up to date
 
             ~Script();
         };
@@ -302,6 +330,7 @@ namespace LuaUtil
 
             std::vector<Timer> mSimulationTimersQueue;
             std::vector<Timer> mGameTimersQueue;
+            std::vector<Timer> mRealTimeTimersQueue;
         };
         using UnloadedData = ESM::LuaScripts;
 
@@ -318,8 +347,10 @@ namespace LuaUtil
         int64_t mTemporaryCallbackCounter = 0;
 
         std::map<int, int64_t> mRemovedScriptsMemoryUsage;
-        using WeakPtr = std::shared_ptr<ScriptsContainer*>;
-        WeakPtr mThis; // used by LuaState to track ownership of memory allocations
+        int64_t mStatsFrame = 0;
+
+        float decayedInstructionCount(const Script& script) const;
+        ScriptsContainerLifetime mThis; // used by LuaState to track ownership of memory allocations
 
         ScriptTracker* mTracker;
         bool mRequiredLoading = false;

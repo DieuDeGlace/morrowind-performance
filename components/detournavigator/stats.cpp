@@ -1,12 +1,12 @@
 #include "stats.hpp"
 
-#include <osg/Stats>
+#include <components/misc/framestats.hpp>
 
 namespace DetourNavigator
 {
     namespace
     {
-        void reportStats(const AsyncNavMeshUpdaterStats& stats, unsigned int frameNumber, osg::Stats& out)
+        void reportStats(const AsyncNavMeshUpdaterStats& stats, unsigned int frameNumber, Misc::FrameStats& out)
         {
             out.setAttribute(frameNumber, "NavMesh Jobs", static_cast<double>(stats.mJobs));
             out.setAttribute(frameNumber, "NavMesh Removing", static_cast<double>(stats.mWaiting.mRemoving));
@@ -14,6 +14,7 @@ namespace DetourNavigator
             out.setAttribute(frameNumber, "NavMesh Delayed", static_cast<double>(stats.mWaiting.mDelayed));
             out.setAttribute(frameNumber, "NavMesh Pushed", static_cast<double>(stats.mPushed));
             out.setAttribute(frameNumber, "NavMesh Processing", static_cast<double>(stats.mProcessing));
+            out.setAttribute(frameNumber, "NavMesh Posted", static_cast<double>(stats.mPosted));
 
             if (stats.mDb.has_value())
             {
@@ -33,7 +34,7 @@ namespace DetourNavigator
             out.setAttribute(frameNumber, "NavMesh Cache Hit", static_cast<double>(stats.mCache.mHitCount));
         }
 
-        void reportStats(const TileCachedRecastMeshManagerStats& stats, unsigned int frameNumber, osg::Stats& out)
+        void reportStats(const TileCachedRecastMeshManagerStats& stats, unsigned int frameNumber, Misc::FrameStats& out)
         {
             out.setAttribute(frameNumber, "NavMesh Recast Tiles", static_cast<double>(stats.mTiles));
             out.setAttribute(frameNumber, "NavMesh Recast Objects", static_cast<double>(stats.mObjects));
@@ -42,7 +43,7 @@ namespace DetourNavigator
         }
     }
 
-    void reportStats(const Stats& stats, unsigned int frameNumber, osg::Stats& out)
+    void reportStats(const Stats& stats, unsigned int frameNumber, Misc::FrameStats& out)
     {
         reportStats(stats.mUpdater, frameNumber, out);
         reportStats(stats.mRecast, frameNumber, out);

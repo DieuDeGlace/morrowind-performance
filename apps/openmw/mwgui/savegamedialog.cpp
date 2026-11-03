@@ -1,6 +1,6 @@
 #include "savegamedialog.hpp"
 
-#include <iomanip>
+#include <format>
 #include <sstream>
 
 #include <MyGUI_ComboBox.h>
@@ -9,15 +9,10 @@
 #include <MyGUI_LanguageManager.h>
 #include <MyGUI_UString.h>
 
-#include <osg/Texture2D>
-#include <osgDB/ReadFile>
-
 #include <components/debug/debuglog.hpp>
 #include <components/esm3/loadclas.hpp>
 #include <components/files/conversion.hpp>
-#include <components/files/memorystream.hpp>
 #include <components/l10n/manager.hpp>
-#include <components/misc/strings/format.hpp>
 #include <components/misc/strings/lower.hpp>
 #include <components/misc/timeconvert.hpp>
 #include <components/myguiplatform/myguitexture.hpp>
@@ -164,11 +159,10 @@ namespace MWGui
                 hour = 12;
 
             ESM::EpochTimeStamp currentDate = timeManager.getEpochTimeStamp();
-            std::string daysPassed
-                = Misc::StringUtils::format("#{Calendar:day} %i", timeManager.getTimeStamp().getDay());
             std::string_view formattedHour(pm ? "#{Calendar:pm}" : "#{Calendar:am}");
-            std::string autoFilename = Misc::StringUtils::format(
-                "%s - %i %s %i %s", daysPassed, currentDate.mDay, month, hour, formattedHour);
+
+            std::string autoFilename = std::format("#{{Calendar:day}} {} - {} {} {} {}",
+                timeManager.getTimeStamp().getDay(), currentDate.mDay, month, hour, formattedHour);
 
             mSaveNameEdit->setCaptionWithReplacing(autoFilename);
         }
@@ -478,7 +472,7 @@ namespace MWGui
 
         text << Misc::fileTimeToString(mCurrentSlot->mTimeStamp, "%Y.%m.%d %T") << "\n";
 
-        mCellName->setCaptionWithReplacing("#{sCell=" + mCurrentSlot->mProfile.mPlayerCellName + "}");
+        mCellName->setCaptionWithReplacing(std::format("#{{sCell={}}}", mCurrentSlot->mProfile.mPlayerCellName));
         mInfoText->setCaptionWithReplacing(text.str());
 
         // Reset the image for the case we're unable to recover a screenshot
@@ -496,34 +490,13 @@ namespace MWGui
             return;
         }
 
-        Files::IMemStream instream(data.data(), data.size());
-
-        osgDB::ReaderWriter* readerwriter = osgDB::Registry::instance()->getReaderWriterForExtension("jpg");
-        if (!readerwriter)
+        mScreenshotTexture = MyGUIPlatform::createTextureFromJpeg(data);
+        if (!mScreenshotTexture)
         {
-            Log(Debug::Error) << "Can't open savegame screenshot, no jpg readerwriter found";
+            Log(Debug::Warning) << "Failed to read savegame screenshot of '"
+                                << Files::pathToUnicodeString(mCurrentSlot->mPath.filename()) << "'";
             return;
         }
-
-        osgDB::ReaderWriter::ReadResult result = readerwriter->readImage(instream);
-        if (!result.success())
-        {
-            Log(Debug::Error) << "Failed to read savegame screenshot: " << result.message() << " code "
-                              << result.status();
-            return;
-        }
-
-        osg::ref_ptr<osg::Texture2D> texture(new osg::Texture2D);
-        texture->setImage(result.getImage());
-        texture->setInternalFormat(GL_RGB);
-        texture->setWrap(osg::Texture::WRAP_S, osg::Texture::CLAMP_TO_EDGE);
-        texture->setWrap(osg::Texture::WRAP_T, osg::Texture::CLAMP_TO_EDGE);
-        texture->setFilter(osg::Texture::MIN_FILTER, osg::Texture::LINEAR);
-        texture->setFilter(osg::Texture::MAG_FILTER, osg::Texture::LINEAR);
-        texture->setResizeNonPowerOfTwoHint(false);
-        texture->setUnRefImageDataAfterApply(true);
-
-        mScreenshotTexture = std::make_unique<MyGUIPlatform::OSGTexture>(texture);
         mScreenshot->setRenderItemTexture(mScreenshotTexture.get());
     }
 

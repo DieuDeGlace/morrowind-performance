@@ -1,93 +1,23 @@
-name: Build and Release
+name: Windows Performance Release
 
 on:
   workflow_dispatch:
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
-env:
-  BUILD_TYPE: RelWithDebInfo
+permissions:
+  contents: read
 
 jobs:
-  Ubuntu:
-    runs-on: linux-16core
-
+  windows:
+    runs-on: windows-2022
     steps:
-    - uses: actions/checkout@v4
-
-    - name: Add OpenMW PPA Dependencies
-      run: sudo add-apt-repository ppa:openmw/openmw; sudo apt-get update
-
-    - name: Install Building Dependencies
-      run: sudo CI/install_debian_deps.sh gcc openmw-deps openmw-deps-dynamic
-
-    - name: Install mold linker
-      run: sudo apt-get install -y mold
-
-    - name: Prime ccache
-      uses: hendrikmuhs/ccache-action@v1
-      with:
-        key: ubuntu-${{ env.BUILD_TYPE }}
-        max-size: 2000M
-
-    - name: Configure
-      run: >
-        cmake .
-        -D CMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
-        -D OPENMW_USE_SYSTEM_RECASTNAVIGATION=ON
-        -D USE_SYSTEM_TINYXML=ON
-        -D CMAKE_INSTALL_PREFIX=install
-        -D CMAKE_EXE_LINKER_FLAGS=-fuse-ld=mold
-        -D CMAKE_SHARED_LINKER_FLAGS=-fuse-ld=mold
-
-    - name: Build
-      run: cmake --build . -- -j$(nproc)
-
-    - name: Package
-      run: bash CI/package-linux.sh . openmw-linux-x64
-
-    - name: Upload artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: openmw-linux-${{ github.sha }}
-        path: openmw-linux-x64.tar.gz
-
-  Windows:
-    uses: ./.github/workflows/windows.yml
-    with:
-      image: "2022"
-      build-type: RelWithDebInfo
-
-  macOS:
-    uses: ./.github/workflows/macos.yml
-    with:
-      build-type: RelWithDebInfo
-
-  Release:
-    if: github.ref == 'refs/heads/wip-merged'
-    needs: [Ubuntu, Windows, macOS]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-    - uses: actions/checkout@v4
-
-    - uses: actions/download-artifact@v4
-      with:
-        path: artifacts
-
-    - name: Publish rolling release
-      uses: softprops/action-gh-release@v2
-      with:
-        tag_name: latest
-        name: Latest Build
-        prerelease: true
-        make_latest: false
-        body: |
-          Automated build from `${{ github.ref_name }}` @ ${{ github.sha }}
-        files: |
-          artifacts/**/*.zip
-          artifacts/**/*.tar.gz
-          artifacts/**/*.dmg
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Build, test, and package Release
+        shell: pwsh
+        run: ./CI/build-windows-release.ps1 -Jobs 4
+      - uses: actions/upload-artifact@v4
+        with:
+          name: OpenMW-performance-Windows-x64
+          path: release/*.zip
+          if-no-files-found: error

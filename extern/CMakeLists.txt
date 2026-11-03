@@ -31,11 +31,10 @@ if(NOT OPENMW_USE_SYSTEM_BULLET)
         set(USE_MSVC_RUNTIME_LIBRARY_DLL ON CACHE BOOL "" FORCE)
     endif()
 
-    # May 7, 2021
     include(FetchContent)
     FetchContent_Declare(bullet
-        URL https://github.com/bulletphysics/bullet3/archive/refs/tags/3.17.tar.gz
-        URL_HASH SHA512=a5105bf5f1dd365a64a350755c7d2c97942f74897a18dcdb3651e6732fd55cc1030a096f5808cf50575281f05e3ac09aa50a48d271a47b94cd61f5167a72b7cc
+        URL https://github.com/bulletphysics/bullet3/archive/refs/tags/3.25.tar.gz
+        URL_HASH SHA512=7086e5fcf69635801bb311261173cb8d173b712ca1bd78be03df48fad884674e85512861190e45a1a62d5627aaad65cde08c175c44a3be9afa410d3dfd5358d4
         SOURCE_DIR fetched/bullet
     )
     FetchContent_MakeAvailable(bullet)
@@ -130,8 +129,8 @@ if(NOT OPENMW_USE_SYSTEM_OSG)
     # OSGoS branch 3.6
     include(FetchContent)
     FetchContent_Declare(osg
-        URL https://github.com/OpenMW/osg/archive/01cc2b585c8456a4ff843066b7e1a8715558289f.zip
-        URL_HASH SHA512=9b0a94c1c1d99c767f1857629d43c7a53bfcb74ef760993a121567831e168a1ebbfc10b0c67d7f2241c7b6c6dab2d0e6b876d9f17aca0fabe1a8c86b2279f956
+        URL https://github.com/OpenMW/osg/archive/9b384d5439977784e5cd250ff8ff7966928ddd27.zip
+        URL_HASH SHA512=3d3db3b735658bfe743b82aa2fc1892bc5eb6a7da324ee55f7d0f980472fdcc76c80c4afd2e3361e84e933d088baf12a14c9d48fb21708f42f4d11ba2a82a171
         SOURCE_DIR fetched/osg
     )
     FetchContent_MakeAvailable(osg)
@@ -182,10 +181,8 @@ if (NOT OPENMW_USE_SYSTEM_SQLITE3)
     if (UNIX)
         target_link_libraries(sqlite3 ${CMAKE_DL_LIBS})
     endif()
-    add_library(SQLite::SQLite3 ALIAS sqlite3)
 
-    set(SQLite3_INCLUDE_DIR ${sqlite3_SOURCE_DIR}/ PARENT_SCOPE)
-    set(SQLite3_LIBRARY sqlite3 PARENT_SCOPE)
+    add_library(SQLite3::SQLite3 ALIAS sqlite3)
 endif()
 
 add_subdirectory(smhasher)
@@ -287,8 +284,8 @@ if ((BUILD_COMPONENTS_TESTS OR BUILD_OPENCS_TESTS OR BUILD_OPENMW_TESTS) AND NOT
 
     include(FetchContent)
     FetchContent_Declare(googletest
-        URL https://github.com/google/googletest/archive/refs/tags/release-1.12.1.zip
-        URL_HASH SHA512=1479ea2f3172c622c0ca305f5b2bc45a42941221ec0ac7865e6d6d020ec4d008d952fc64e01a4c5138d7bed4148cf75596f25bb9e9044a98bbbf5662053ea11c
+        URL https://github.com/google/googletest/archive/refs/tags/v1.17.0.zip
+        URL_HASH SHA512=2712d6f6e7f38eb0c8d5ebba957588c70aff68ea433c7aa0b31bde8cacfbe47de908a6e5a99a021969da568f5075daa2c45fca602bbf56711d146d333b76562b
         SOURCE_DIR fetched/googletest
     )
     if (MSVC)

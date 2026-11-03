@@ -8,11 +8,8 @@
 #include <osg/ColorMask>
 #include <osg/Depth>
 #include <osg/Geometry>
-#include <osg/Material>
 #include <osg/OcclusionQueryNode>
 #include <osg/PositionAttitudeTransform>
-#include <osg/TexEnvCombine>
-#include <osg/TexMat>
 #include <osg/Transform>
 #include <osg/observer_ptr>
 
@@ -28,6 +25,7 @@
 #include <components/resource/scenemanager.hpp>
 
 #include <components/sceneutil/depth.hpp>
+#include <components/sceneutil/texmat.hpp>
 #include <components/sceneutil/texturetype.hpp>
 
 #include <components/fallback/fallback.hpp>
@@ -35,6 +33,7 @@
 #include <components/sceneutil/statesetupdater.hpp>
 
 #include "../mwbase/environment.hpp"
+#include "../mwworld/weather.hpp"
 
 #include "renderbin.hpp"
 #include "vismask.hpp"
@@ -91,20 +90,109 @@ namespace
 
 namespace MWRender
 {
-    osg::ref_ptr<osg::Material> createUnlitMaterial(osg::Material::ColorMode colorMode)
+    VFS::Path::NormalizedView WeatherResult::getParticleEffect() const
     {
-        osg::ref_ptr<osg::Material> mat = new osg::Material;
-        mat->setDiffuse(osg::Material::FRONT_AND_BACK, osg::Vec4f(0.f, 0.f, 0.f, 1.f));
-        mat->setAmbient(osg::Material::FRONT_AND_BACK, osg::Vec4f(0.f, 0.f, 0.f, 1.f));
-        mat->setEmission(osg::Material::FRONT_AND_BACK, osg::Vec4f(1.f, 1.f, 1.f, 1.f));
-        mat->setSpecular(osg::Material::FRONT_AND_BACK, osg::Vec4f(0.f, 0.f, 0.f, 0.f));
-        mat->setColorMode(colorMode);
-        return mat;
+        if (mWeather)
+            return mWeather->mParticleEffect;
+        return {};
     }
 
-    osg::ref_ptr<osg::Material> createAlphaTrackingUnlitMaterial()
+    osg::Vec3f WeatherResult::getStormParticleRotation() const
     {
-        return createUnlitMaterial(osg::Material::DIFFUSE);
+        if (mWeather)
+            return mWeather->mStormParticleRotation;
+        return MWWorld::Weather::defaultDirection();
+    }
+
+    VFS::Path::NormalizedView WeatherResult::getRainEffect() const
+    {
+        if (mWeather)
+            return mWeather->mRainEffect;
+        return {};
+    }
+
+    float WeatherResult::getRainSpeed() const
+    {
+        if (mWeather)
+            return mWeather->mRainSpeed;
+        return {};
+    }
+
+    float WeatherResult::getRainEntranceSpeed() const
+    {
+        if (mWeather)
+            return mWeather->mRainEntranceSpeed;
+        return {};
+    }
+
+    ESM::RefId WeatherResult::getAmbientLoopSoundID() const
+    {
+        if (mWeather)
+            return mWeather->mAmbientLoopSoundID;
+        return {};
+    }
+
+    ESM::RefId WeatherResult::getRainLoopSoundID() const
+    {
+        if (mWeather)
+            return mWeather->mRainLoopSoundID;
+        return {};
+    }
+
+    float WeatherResult::getRainDiameter() const
+    {
+        if (mWeather)
+            return mWeather->mRainDiameter;
+        return {};
+    }
+
+    float WeatherResult::getRainMinHeight() const
+    {
+        if (mWeather)
+            return mWeather->mRainMinHeight;
+        return {};
+    }
+
+    float WeatherResult::getRainMaxHeight() const
+    {
+        if (mWeather)
+            return mWeather->mRainMaxHeight;
+        return {};
+    }
+
+    int WeatherResult::getRainMaxRaindrops() const
+    {
+        if (mWeather)
+            return mWeather->mRainMaxRaindrops;
+        return {};
+    }
+
+    bool WeatherResult::getIsStorm() const
+    {
+        if (mWeather)
+            return mWeather->mIsStorm;
+        return {};
+    }
+
+    bool WeatherResult::getOcclusionEnabled() const
+    {
+        if (mWeather)
+            return mWeather->mOcclusionEnabled;
+        return {};
+    }
+
+    bool WeatherResult::getRipplesEnabled() const
+    {
+        if (mWeather)
+            return mWeather->mRipplesEnabled;
+        return {};
+    }
+
+    bool WeatherResult::getUseTorches() const
+    {
+        if (mWeather)
+            return mWeather->mUseTorches;
+        return {};
     }
 
     class SunUpdater : public SceneUtil::StateSetUpdater
@@ -117,13 +205,14 @@ namespace MWRender
         {
         }
 
-        void setDefaults(osg::StateSet* stateset) override { stateset->setAttributeAndModes(createUnlitMaterial()); }
+        void setDefaults(osg::StateSet* stateset) override
+        {
+            stateset->addUniform(new osg::Uniform("opacity", mColor.a()));
+        }
 
         void apply(osg::StateSet* stateset, osg::NodeVisitor*) override
         {
-            osg::Material* mat = static_cast<osg::Material*>(stateset->getAttribute(osg::StateAttribute::MATERIAL));
-            mat->setDiffuse(osg::Material::FRONT_AND_BACK, osg::Vec4f(0, 0, 0, mColor.a()));
-            mat->setEmission(osg::Material::FRONT_AND_BACK, osg::Vec4f(mColor.r(), mColor.g(), mColor.b(), 1));
+            stateset->getUniform("opacity")->set(mColor.a());
         }
     };
 
@@ -184,10 +273,9 @@ namespace MWRender
                 if (visibleRatio < fadeThreshold)
                 {
                     float fade = 1.f - (fadeThreshold - visibleRatio) / fadeThreshold;
-                    osg::ref_ptr<osg::Material> mat(createUnlitMaterial());
-                    mat->setDiffuse(osg::Material::FRONT_AND_BACK, osg::Vec4f(0, 0, 0, fade * mGlareView));
                     stateset = new osg::StateSet;
-                    stateset->setAttributeAndModes(mat, osg::StateAttribute::ON | osg::StateAttribute::OVERRIDE);
+                    stateset->addUniform(new osg::Uniform("opacity", fade * mGlareView),
+                        osg::StateAttribute::ON | osg::StateAttribute::OVERRIDE);
                 }
                 else if (visibleRatio < 1.f)
                 {
@@ -277,12 +365,8 @@ namespace MWRender
             {
                 osg::ref_ptr<osg::StateSet> stateset = new osg::StateSet;
 
-                osg::ref_ptr<osg::Material> mat = createUnlitMaterial();
-
-                mat->setDiffuse(osg::Material::FRONT_AND_BACK, osg::Vec4f(0, 0, 0, fade));
-                mat->setEmission(osg::Material::FRONT_AND_BACK, mColor);
-
-                stateset->setAttributeAndModes(mat);
+                stateset->addUniform(
+                    new osg::Uniform("diffuseColor", osg::Vec4f(mColor.x(), mColor.y(), mColor.z(), fade)));
 
                 cv->pushStateSet(stateset);
                 traverse(node, cv);
@@ -319,92 +403,36 @@ namespace MWRender
 
     struct MoonUpdater : SceneUtil::StateSetUpdater
     {
-        Resource::ImageManager& mImageManager;
-        osg::ref_ptr<osg::Texture2D> mPhaseTex;
-        osg::ref_ptr<osg::Texture2D> mCircleTex;
-        float mTransparency;
-        float mShadowBlend;
-        osg::Vec4f mAtmosphereColor;
-        osg::Vec4f mMoonColor;
-        bool mForceShaders;
+        float mTransparency{ 1.f };
+        float mShadowBlend{ 1.f };
+        osg::Vec4f mAtmosphereColor{ 1.f, 1.f, 1.f, 1.f };
+        osg::Vec4f mMoonColor{ 1.f, 1.f, 1.f, 1.f };
 
-        MoonUpdater(Resource::ImageManager& imageManager, bool forceShaders)
+        MoonUpdater(Resource::ImageManager& imageManager)
             : mImageManager(imageManager)
-            , mPhaseTex()
-            , mCircleTex()
-            , mTransparency(1.0f)
-            , mShadowBlend(1.0f)
-            , mAtmosphereColor(1.0f, 1.0f, 1.0f, 1.0f)
-            , mMoonColor(1.0f, 1.0f, 1.0f, 1.0f)
-            , mForceShaders(forceShaders)
         {
         }
 
         void setDefaults(osg::StateSet* stateset) override
         {
-            if (mForceShaders)
-            {
-                stateset->addUniform(new osg::Uniform("pass", static_cast<int>(Pass::Moon)));
-                stateset->setTextureAttributeAndModes(0, mPhaseTex);
-                stateset->setTextureAttributeAndModes(1, mCircleTex);
-                stateset->setTextureMode(0, GL_TEXTURE_2D, osg::StateAttribute::ON | osg::StateAttribute::OVERRIDE);
-                stateset->setTextureMode(1, GL_TEXTURE_2D, osg::StateAttribute::ON | osg::StateAttribute::OVERRIDE);
-                stateset->addUniform(new osg::Uniform("moonBlend", osg::Vec4f{}));
-                stateset->addUniform(new osg::Uniform("atmosphereFade", osg::Vec4f{}));
-                stateset->addUniform(new osg::Uniform("diffuseMap", 0));
-                stateset->addUniform(new osg::Uniform("maskMap", 1));
-                stateset->setAttributeAndModes(
-                    createUnlitMaterial(), osg::StateAttribute::ON | osg::StateAttribute::OVERRIDE);
-            }
-            else
-            {
-                stateset->setTextureAttributeAndModes(0, mPhaseTex);
-                osg::ref_ptr<osg::TexEnvCombine> texEnv = new osg::TexEnvCombine;
-                texEnv->setCombine_RGB(osg::TexEnvCombine::MODULATE);
-                texEnv->setSource0_RGB(osg::TexEnvCombine::CONSTANT);
-                texEnv->setSource1_RGB(osg::TexEnvCombine::TEXTURE);
-                texEnv->setConstantColor(osg::Vec4f(1.f, 0.f, 0.f, 1.f)); // mShadowBlend * mMoonColor
-                stateset->setTextureAttributeAndModes(0, texEnv);
-
-                stateset->setTextureAttributeAndModes(1, mCircleTex);
-                osg::ref_ptr<osg::TexEnvCombine> texEnv2 = new osg::TexEnvCombine;
-                texEnv2->setCombine_RGB(osg::TexEnvCombine::ADD);
-                texEnv2->setCombine_Alpha(osg::TexEnvCombine::MODULATE);
-                texEnv2->setSource0_Alpha(osg::TexEnvCombine::TEXTURE);
-                texEnv2->setSource1_Alpha(osg::TexEnvCombine::CONSTANT);
-                texEnv2->setSource0_RGB(osg::TexEnvCombine::PREVIOUS);
-                texEnv2->setSource1_RGB(osg::TexEnvCombine::CONSTANT);
-                texEnv2->setConstantColor(osg::Vec4f(0.f, 0.f, 0.f, 1.f)); // mAtmosphereColor.rgb, mTransparency
-                stateset->setTextureAttributeAndModes(1, texEnv2);
-                stateset->setAttributeAndModes(
-                    createUnlitMaterial(), osg::StateAttribute::ON | osg::StateAttribute::OVERRIDE);
-            }
+            stateset->addUniform(new osg::Uniform("pass", static_cast<int>(Pass::Moon)));
+            stateset->setTextureAttribute(0, mPhaseTex);
+            stateset->setTextureAttribute(1, mCircleTex);
+            stateset->addUniform(new osg::Uniform("moonBlend", osg::Vec4f{}));
+            stateset->addUniform(new osg::Uniform("atmosphereFade", osg::Vec4f{}));
+            stateset->addUniform(new osg::Uniform("diffuseMap", 0));
+            stateset->addUniform(new osg::Uniform("maskMap", 1));
+            stateset->setAttributeAndModes(
+                new osg::BlendFunc(osg::BlendFunc::ONE, osg::BlendFunc::ONE_MINUS_SRC_ALPHA), osg::StateAttribute::ON);
         }
 
         void apply(osg::StateSet* stateset, osg::NodeVisitor*) override
         {
-            if (mForceShaders)
-            {
-                stateset->setTextureAttribute(0, mPhaseTex, osg::StateAttribute::ON | osg::StateAttribute::OVERRIDE);
-                stateset->setTextureAttribute(1, mCircleTex, osg::StateAttribute::ON | osg::StateAttribute::OVERRIDE);
-
-                if (auto* uMoonBlend = stateset->getUniform("moonBlend"))
-                    uMoonBlend->set(mMoonColor * mShadowBlend);
-                if (auto* uAtmosphereFade = stateset->getUniform("atmosphereFade"))
-                    uAtmosphereFade->set(
-                        osg::Vec4f(mAtmosphereColor.x(), mAtmosphereColor.y(), mAtmosphereColor.z(), mTransparency));
-            }
-            else
-            {
-                osg::TexEnvCombine* texEnv
-                    = static_cast<osg::TexEnvCombine*>(stateset->getTextureAttribute(0, osg::StateAttribute::TEXENV));
-                texEnv->setConstantColor(mMoonColor * mShadowBlend);
-
-                osg::TexEnvCombine* texEnv2
-                    = static_cast<osg::TexEnvCombine*>(stateset->getTextureAttribute(1, osg::StateAttribute::TEXENV));
-                texEnv2->setConstantColor(
+            if (auto* uMoonBlend = stateset->getUniform("moonBlend"))
+                uMoonBlend->set(mMoonColor * mShadowBlend);
+            if (auto* uAtmosphereFade = stateset->getUniform("atmosphereFade"))
+                uAtmosphereFade->set(
                     osg::Vec4f(mAtmosphereColor.x(), mAtmosphereColor.y(), mAtmosphereColor.z(), mTransparency));
-            }
         }
 
         void setTextures(VFS::Path::NormalizedView phaseTex, VFS::Path::NormalizedView circleTex)
@@ -412,12 +440,19 @@ namespace MWRender
             mPhaseTex = new osg::Texture2D(mImageManager.getImage(phaseTex));
             mPhaseTex->setWrap(osg::Texture::WRAP_S, osg::Texture::CLAMP_TO_EDGE);
             mPhaseTex->setWrap(osg::Texture::WRAP_T, osg::Texture::CLAMP_TO_EDGE);
+            mPhaseTex->setLODBias(-0.75f); // Vanilla doesn't appear to use mipmaps at all
             mCircleTex = new osg::Texture2D(mImageManager.getImage(circleTex));
             mCircleTex->setWrap(osg::Texture::WRAP_S, osg::Texture::CLAMP_TO_EDGE);
             mCircleTex->setWrap(osg::Texture::WRAP_T, osg::Texture::CLAMP_TO_EDGE);
+            mCircleTex->setLODBias(-0.75f);
 
             reset();
         }
+
+    private:
+        Resource::ImageManager& mImageManager;
+        osg::ref_ptr<osg::Texture2D> mPhaseTex;
+        osg::ref_ptr<osg::Texture2D> mCircleTex;
     };
 
     class CameraRelativeTransformCullCallback
@@ -468,21 +503,18 @@ namespace MWRender
 
     void AtmosphereUpdater::setDefaults(osg::StateSet* stateset)
     {
-        stateset->setAttributeAndModes(
-            createAlphaTrackingUnlitMaterial(), osg::StateAttribute::ON | osg::StateAttribute::OVERRIDE);
         stateset->addUniform(new osg::Uniform("pass", static_cast<int>(Pass::Atmosphere)));
+        stateset->addUniform(new osg::Uniform("diffuseColor", mEmissionColor));
     }
 
     void AtmosphereUpdater::apply(osg::StateSet* stateset, osg::NodeVisitor* /*nv*/)
     {
-        osg::Material* mat = static_cast<osg::Material*>(stateset->getAttribute(osg::StateAttribute::MATERIAL));
-        mat->setEmission(osg::Material::FRONT_AND_BACK, mEmissionColor);
+        stateset->getUniform("diffuseColor")->set(mEmissionColor);
     }
 
-    AtmosphereNightUpdater::AtmosphereNightUpdater(Resource::ImageManager* imageManager, bool forceShaders)
+    AtmosphereNightUpdater::AtmosphereNightUpdater(Resource::ImageManager* imageManager)
         : mColor(osg::Vec4f(0, 0, 0, 0))
         , mTexture(new osg::Texture2D(imageManager->getWarningImage()))
-        , mForceShaders(forceShaders)
     {
         mTexture->setWrap(osg::Texture::WRAP_S, osg::Texture::CLAMP_TO_EDGE);
         mTexture->setWrap(osg::Texture::WRAP_T, osg::Texture::CLAMP_TO_EDGE);
@@ -495,42 +527,17 @@ namespace MWRender
 
     void AtmosphereNightUpdater::setDefaults(osg::StateSet* stateset)
     {
-        if (mForceShaders)
-        {
-            stateset->addUniform(new osg::Uniform("opacity", 0.f));
-            stateset->addUniform(new osg::Uniform("pass", static_cast<int>(Pass::Atmosphere_Night)));
-        }
-        else
-        {
-            osg::ref_ptr<osg::TexEnvCombine> texEnv = new osg::TexEnvCombine;
-            texEnv->setCombine_Alpha(osg::TexEnvCombine::MODULATE);
-            texEnv->setSource0_Alpha(osg::TexEnvCombine::PREVIOUS);
-            texEnv->setSource1_Alpha(osg::TexEnvCombine::CONSTANT);
-            texEnv->setCombine_RGB(osg::TexEnvCombine::REPLACE);
-            texEnv->setSource0_RGB(osg::TexEnvCombine::PREVIOUS);
-
-            stateset->setTextureAttributeAndModes(1, mTexture, osg::StateAttribute::ON | osg::StateAttribute::OVERRIDE);
-            stateset->setTextureAttributeAndModes(1, texEnv, osg::StateAttribute::ON | osg::StateAttribute::OVERRIDE);
-        }
+        stateset->addUniform(new osg::Uniform("opacity", 0.f));
+        stateset->addUniform(new osg::Uniform("pass", static_cast<int>(Pass::Atmosphere_Night)));
     }
 
     void AtmosphereNightUpdater::apply(osg::StateSet* stateset, osg::NodeVisitor* /*nv*/)
     {
-        if (mForceShaders)
-        {
-            stateset->getUniform("opacity")->set(mColor.a());
-        }
-        else
-        {
-            osg::TexEnvCombine* texEnv
-                = static_cast<osg::TexEnvCombine*>(stateset->getTextureAttribute(1, osg::StateAttribute::TEXENV));
-            texEnv->setConstantColor(mColor);
-        }
+        stateset->getUniform("opacity")->set(mColor.a());
     }
 
-    CloudUpdater::CloudUpdater(bool forceShaders)
+    CloudUpdater::CloudUpdater()
         : mOpacity(0.f)
-        , mForceShaders(forceShaders)
     {
     }
 
@@ -551,65 +558,28 @@ namespace MWRender
 
     void CloudUpdater::setTextureCoord(float timer)
     {
-        mTexMat = osg::Matrixf::translate(osg::Vec3f(0.f, -timer, 0.f));
+        mTexMat = osg::Matrixf::translate(osg::Vec3f(0.f, timer, 0.f));
     }
 
     void CloudUpdater::setDefaults(osg::StateSet* stateset)
     {
-        stateset->setAttribute(
-            createAlphaTrackingUnlitMaterial(), osg::StateAttribute::ON | osg::StateAttribute::OVERRIDE);
+        SceneUtil::setupTexMatForStateSet(*stateset, 0, osg::Matrixf{});
 
-        osg::ref_ptr<osg::TexMat> texmat = new osg::TexMat;
-        stateset->setTextureAttributeAndModes(0, texmat);
+        stateset->setTextureAttribute(0, mTexture, osg::StateAttribute::ON | osg::StateAttribute::OVERRIDE);
 
-        if (mForceShaders)
-        {
-            stateset->setTextureAttribute(0, mTexture, osg::StateAttribute::ON | osg::StateAttribute::OVERRIDE);
-
-            stateset->addUniform(new osg::Uniform("opacity", 1.f));
-            stateset->addUniform(new osg::Uniform("pass", static_cast<int>(Pass::Clouds)));
-        }
-        else
-        {
-            stateset->setTextureAttributeAndModes(1, texmat);
-            // need to set opacity on a separate texture unit, diffuse alpha is used by the vertex colors already
-            osg::ref_ptr<osg::TexEnvCombine> texEnvCombine = new osg::TexEnvCombine;
-            texEnvCombine->setSource0_RGB(osg::TexEnvCombine::PREVIOUS);
-            texEnvCombine->setSource0_Alpha(osg::TexEnvCombine::PREVIOUS);
-            texEnvCombine->setSource1_Alpha(osg::TexEnvCombine::CONSTANT);
-            texEnvCombine->setConstantColor(osg::Vec4f(1, 1, 1, 1));
-            texEnvCombine->setCombine_Alpha(osg::TexEnvCombine::MODULATE);
-            texEnvCombine->setCombine_RGB(osg::TexEnvCombine::REPLACE);
-
-            stateset->setTextureAttributeAndModes(1, texEnvCombine);
-
-            stateset->setTextureMode(0, GL_TEXTURE_2D, osg::StateAttribute::ON | osg::StateAttribute::OVERRIDE);
-            stateset->setTextureMode(1, GL_TEXTURE_2D, osg::StateAttribute::ON | osg::StateAttribute::OVERRIDE);
-        }
+        stateset->addUniform(new osg::Uniform("opacity", 1.f));
+        stateset->addUniform(new osg::Uniform("pass", static_cast<int>(Pass::Clouds)));
+        stateset->addUniform(new osg::Uniform("diffuseColor", mEmissionColor));
     }
 
     void CloudUpdater::apply(osg::StateSet* stateset, osg::NodeVisitor* nv)
     {
         stateset->setTextureAttribute(0, mTexture, osg::StateAttribute::ON | osg::StateAttribute::OVERRIDE);
 
-        osg::Material* mat = static_cast<osg::Material*>(stateset->getAttribute(osg::StateAttribute::MATERIAL));
-        mat->setEmission(osg::Material::FRONT_AND_BACK, mEmissionColor);
+        SceneUtil::setupTexMatForStateSet(*stateset, 0, mTexMat);
 
-        osg::TexMat* texMat = static_cast<osg::TexMat*>(stateset->getTextureAttribute(0, osg::StateAttribute::TEXMAT));
-        texMat->setMatrix(mTexMat);
-
-        if (mForceShaders)
-        {
-            stateset->getUniform("opacity")->set(mOpacity);
-        }
-        else
-        {
-            stateset->setTextureAttribute(1, mTexture, osg::StateAttribute::ON | osg::StateAttribute::OVERRIDE);
-
-            osg::TexEnvCombine* texEnv
-                = static_cast<osg::TexEnvCombine*>(stateset->getTextureAttribute(1, osg::StateAttribute::TEXENV));
-            texEnv->setConstantColor(osg::Vec4f(1, 1, 1, mOpacity));
-        }
+        stateset->getUniform("opacity")->set(mOpacity);
+        stateset->getUniform("diffuseColor")->set(mEmissionColor);
     }
 
     class SkyStereoStatesetUpdater : public SceneUtil::StateSetUpdater
@@ -773,8 +743,8 @@ namespace MWRender
         sunTex->setWrap(osg::Texture::WRAP_S, osg::Texture::CLAMP_TO_EDGE);
         sunTex->setWrap(osg::Texture::WRAP_T, osg::Texture::CLAMP_TO_EDGE);
 
-        mGeom->getOrCreateStateSet()->setTextureAttributeAndModes(0, sunTex);
-        mGeom->getOrCreateStateSet()->setTextureAttributeAndModes(
+        mGeom->getOrCreateStateSet()->setTextureAttribute(0, sunTex);
+        mGeom->getOrCreateStateSet()->setTextureAttribute(
             0, new SceneUtil::TextureType("diffuseMap"), osg::StateAttribute::ON);
         mGeom->getOrCreateStateSet()->addUniform(new osg::Uniform("pass", static_cast<int>(Pass::Sun)));
 
@@ -783,17 +753,8 @@ namespace MWRender
         osg::StateSet* stateset = queryNode->getOrCreateStateSet();
         stateset->setRenderBinDetails(RenderBin_OcclusionQuery, "RenderBin");
         stateset->setNestRenderBins(false);
-        // Set up alpha testing on the occlusion testing subgraph, that way we can get the occlusion tested fragments to
-        // match the circular shape of the sun
-        if (!sceneManager.getForceShaders())
-        {
-            osg::ref_ptr<osg::AlphaFunc> alphaFunc = new osg::AlphaFunc;
-            alphaFunc->setFunction(osg::AlphaFunc::GREATER, 0.8f);
-            stateset->setAttributeAndModes(alphaFunc);
-        }
-        stateset->setTextureAttributeAndModes(0, sunTex);
-        stateset->setTextureAttributeAndModes(0, new SceneUtil::TextureType("diffuseMap"), osg::StateAttribute::ON);
-        stateset->setAttributeAndModes(createUnlitMaterial());
+        stateset->setTextureAttribute(0, sunTex);
+        stateset->setTextureAttribute(0, new SceneUtil::TextureType("diffuseMap"), osg::StateAttribute::ON);
         stateset->addUniform(new osg::Uniform("pass", static_cast<int>(Pass::Sunflash_Query)));
 
         // Disable writing to the color buffer. We are using this geometry for visibility tests only.
@@ -924,8 +885,8 @@ namespace MWRender
 
         osg::StateSet* stateset = geom->getOrCreateStateSet();
 
-        stateset->setTextureAttributeAndModes(0, tex);
-        stateset->setTextureAttributeAndModes(0, new SceneUtil::TextureType("diffuseMap"), osg::StateAttribute::ON);
+        stateset->setTextureAttribute(0, tex);
+        stateset->setTextureAttribute(0, new SceneUtil::TextureType("diffuseMap"), osg::StateAttribute::ON);
         stateset->setMode(GL_DEPTH_TEST, osg::StateAttribute::OFF);
         stateset->setRenderBinDetails(RenderBin_SunGlare, "RenderBin");
         stateset->setNestRenderBins(false);
@@ -997,7 +958,7 @@ namespace MWRender
         : CelestialBody(parentNode, scaleFactor, 2)
         , mType(type)
         , mPhase(MoonState::Phase::Unspecified)
-        , mUpdater(new MoonUpdater(*sceneManager.getImageManager(), sceneManager.getForceShaders()))
+        , mUpdater(new MoonUpdater(*sceneManager.getImageManager()))
     {
         setPhase(MoonState::Phase::Full);
         setVisible(true);
@@ -1048,27 +1009,7 @@ namespace MWRender
 
     unsigned int Moon::getPhaseInt() const
     {
-        switch (mPhase)
-        {
-            case MoonState::Phase::New:
-                return 0;
-            case MoonState::Phase::WaxingCrescent:
-                return 1;
-            case MoonState::Phase::WaningCrescent:
-                return 1;
-            case MoonState::Phase::FirstQuarter:
-                return 2;
-            case MoonState::Phase::ThirdQuarter:
-                return 2;
-            case MoonState::Phase::WaxingGibbous:
-                return 3;
-            case MoonState::Phase::WaningGibbous:
-                return 3;
-            case MoonState::Phase::Full:
-                return 4;
-            default:
-                return 0;
-        }
+        return MoonState::phaseToInt(mPhase);
     }
 
     void Moon::setPhase(const MoonState::Phase& phase)

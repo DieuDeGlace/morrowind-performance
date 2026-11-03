@@ -569,6 +569,18 @@ to default Morrowind fonts. Check this box if you still prefer original fonts ov
         <source>&lt;br&gt;&lt;b&gt;Could not create directory %0&lt;/b&gt;&lt;br&gt;&lt;br&gt;%1&lt;br&gt;</source>
         <translation>&lt;br&gt;&lt;b&gt;Не удалось создать директорию %0&lt;/b&gt;&lt;br&gt;&lt;br&gt;%1&lt;br&gt;</translation>
     </message>
+    <message>
+        <source>Error writing Launcher configuration backup file</source>
+        <translation>Не удалось сохранить данные в резервную копию файла с настройками лаунчера</translation>
+    </message>
+    <message>
+        <source>Error opening Launcher configuration file</source>
+        <translation>Не удалось открыть файл с настройками лаунчера</translation>
+    </message>
+    <message>
+        <source>Error opening Launcher configuration backup file</source>
+        <translation>Не удалось открыть резервную копию файла с настройками лаунчера</translation>
+    </message>
 </context>
 <context>
     <name>Launcher::SettingsPage</name>
@@ -927,11 +939,9 @@ Logs and settings changed through the launcher and in-game will be saved here.</
     <message>
         <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Normally environment map reflections aren&apos;t affected by lighting, which makes environment-mapped (and thus bump-mapped objects) glow in the dark.
                   Morrowind Code Patch includes an option to remedy that by doing environment-mapping before applying lighting, this is the equivalent of that option.
-                  Affected objects will use shaders.
                   &lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
         <translation>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Обычно освещение не должно влиять на карты окружения, из-за чего объекты с картами окружения (в том числе объекты с рельефными текстурами) светятся в темноте.
                   Morrowind Code Patch предоставляет способ обойти эту проблему, применяя карты окружения перед применением освещения, аналогично этой опции.
-                  Объекты с картами окружения будут использовать шейдеры.
                   &lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</translation>
     </message>
     <message>
@@ -1333,126 +1343,6 @@ Logs and settings changed through the launcher and in-game will be saved here.</
         <translation> ячеек</translation>
     </message>
     <message>
-        <source>Shadows</source>
-        <translation>Тени</translation>
-    </message>
-    <message>
-        <source>Bounds</source>
-        <translation>По границам объектов</translation>
-    </message>
-    <message>
-        <source>Primitives</source>
-        <translation>По примитивам</translation>
-    </message>
-    <message>
-        <source>None</source>
-        <translation>Отключено</translation>
-    </message>
-    <message>
-        <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Type of &quot;compute scene bounds&quot; computation method to be used. Bounds (default) for good balance between performance and shadow quality, primitives for better looking shadows or none for no computation.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
-        <translation>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Определяет используемый тип вычисления границ сцены. Вычисление по границам объектов (по умолчанию) дает хороший баланс между производительностью и качеством теней, вычисление по примитивам улучшает качество теней, а еще можно полностью отключить вычисление.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</translation>
-    </message>
-    <message>
-        <source>Shadow Planes Computation Method</source>
-        <translation>Метод определения границ для теней</translation>
-    </message>
-    <message>
-        <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;64 game units is 1 real life yard or about 0.9 m&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
-        <translation>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;64 игровых единицы соответствуют одному ярду (примерно 0.9 м)&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</translation>
-    </message>
-    <message>
-        <source> unit(s)</source>
-        <translation> единиц(ы)</translation>
-    </message>
-    <message>
-        <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Enable shadows for NPCs and creatures besides the player character. May have a minor performance impact.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
-        <translation>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Включить тени от NPC и существ, кроме персонажа игрока. Может незначительно снизить производительность.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</translation>
-    </message>
-    <message>
-        <source>Enable Actor Shadows</source>
-        <translation>Включить тени от персонажей</translation>
-    </message>
-    <message>
-        <source>512</source>
-        <translation>512</translation>
-    </message>
-    <message>
-        <source>1024</source>
-        <translation>1024</translation>
-    </message>
-    <message>
-        <source>2048</source>
-        <translation>2048</translation>
-    </message>
-    <message>
-        <source>4096</source>
-        <translation>4096</translation>
-    </message>
-    <message>
-        <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;The fraction of the limit above at which shadows begin to gradually fade away.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
-        <translation>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Множитель от расстояния выше, при котором тени начнут плавно угасать.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</translation>
-    </message>
-    <message>
-        <source>Fade Start Multiplier</source>
-        <translation>Множитель начала угасания теней</translation>
-    </message>
-    <message>
-        <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Enable shadows exclusively for the player character. May have a very minor performance impact.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
-        <translation>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Включить тени от персонажа игрока. Может очень незначительно снизить производительность.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</translation>
-    </message>
-    <message>
-        <source>Enable Player Shadows</source>
-        <translation>Включить тени от персонажа игрока</translation>
-    </message>
-    <message>
-        <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;The resolution of each individual shadow map. Increasing it significantly improves shadow quality but may have a minor performance impact.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
-        <translation>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Разрешение отдельных теневых карт. Увеличение значения улучшает качество теней, но может незначительно снизить производительность.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</translation>
-    </message>
-    <message>
-        <source>Shadow Map Resolution</source>
-        <translation>Разрешение теневой карты</translation>
-    </message>
-    <message>
-        <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;The distance from the camera at which shadows completely disappear.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
-        <translation>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Расстояние от камеры, при достижении которого тени полностью исчезают.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</translation>
-    </message>
-    <message>
-        <source>Shadow Distance Limit:</source>
-        <translation>Максимальная дистанция теней:</translation>
-    </message>
-    <message>
-        <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Enable shadows for primarily inanimate objects. May have a significant performance impact.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
-        <translation>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Включить тени от объектов. Может значительно снизить производительность.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</translation>
-    </message>
-    <message>
-        <source>Enable Object Shadows</source>
-        <translation>Включить тени от объектов</translation>
-    </message>
-    <message>
-        <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Due to limitations with Morrowind&apos;s data, only actors can cast shadows indoors, which some might feel is distracting.&lt;/p&gt;&lt;p&gt;Has no effect if actor/player shadows are not enabled.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
-        <translation>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Из-за ограничений в файлах Morrowind, только персонажи могут отбрасывать тени в интерьерах, что может раздражать.&lt;/p&gt;&lt;p&gt;Не имеет эффекта, если тени от персонажей отключены.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</translation>
-    </message>
-    <message>
-        <source>Enable Indoor Shadows</source>
-        <translation>Включить тени в интерьерах</translation>
-    </message>
-    <message>
-        <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Enable shadows for the terrain including distant terrain. May have a significant performance and shadow quality impact.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
-        <translation>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Включить тени от ландшафта (включая удаленный ландшафт). Может значительно снизить производительность и качество теней.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</translation>
-    </message>
-    <message>
-        <source>Enable Terrain Shadows</source>
-        <translation>Включить тени от ландшафта</translation>
-    </message>
-    <message>
-        <source>Lighting</source>
-        <translation>Освещение</translation>
-    </message>
-    <message>
-        <source>Lighting Method</source>
-        <translation>Способ освещения</translation>
-    </message>
-    <message>
         <source>Audio Device</source>
         <translation>Звуковое устройство</translation>
     </message>
@@ -1483,24 +1373,6 @@ Logs and settings changed through the launcher and in-game will be saved here.</
     <message>
         <source>Screenshot Format</source>
         <translation>Формат снимков экрана</translation>
-    </message>
-    <message>
-        <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Set the internal handling of light sources.&lt;/p&gt;
-&lt;p&gt; &quot;Legacy&quot; always uses 8 lights per object. It provides results most similar to Morrowind&apos;s lighting.&lt;/p&gt;
-&lt;p&gt;&quot;Shaders (compatibility)&quot; removes the 8 light limit. This mode also enables lighting on groundcover. It is recommended to use this with older hardware and a light limit closer to 8.&lt;/p&gt;
-&lt;p&gt; &quot;Shaders&quot; carries all of the benefits that &quot;Shaders (compatibility)&quot; does, but uses a modern approach that allows for a higher max lights count with little to no performance penalties on modern hardware.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
-        <translation>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Задает способ обработки источников света.&lt;/p&gt;
-&lt;p&gt; &quot;Устаревший&quot; всегда использует 8 источников света на объект и выдает освещение, наиболее близкое к таковому в оригинальной игре.&lt;/p&gt;
-&lt;p&gt;&quot;Шейдеры (режим совместимости)&quot; убирает ограничение в 8 источников света. Этот режим также позволяет освещению влиять на анимированную траву. Рекомендуется использовать этот режим на устаревшем аппаратном обеспечении и с количеством источников света на объект около 8.&lt;/p&gt;
-&lt;p&gt; &quot;Шейдеры&quot; работает аналогично режиму &quot;Шейдеры (режим совместимости)&quot; но использует более современный подход, позволяющий использовать большее количество источников света с минимальным влиянием на производительность на современном аппаратном обеспечении.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</translation>
-    </message>
-    <message>
-        <source>Legacy</source>
-        <translation>Устаревший</translation>
-    </message>
-    <message>
-        <source>Shaders (compatibility)</source>
-        <translation>Шейдеры (режим совместимости)</translation>
     </message>
     <message>
         <source>In third-person view, use the camera as the sound listener instead of the player character.</source>

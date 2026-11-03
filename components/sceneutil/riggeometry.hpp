@@ -4,6 +4,7 @@
 #include <osg/Geometry>
 #include <osg/Matrixf>
 
+#include <memory>
 #include <string_view>
 
 namespace SceneUtil
@@ -45,14 +46,10 @@ namespace SceneUtil
             osg::Matrixf mInvBindMatrix;
         };
 
-        using VertexWeight = std::pair<unsigned short, float>;
-        using VertexWeights = std::vector<VertexWeight>;
         using BoneWeight = std::pair<size_t, float>;
         using BoneWeights = std::vector<BoneWeight>;
 
         void setBoneInfo(std::vector<BoneInfo>&& bones);
-        // Convert influences in vertex and weight list per bone format
-        void setInfluences(const std::vector<VertexWeights>& influences);
         // Convert influences in bone and weight list per vertex format
         void setInfluences(const std::vector<BoneWeights>& influences);
 
@@ -98,14 +95,14 @@ namespace SceneUtil
         osg::ref_ptr<osg::RefMatrix> mSkinToSkelMatrix;
 
         using VertexList = std::vector<unsigned short>;
-        struct InfluenceData : public osg::Referenced
+        struct InfluenceData
         {
             std::vector<BoneInfo> mBones;
             std::vector<std::pair<BoneWeights, VertexList>> mInfluences;
             osg::Matrixf mTransform;
             std::string mRootBone;
         };
-        osg::ref_ptr<InfluenceData> mData;
+        std::shared_ptr<InfluenceData> mData;
         std::vector<Bone*> mNodes;
 
         unsigned int mLastFrameNumber{ 0 };

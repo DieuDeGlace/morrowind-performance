@@ -190,8 +190,6 @@ namespace MWMechanics
 
         void clear() override;
 
-        bool isAggressive(const MWWorld::Ptr& ptr, const MWWorld::Ptr& target) override;
-
         void resurrect(const MWWorld::Ptr& ptr) override;
 
         bool isCastingSpell(const MWWorld::Ptr& ptr) const override;
@@ -236,7 +234,7 @@ namespace MWMechanics
         bool isRunning(const MWWorld::Ptr& ptr) override;
         bool isSneaking(const MWWorld::Ptr& ptr) override;
 
-        void reportStats(unsigned int frameNumber, osg::Stats& stats) const override;
+        void reportStats(unsigned int frameNumber, Misc::FrameStats& stats) const override;
 
         int getGreetingTimer(const MWWorld::Ptr& ptr) const override;
         float getAngleToPlayer(const MWWorld::Ptr& ptr) const override;

@@ -567,6 +567,18 @@ to default Morrowind fonts. Check this box if you still prefer original fonts ov
         <source>&lt;br&gt;&lt;b&gt;You do not have a game file selected.&lt;/b&gt;&lt;br&gt;&lt;br&gt;OpenMW will not start without a game file selected.&lt;br&gt;</source>
         <translation></translation>
     </message>
+    <message>
+        <source>Error writing Launcher configuration backup file</source>
+        <translation></translation>
+    </message>
+    <message>
+        <source>Error opening Launcher configuration file</source>
+        <translation></translation>
+    </message>
+    <message>
+        <source>Error opening Launcher configuration backup file</source>
+        <translation></translation>
+    </message>
 </context>
 <context>
     <name>Launcher::SettingsPage</name>
@@ -1019,7 +1031,6 @@ Logs and settings changed through the launcher and in-game will be saved here.</
     <message>
         <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Normally environment map reflections aren&apos;t affected by lighting, which makes environment-mapped (and thus bump-mapped objects) glow in the dark.
                   Morrowind Code Patch includes an option to remedy that by doing environment-mapping before applying lighting, this is the equivalent of that option.
-                  Affected objects will use shaders.
                   &lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
         <translation></translation>
     </message>
@@ -1134,141 +1145,6 @@ Logs and settings changed through the launcher and in-game will be saved here.</
     </message>
     <message>
         <source>Enable Post Processing</source>
-        <translation></translation>
-    </message>
-    <message>
-        <source>Shadows</source>
-        <translation></translation>
-    </message>
-    <message>
-        <source>Bounds</source>
-        <translation></translation>
-    </message>
-    <message>
-        <source>Primitives</source>
-        <translation></translation>
-    </message>
-    <message>
-        <source>None</source>
-        <translation></translation>
-    </message>
-    <message>
-        <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Type of &quot;compute scene bounds&quot; computation method to be used. Bounds (default) for good balance between performance and shadow quality, primitives for better looking shadows or none for no computation.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
-        <translation></translation>
-    </message>
-    <message>
-        <source>Shadow Planes Computation Method</source>
-        <translation></translation>
-    </message>
-    <message>
-        <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;64 game units is 1 real life yard or about 0.9 m&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
-        <translation></translation>
-    </message>
-    <message>
-        <source> unit(s)</source>
-        <translation></translation>
-    </message>
-    <message>
-        <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Enable shadows for NPCs and creatures besides the player character. May have a minor performance impact.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
-        <translation></translation>
-    </message>
-    <message>
-        <source>Enable Actor Shadows</source>
-        <translation></translation>
-    </message>
-    <message>
-        <source>512</source>
-        <translation></translation>
-    </message>
-    <message>
-        <source>1024</source>
-        <translation></translation>
-    </message>
-    <message>
-        <source>2048</source>
-        <translation></translation>
-    </message>
-    <message>
-        <source>4096</source>
-        <translation></translation>
-    </message>
-    <message>
-        <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;The fraction of the limit above at which shadows begin to gradually fade away.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
-        <translation></translation>
-    </message>
-    <message>
-        <source>Fade Start Multiplier</source>
-        <translation></translation>
-    </message>
-    <message>
-        <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Enable shadows exclusively for the player character. May have a very minor performance impact.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
-        <translation></translation>
-    </message>
-    <message>
-        <source>Enable Player Shadows</source>
-        <translation></translation>
-    </message>
-    <message>
-        <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;The resolution of each individual shadow map. Increasing it significantly improves shadow quality but may have a minor performance impact.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
-        <translation></translation>
-    </message>
-    <message>
-        <source>Shadow Map Resolution</source>
-        <translation></translation>
-    </message>
-    <message>
-        <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;The distance from the camera at which shadows completely disappear.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
-        <translation></translation>
-    </message>
-    <message>
-        <source>Shadow Distance Limit:</source>
-        <translation></translation>
-    </message>
-    <message>
-        <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Enable shadows for primarily inanimate objects. May have a significant performance impact.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
-        <translation></translation>
-    </message>
-    <message>
-        <source>Enable Object Shadows</source>
-        <translation></translation>
-    </message>
-    <message>
-        <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Due to limitations with Morrowind&apos;s data, only actors can cast shadows indoors, which some might feel is distracting.&lt;/p&gt;&lt;p&gt;Has no effect if actor/player shadows are not enabled.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
-        <translation></translation>
-    </message>
-    <message>
-        <source>Enable Indoor Shadows</source>
-        <translation></translation>
-    </message>
-    <message>
-        <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Enable shadows for the terrain including distant terrain. May have a significant performance and shadow quality impact.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
-        <translation></translation>
-    </message>
-    <message>
-        <source>Enable Terrain Shadows</source>
-        <translation></translation>
-    </message>
-    <message>
-        <source>Lighting</source>
-        <translation></translation>
-    </message>
-    <message>
-        <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Set the internal handling of light sources.&lt;/p&gt;
-&lt;p&gt; &quot;Legacy&quot; always uses 8 lights per object. It provides results most similar to Morrowind&apos;s lighting.&lt;/p&gt;
-&lt;p&gt;&quot;Shaders (compatibility)&quot; removes the 8 light limit. This mode also enables lighting on groundcover. It is recommended to use this with older hardware and a light limit closer to 8.&lt;/p&gt;
-&lt;p&gt; &quot;Shaders&quot; carries all of the benefits that &quot;Shaders (compatibility)&quot; does, but uses a modern approach that allows for a higher max lights count with little to no performance penalties on modern hardware.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
-        <translation></translation>
-    </message>
-    <message>
-        <source>Lighting Method</source>
-        <translation></translation>
-    </message>
-    <message>
-        <source>Legacy</source>
-        <translation></translation>
-    </message>
-    <message>
-        <source>Shaders (compatibility)</source>
         <translation></translation>
     </message>
     <message>

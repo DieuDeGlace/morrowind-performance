@@ -4,9 +4,9 @@
 #include <cstddef>
 #include <optional>
 
-namespace osg
+namespace Misc
 {
-    class Stats;
+    class FrameStats;
 }
 
 namespace DetourNavigator
@@ -46,6 +46,7 @@ namespace DetourNavigator
         std::size_t mPushed = 0;
         std::size_t mProcessing = 0;
         std::size_t mDbGetTileHits = 0;
+        std::size_t mPosted = 0;
         std::optional<DbWorkerStats> mDb;
         NavMeshTilesCacheStats mCache;
     };
@@ -64,7 +65,7 @@ namespace DetourNavigator
         TileCachedRecastMeshManagerStats mRecast;
     };
 
-    void reportStats(const Stats& stats, unsigned int frameNumber, osg::Stats& out);
+    void reportStats(const Stats& stats, unsigned int frameNumber, Misc::FrameStats& out);
 }
 
 #endif

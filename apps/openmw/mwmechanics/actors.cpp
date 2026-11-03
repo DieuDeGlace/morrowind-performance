@@ -50,6 +50,7 @@
 #include "aiwander.hpp"
 #include "attacktype.hpp"
 #include "character.hpp"
+#include "combat.hpp"
 #include "creaturestats.hpp"
 #include "greetingstate.hpp"
 #include "movement.hpp"
@@ -218,7 +219,7 @@ namespace
                 const ESM::Static* const fx
                     = world->getStore().get<ESM::Static>().search(ESM::RefId::stringRefId("VFX_Soul_Trap"));
                 if (fx != nullptr)
-                    world->spawnEffect(Misc::ResourceHelpers::correctMeshPath(VFS::Path::Normalized(fx->mModel)), "",
+                    world->spawnEffect(Misc::ResourceHelpers::correctMeshPath(fx->mModel.getNormalized()), "",
                         creature.getRefData().getPosition().asVec3());
 
                 MWBase::Environment::get().getSoundManager()->playSound3D(
@@ -271,6 +272,9 @@ namespace MWMechanics
         {
             const auto& actorRefData = actor.getRefData();
             if (!actorRefData.getBaseNode())
+                return;
+
+            if (!targetActor.getClass().isActor())
                 return;
 
             if (targetActor.getClass().getCreatureStats(targetActor).isDead())
@@ -383,9 +387,8 @@ namespace MWMechanics
                 stats.setMovementFlag(MWMechanics::CreatureStats::Flag_Run, controls.mRun);
                 stats.setMovementFlag(MWMechanics::CreatureStats::Flag_Sneak, controls.mSneak);
 
-                AttackType attackType = static_cast<AttackType>(controls.mUse);
-                stats.setAttackingOrSpell(attackType != AttackType::NoAttack);
-                stats.setAttackType(attackTypeName(attackType));
+                stats.setAttackingOrSpell(controls.mUse != AttackType::NoAttack);
+                stats.setAttackType(attackTypeName(controls.mUse));
 
                 controls.mChanged = false;
             }
@@ -398,7 +401,10 @@ namespace MWMechanics
                 controls.mJump = jump;
                 controls.mRun = runFlag;
                 controls.mSneak = sneakFlag;
-                controls.mUse = attackingOrSpell ? controls.mUse | 1 : controls.mUse & ~1;
+                if (!attackingOrSpell)
+                    controls.mUse = AttackType::NoAttack;
+                else if (controls.mUse == AttackType::NoAttack)
+                    controls.mUse = AttackType::Any;
             }
             // For the player these controls are still handled by mwinput, so we need to update the values.
             controls.mPitchChange = rotationX;
@@ -637,27 +643,35 @@ namespace MWMechanics
         const std::set<MWWorld::Ptr>& allies1 = cachedAllies.getActorsSidingWith(actor1);
 
         const auto mechanicsManager = MWBase::Environment::get().getMechanicsManager();
-        // If an ally of actor1 has been attacked by actor2 or has attacked actor2, start combat between actor1 and
-        // actor2
-        for (const MWWorld::Ptr& ally : allies1)
+        const ESM::RefId calmEffect
+            = actor1.getClass().isNpc() ? ESM::MagicEffect::CalmHumanoid : ESM::MagicEffect::CalmCreature;
+        if (creatureStats1.getMagicEffects().getOrDefault(calmEffect).getMagnitude() <= 0.f)
         {
-            if (creatureStats1.getAiSequence().isInCombat(ally))
-                continue;
-
-            ESM::RefNum allyHitNum = ally.getClass().getCreatureStats(ally).getHitAttemptActor();
-            if (allyHitNum.isSet() && actor2.getCellRef().getRefNum() == allyHitNum)
+            // If an ally of actor1 has been attacked by actor2 or has attacked actor2, start combat between actor1 and
+            // actor2
+            for (const MWWorld::Ptr& ally : allies1)
             {
-                mechanicsManager->startCombat(actor1, actor2, &cachedAllies.getActorsSidingWith(actor2));
-                // Also set the same hit attempt actor. Otherwise, if fighting the player, they may stop combat
-                // if the player gets out of reach, while the ally would continue combat with the player
-                creatureStats1.setHitAttemptActor(allyHitNum);
-                return;
-            }
+                if (creatureStats1.getAiSequence().isInCombat(ally))
+                    continue;
+                CreatureStats& allyStats = ally.getClass().getCreatureStats(ally);
+                if (allyStats.isDead())
+                    continue;
 
-            // If there's been no attack attempt yet but an ally of actor1 is in combat with actor2, become aggressive
-            // to actor2
-            if (ally.getClass().getCreatureStats(ally).getAiSequence().isInCombat(actor2))
-                aggressive = true;
+                ESM::RefNum allyHitNum = allyStats.getHitAttemptActor();
+                if (allyHitNum.isSet() && actor2.getCellRef().getRefNum() == allyHitNum)
+                {
+                    mechanicsManager->startCombat(actor1, actor2, &cachedAllies.getActorsSidingWith(actor2));
+                    // Also set the same hit attempt actor. Otherwise, if fighting the player, they may stop combat
+                    // if the player gets out of reach, while the ally would continue combat with the player
+                    creatureStats1.setHitAttemptActor(allyHitNum);
+                    return;
+                }
+
+                // If there's been no attack attempt yet but an ally of actor1 is in combat with actor2, become
+                // aggressive to actor2
+                if (allyStats.getAiSequence().isInCombat(actor2))
+                    aggressive = true;
+            }
         }
 
         MWWorld::Ptr player = MWMechanics::getPlayer();
@@ -676,7 +690,10 @@ namespace MWMechanics
                 // Check that an ally of actor2 is also in combat with actor1
                 for (const MWWorld::Ptr& ally2 : allies2)
                 {
-                    if (ally2 != actor2 && ally2.getClass().getCreatureStats(ally2).getAiSequence().isInCombat(actor1))
+                    if (ally2 == actor2)
+                        continue;
+                    CreatureStats& allyStats = ally2.getClass().getCreatureStats(ally2);
+                    if (!allyStats.isDead() && allyStats.getAiSequence().isInCombat(actor1))
                     {
                         mechanicsManager->startCombat(actor1, actor2, &allies2);
                         // Also have actor1's allies start combat
@@ -723,11 +740,11 @@ namespace MWMechanics
                 // Player followers and escorters with high fight should not initiate combat with the player or with
                 // other player followers or escorters
                 if (!isPlayerFollowerOrEscorter)
-                    aggressive = mechanicsManager->isAggressive(actor1, actor2);
+                    aggressive = isAggressive(actor1, actor2);
             }
         }
 
-        // Make guards go aggressive with creatures and werewolves that are in combat
+        // Make guards go aggressive with hostile creatures and werewolves that are in combat
         const auto world = MWBase::Environment::get().getWorld();
         if (!aggressive && actor1.getClass().isClass(actor1, "Guard") && creatureStats2.getAiSequence().isInCombat())
         {
@@ -737,8 +754,19 @@ namespace MWMechanics
             if (sqrDist > fAlarmRadius * fAlarmRadius)
                 return;
 
+            // Check if the guard is under a calm spell
+            if (creatureStats1.getMagicEffects().getOrDefault(ESM::MagicEffect::CalmHumanoid).getMagnitude() > 0)
+                return;
+
+            // Check if the target is immobile or under a calm spell
+            if (!isAggressionCapable(actor2))
+                return;
+
+            // Check if the target is a werewolf or aggressive creature
             bool targetIsCreature = !actor2.getClass().isNpc();
-            if (targetIsCreature || actor2.getClass().getNpcStats(actor2).isWerewolf())
+            bool targetIsAggressiveCreature = targetIsCreature ? getFightTerm(actor2, player) >= 100
+                                                               : actor2.getClass().getNpcStats(actor2).isWerewolf();
+            if (targetIsAggressiveCreature)
             {
                 bool followerOrEscorter = false;
                 // ...unless the creature has allies
@@ -980,8 +1008,9 @@ namespace MWMechanics
         }
 
         const MWBase::World* const world = MWBase::Environment::get().getWorld();
-        const bool knockedOutUnderwater
-            = (isKnockedOut && world->isUnderwater(ptr.getCell(), osg::Vec3f(ptr.getRefData().getPosition().asVec3())));
+        const bool isUnderwater = world->isUnderwater(ptr.getCell(), ptr.getRefData().getPosition().asVec3());
+        const bool walkingOnWater = world->isWalkingOnWater(ptr);
+        const bool knockedOutUnderwater = isKnockedOut && (isUnderwater || walkingOnWater);
         if ((world->isSubmerged(ptr) || knockedOutUnderwater)
             && stats.getMagicEffects().getOrDefault(ESM::MagicEffect::WaterBreathing).getMagnitude() == 0)
         {
@@ -1751,7 +1780,7 @@ namespace MWMechanics
             }
 
             killDeadActors();
-            updateSneaking(playerCharacter, duration);
+            updateSneaking(playerCharacter, duration, cachedAllies);
         }
     }
 
@@ -1846,7 +1875,7 @@ namespace MWMechanics
                 ESM::RefId::stringRefId("VFX_Summon_End"));
             if (fx)
                 MWBase::Environment::get().getWorld()->spawnEffect(
-                    Misc::ResourceHelpers::correctMeshPath(VFS::Path::Normalized(fx->mModel)), "",
+                    Misc::ResourceHelpers::correctMeshPath(fx->mModel.getNormalized()), "",
                     ptr.getRefData().getPosition().asVec3());
 
             // Remove the summoned creature's summoned creatures as well
@@ -1916,23 +1945,26 @@ namespace MWMechanics
         fastForwardAi();
     }
 
-    void Actors::updateSneaking(CharacterController* ctrl, float duration)
+    void Actors::updateSneaking(CharacterController* ctrl, float duration, SidingCache& cachedAllies)
     {
+        const auto windowManager = MWBase::Environment::get().getWindowManager();
         if (!ctrl)
         {
-            MWBase::Environment::get().getWindowManager()->setSneakVisibility(false);
+            windowManager->setSneakVisibility(false);
             return;
         }
 
         const MWWorld::Ptr player = getPlayer();
+        const auto mechanicsManager = MWBase::Environment::get().getMechanicsManager();
 
-        if (!MWBase::Environment::get().getMechanicsManager()->isSneaking(player))
+        if (!mechanicsManager->isSneaking(player))
         {
-            MWBase::Environment::get().getWindowManager()->setSneakVisibility(false);
+            mSneakSkillTimer = 0.f;
+            windowManager->setSneakVisibility(false);
             return;
         }
 
-        MWBase::World* const world = MWBase::Environment::get().getWorld();
+        const auto world = MWBase::Environment::get().getWorld();
         const MWWorld::Store<ESM::GameSetting>& gmst = world->getStore().get<ESM::GameSetting>();
         static const float fSneakUseDist = gmst.find("fSneakUseDist")->mValue.getFloat();
         static const float fSneakUseDelay = gmst.find("fSneakUseDelay")->mValue.getFloat();
@@ -1940,56 +1972,50 @@ namespace MWMechanics
         if (mSneakTimer >= fSneakUseDelay)
             mSneakTimer = 0.f;
 
-        if (mSneakTimer == 0.f)
+        // Set when an NPC is within line of sight and distance, but is still unaware. Used for skill progress.
+        bool avoidedNotice = false;
+        bool detected = false;
+
+        std::vector<MWWorld::Ptr> observers;
+        const osg::Vec3f position(player.getRefData().getPosition().asVec3());
+        const float radius = std::min(fSneakUseDist, static_cast<float>(Settings::game().mActorsProcessingRange));
+        getObjectsInRange(position, radius, observers);
+
+        const auto& sidingActors = cachedAllies.getActorsSidingWith(player);
+
+        for (const MWWorld::Ptr& observer : observers)
         {
-            // Set when an NPC is within line of sight and distance, but is still unaware. Used for skill progress.
-            bool avoidedNotice = false;
-            bool detected = false;
+            if (observer == player || observer.getClass().getCreatureStats(observer).isDead())
+                continue;
 
-            std::vector<MWWorld::Ptr> observers;
-            const osg::Vec3f position(player.getRefData().getPosition().asVec3());
-            const float radius = std::min(fSneakUseDist, static_cast<float>(Settings::game().mActorsProcessingRange));
-            getObjectsInRange(position, radius, observers);
+            if (sidingActors.find(observer) != sidingActors.cend())
+                continue;
 
-            std::set<MWWorld::Ptr> sidingActors;
-            getActorsSidingWith(player, sidingActors);
+            if (!world->getLOS(player, observer))
+                continue;
 
-            for (const MWWorld::Ptr& observer : observers)
+            if (mechanicsManager->awarenessCheck(player, observer))
             {
-                if (observer == player || observer.getClass().getCreatureStats(observer).isDead())
-                    continue;
-
-                if (sidingActors.find(observer) != sidingActors.cend())
-                    continue;
-
-                if (world->getLOS(player, observer))
-                {
-                    if (MWBase::Environment::get().getMechanicsManager()->awarenessCheck(player, observer))
-                    {
-                        detected = true;
-                        avoidedNotice = false;
-                        MWBase::Environment::get().getWindowManager()->setSneakVisibility(false);
-                        break;
-                    }
-                    else
-                    {
-                        avoidedNotice = true;
-                    }
-                }
+                detected = true;
+                avoidedNotice = false;
+                break;
             }
 
-            if (mSneakSkillTimer >= fSneakUseDelay)
-                mSneakSkillTimer = 0.f;
-
-            if (avoidedNotice && mSneakSkillTimer == 0.f)
-                player.getClass().skillUsageSucceeded(player, ESM::Skill::Sneak, ESM::Skill::Sneak_AvoidNotice);
-
-            if (!detected)
-                MWBase::Environment::get().getWindowManager()->setSneakVisibility(true);
+            avoidedNotice = true;
         }
 
+        // Sneaking time accumulates even with no observer in range.
+        mSneakSkillTimer = detected ? 0.f : mSneakSkillTimer + duration;
+        if (avoidedNotice && mSneakSkillTimer > fSneakUseDelay)
+        {
+            mSneakSkillTimer -= fSneakUseDelay;
+            player.getClass().skillUsageSucceeded(player, ESM::Skill::Sneak, ESM::Skill::Sneak_AvoidNotice);
+        }
+
+        if (mSneakTimer == 0.f)
+            windowManager->setSneakVisibility(!detected);
+
         mSneakTimer += duration;
-        mSneakSkillTimer += duration;
     }
 
     int Actors::getHoursToRest(const MWWorld::Ptr& ptr) const
@@ -2285,8 +2311,7 @@ namespace MWMechanics
 
             const bool isFollower = followers.find(neighbor) != followers.end();
 
-            if (stats.getAiSequence().isInCombat(actor)
-                || (MWBase::Environment::get().getMechanicsManager()->isAggressive(neighbor, actor) && !isFollower))
+            if (stats.getAiSequence().isInCombat(actor) || (MWMechanics::isAggressive(neighbor, actor) && !isFollower))
                 list.push_back(neighbor);
         }
         return list;
@@ -2323,6 +2348,7 @@ namespace MWMechanics
         mIndex.clear();
         mActors.clear();
         mDeathCount.clear();
+        mSneakSkillTimer = 0.f;
     }
 
     void Actors::updateMagicEffects(const MWWorld::Ptr& ptr) const
@@ -2404,7 +2430,7 @@ namespace MWMechanics
     const std::set<MWWorld::Ptr>& SidingCache::getActorsSidingWith(const MWWorld::Ptr& actor)
     {
         // If we have already found actor's allies, use the cache
-        auto search = mCache.find(actor);
+        const auto search = mCache.find(actor);
         if (search != mCache.end())
             return search->second;
         std::set<MWWorld::Ptr>& out = mCache[actor];
@@ -2422,9 +2448,7 @@ namespace MWMechanics
         {
             if (iter == actor)
                 continue;
-            search = mCache.find(iter);
-            if (search == mCache.end())
-                mCache.emplace(iter, out);
+            mCache[iter].insert(out.begin(), out.end());
         }
         return out;
     }

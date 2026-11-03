@@ -561,7 +561,7 @@ do domyślnych czcionek Morrowind. Zaznacz to pole, jeśli nadal wolisz oryginal
     </message>
     <message>
         <source>Error writing Launcher configuration file</source>
-        <translation>Błąd zapisu pliku konfiguracyjnego programu uruchamiącego</translation>
+        <translation>Błąd zapisu pliku konfiguracyjnego programu uruchamiającego</translation>
     </message>
     <message>
         <source>No game file selected</source>
@@ -570,6 +570,18 @@ do domyślnych czcionek Morrowind. Zaznacz to pole, jeśli nadal wolisz oryginal
     <message>
         <source>&lt;br&gt;&lt;b&gt;You do not have a game file selected.&lt;/b&gt;&lt;br&gt;&lt;br&gt;OpenMW will not start without a game file selected.&lt;br&gt;</source>
         <translation>&lt;br&gt;&lt;b&gt;Nie wybrano pliku gry.&lt;/b&gt;&lt;br&gt;&lt;br&gt;OpenMW nie uruchomi się bez wybranego pliku gry.&lt;br&gt;</translation>
+    </message>
+    <message>
+        <source>Error writing Launcher configuration backup file</source>
+        <translation>Błąd zapisu kopii zapasowej pliku konfiguracyjnego programu uruchamiającego</translation>
+    </message>
+    <message>
+        <source>Error opening Launcher configuration file</source>
+        <translation>Wystąpił błąd podczas otwierania pliku konfiguracyjnego programu uruchamiającego</translation>
+    </message>
+    <message>
+        <source>Error opening Launcher configuration backup file</source>
+        <translation>Wystąpił błąd podczas otwierania kopii zapasowej pliku konfiguracyjnego programu uruchamiającego</translation>
     </message>
 </context>
 <context>
@@ -604,7 +616,7 @@ Logi i ustawienia zmienione za pomocą programu uruchamiającego i w grze będą
         <source>Global config directory used because local directory did not contain an openmw.cfg.
 Logs and settings changed through the launcher and in-game will be saved here.
 This is typically a symptom of a broken OpenMW installation or bad package.</source>
-        <translation>Użyto globalnego katalogu konfiguracyjnego, ponieważ lokalny katalog nie zawierał pliku openmw.cfg. 
+        <translation>Użyto globalnego katalogu konfiguracyjnego, ponieważ lokalny katalog nie zawierał pliku openmw.cfg.
 Logi i ustawienia zmienione za pomocą programu uruchamiającego i w grze zostaną zapisane w tym miejscu.
 Jest to zazwyczaj objaw uszkodzonej instalacji OpenMW lub wadliwego pakietu.</translation>
     </message>
@@ -1038,11 +1050,9 @@ Logi i ustawienia zmienione za pomocą programu uruchamiającego i w grze zostan
     <message>
         <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Normally environment map reflections aren&apos;t affected by lighting, which makes environment-mapped (and thus bump-mapped objects) glow in the dark.
                   Morrowind Code Patch includes an option to remedy that by doing environment-mapping before applying lighting, this is the equivalent of that option.
-                  Affected objects will use shaders.
                   &lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
-        <translation>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Zazwyczaj odbicia z mapy środowiska nie są wpływane przez oświetlenie, co powoduje, że obiekty z mapą środowiska (a więc również z mapą wypukłości) świecą w ciemności. 
+        <translation>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Zazwyczaj odbicia z mapy środowiska nie są wpływane przez oświetlenie, co powoduje, że obiekty z mapą środowiska (a więc również z mapą wypukłości) świecą w ciemności.
                   Morrowind Code Patch zawiera opcję rozwiązującą ten problem przez nakładanie mapy środowiska przed zastosowaniem oświetlenia -- to jest jej odpowiednik.
-                  Obiekty objęte tą opcją będą korzystać z shaderów.
                   &lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</translation>
     </message>
     <message>
@@ -1158,144 +1168,6 @@ Logi i ustawienia zmienione za pomocą programu uruchamiającego i w grze zostan
     <message>
         <source>Enable Post Processing</source>
         <translation>Włącz post-processing</translation>
-    </message>
-    <message>
-        <source>Shadows</source>
-        <translation>Cienie</translation>
-    </message>
-    <message>
-        <source>Bounds</source>
-        <translation>Granice</translation>
-    </message>
-    <message>
-        <source>Primitives</source>
-        <translation>Elementy podstawowe</translation>
-    </message>
-    <message>
-        <source>None</source>
-        <translation>Brak</translation>
-    </message>
-    <message>
-        <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Type of &quot;compute scene bounds&quot; computation method to be used. Bounds (default) for good balance between performance and shadow quality, primitives for better looking shadows or none for no computation.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
-        <translation>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Typ metody obliczania &quot;granicy sceny&quot; do użycia. &quot;Granice&quot; (domyślnie) zapewniają dobrą równowagę między wydajnością a jakością cieni, &quot;elementy podstawowe&quot; dla lepszego wyglądu cieni, a &quot;brak&quot; oznacza brak obliczeń.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</translation>
-    </message>
-    <message>
-        <source>Shadow Planes Computation Method</source>
-        <translation>Metoda obliczania płaszczyzn cieni</translation>
-    </message>
-    <message>
-        <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;64 game units is 1 real life yard or about 0.9 m&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
-        <translation>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;64 jednostki gry to 1 jard w rzeczywistości, czyli około 0,9 m.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</translation>
-    </message>
-    <message>
-        <source> unit(s)</source>
-        <translation> jednostka(-i)</translation>
-    </message>
-    <message>
-        <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Enable shadows for NPCs and creatures besides the player character. May have a minor performance impact.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
-        <translation>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Włącz cienie dla NPC oraz stworzeń oprócz postaci gracza. Może mieć niewielki wpływ na wydajność.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</translation>
-    </message>
-    <message>
-        <source>Enable Actor Shadows</source>
-        <translation>Włącz cienie aktorów</translation>
-    </message>
-    <message>
-        <source>512</source>
-        <translation>512</translation>
-    </message>
-    <message>
-        <source>1024</source>
-        <translation>1024</translation>
-    </message>
-    <message>
-        <source>2048</source>
-        <translation>2048</translation>
-    </message>
-    <message>
-        <source>4096</source>
-        <translation>4096</translation>
-    </message>
-    <message>
-        <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;The fraction of the limit above at which shadows begin to gradually fade away.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
-        <translation>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Ułamek powyższego limitu, przy którym cienie zaczynają stopniowo zanikać.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</translation>
-    </message>
-    <message>
-        <source>Fade Start Multiplier</source>
-        <translation>Współczynnik rozpoczęcia zanikania</translation>
-    </message>
-    <message>
-        <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Enable shadows exclusively for the player character. May have a very minor performance impact.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
-        <translation>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Włącz cienie wyłącznie dla postaci gracza. Może mieć bardzo niewielki wpływ na wydajność.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</translation>
-    </message>
-    <message>
-        <source>Enable Player Shadows</source>
-        <translation>Włącz cienie gracza</translation>
-    </message>
-    <message>
-        <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;The resolution of each individual shadow map. Increasing it significantly improves shadow quality but may have a minor performance impact.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
-        <translation>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Rozdzielczość każdej indywidualnej mapy cieni. Jej zwiększenie znacznie poprawia jakość cieni, ale może mieć niewielki wpływ na wydajność.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</translation>
-    </message>
-    <message>
-        <source>Shadow Map Resolution</source>
-        <translation>Rozdzielczość mapy cieni</translation>
-    </message>
-    <message>
-        <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;The distance from the camera at which shadows completely disappear.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
-        <translation>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Dystans od kamery, przy której cienie całkowicie znikają.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</translation>
-    </message>
-    <message>
-        <source>Shadow Distance Limit:</source>
-        <translation>Limit odległości cieni:</translation>
-    </message>
-    <message>
-        <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Enable shadows for primarily inanimate objects. May have a significant performance impact.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
-        <translation>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Włącz cienie dla głównie nieożywionych. Może mieć znaczący wpływ a wydajność.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</translation>
-    </message>
-    <message>
-        <source>Enable Object Shadows</source>
-        <translation>Włącz cienie obiektów</translation>
-    </message>
-    <message>
-        <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Due to limitations with Morrowind&apos;s data, only actors can cast shadows indoors, which some might feel is distracting.&lt;/p&gt;&lt;p&gt;Has no effect if actor/player shadows are not enabled.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
-        <translation>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Z powodu ograniczeń danych Morrowind, tylko postacie mogą rzucać cienie wewnątrz budynków, co niektórych może rozpraszać.&lt;/p&gt;&lt;p&gt;Nie ma efektu, jeśli cienie postaci/gracza nie są włączone.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</translation>
-    </message>
-    <message>
-        <source>Enable Indoor Shadows</source>
-        <translation>Włącz cienie wewnątrz budynków</translation>
-    </message>
-    <message>
-        <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Enable shadows for the terrain including distant terrain. May have a significant performance and shadow quality impact.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
-        <translation>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Włącz cienie dla terenu, w tym odległego terenu. Może mieć znaczący wpływ na wydajność i jakość cieni.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</translation>
-    </message>
-    <message>
-        <source>Enable Terrain Shadows</source>
-        <translation>Włącz cienie terenu</translation>
-    </message>
-    <message>
-        <source>Lighting</source>
-        <translation>Oświetlenie</translation>
-    </message>
-    <message>
-        <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Set the internal handling of light sources.&lt;/p&gt;
-&lt;p&gt; &quot;Legacy&quot; always uses 8 lights per object. It provides results most similar to Morrowind&apos;s lighting.&lt;/p&gt;
-&lt;p&gt;&quot;Shaders (compatibility)&quot; removes the 8 light limit. This mode also enables lighting on groundcover. It is recommended to use this with older hardware and a light limit closer to 8.&lt;/p&gt;
-&lt;p&gt; &quot;Shaders&quot; carries all of the benefits that &quot;Shaders (compatibility)&quot; does, but uses a modern approach that allows for a higher max lights count with little to no performance penalties on modern hardware.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
-        <translation>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Ustaw wewnętrzne zarządzanie źródłami światła.&lt;/p&gt;
-&lt;p&gt;&quot;Tryb klasyczny&quot; zawsze używa 8 świateł na obiekt. Zapewnia efekty najbardziej zbliżone do oświetlenia w Morrowind.&lt;/p&gt;
-&lt;p&gt;&quot;Shadery (kompatybilność)&quot; usuwa limit 8 świateł. Ten tryb włącza także oświetlenie na pokrywie terenu. Zaleca się używać go na starszym sprzęcie z limitem świateł bliskim 8.&lt;/p&gt;
-&lt;p&gt;„Shadery” zawiera wszystkie zalety trybu &quot;Shadery (kompatybilność)&quot;, ale stosuje nowoczesne podejście pozwalające na większą maksymalną liczbę świateł bez lub z minimalnymi spadkami wydajności na nowoczesnym sprzęcie.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</translation>
-    </message>
-    <message>
-        <source>Lighting Method</source>
-        <translation>Metoda oświetlenia</translation>
-    </message>
-    <message>
-        <source>Legacy</source>
-        <translation>Tryb klasyczny</translation>
-    </message>
-    <message>
-        <source>Shaders (compatibility)</source>
-        <translation>Shadery (kompatybilność)</translation>
     </message>
     <message>
         <source>Audio</source>
