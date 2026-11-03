@@ -90,6 +90,7 @@ file(GLOB UNITTEST_SRC_FILES
 
     vfs/testpathutil.cpp
 
+    sceneutil/occlusionculling.cpp
     sceneutil/osgacontroller.cpp
     sceneutil/userdata.cpp
 
