@@ -69,6 +69,7 @@ try {
     $installedDeps = Join-Path $vcpkgRoot 'installed/x64-windows'
     $cmakeArgs = @('-S', $repoRoot, '-B', $buildDir, '-G', 'Ninja',
         "-DCMAKE_MAKE_PROGRAM=$ninja", '-DCMAKE_BUILD_TYPE=Release',
+        '-DCMAKE_JOB_POOLS=release_link=2', '-DCMAKE_JOB_POOL_LINK=release_link',
         "-DCMAKE_TOOLCHAIN_FILE=$vcpkgRoot/scripts/buildsystems/vcpkg.cmake",
         "-DCMAKE_PREFIX_PATH=$qtRoot", "-DLuaJit_INCLUDE_DIR=$installedDeps/include/luajit",
         "-DLuaJit_LIBRARY=$installedDeps/lib/lua51.lib", '-DOPENMW_USE_SYSTEM_SQLITE3=OFF',
