@@ -30,6 +30,30 @@ namespace Settings
             }
         };
 
+        TEST_F(SettingsValuesTest, softShadowRadiusDefaultsToOriginalWidth)
+        {
+            Index index;
+            Values values(index);
+            EXPECT_FLOAT_EQ(values.mShadows.mSoftShadowRadius.get(), 1.0f);
+            EXPECT_FALSE(values.mShadows.mSoftShadows.get());
+        }
+
+        TEST_F(SettingsValuesTest, softShadowRadiusClampsTooSmallValues)
+        {
+            Manager::mUserSettings[{ "Shadows", "soft shadow radius" }] = "-2";
+            Index index;
+            Values values(index);
+            EXPECT_FLOAT_EQ(values.mShadows.mSoftShadowRadius.get(), 0.5f);
+        }
+
+        TEST_F(SettingsValuesTest, softShadowRadiusClampsTooLargeValues)
+        {
+            Manager::mUserSettings[{ "Shadows", "soft shadow radius" }] = "100";
+            Index index;
+            Values values(index);
+            EXPECT_FLOAT_EQ(values.mShadows.mSoftShadowRadius.get(), 3.0f);
+        }
+
         TEST_F(SettingsValuesTest, shouldLoadFromSettingsManager)
         {
             Index index;

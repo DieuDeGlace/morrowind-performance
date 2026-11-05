@@ -826,6 +826,27 @@
                                 </Widget>
                             </Widget>
 
+                            <!-- Soft shadow width -->
+                            <Widget type="AutoSizedTextBox" skin="SandText" name="ShadowSoftnessText">
+                                <UserString key="ToolTipType" value="Layout"/>
+                                <UserString key="ToolTipLayout" value="TextToolTip"/>
+                                <UserString key="Caption_Text" value="#{OMWEngine:ShadowSoftnessTooltip}"/>
+                            </Widget>
+                            <Widget type="ScrollBar" skin="MW_ScrollBarH" position="0 0 0 18" align="Top HStretch">
+                                <Property key="VerticalAlignment" value="false"/>
+                                <Property key="Range" value="26"/>
+                                <Property key="Page" value="1"/>
+                                <Property key="WheelPage" value="1"/>
+                                <UserString key="SettingType" value="Slider"/>
+                                <UserString key="SettingCategory" value="Shadows"/>
+                                <UserString key="SettingName" value="soft shadow radius"/>
+                                <UserString key="SettingValueType" value="Float"/>
+                                <UserString key="SettingMin" value="0.5"/>
+                                <UserString key="SettingMax" value="3.0"/>
+                                <UserString key="SettingLabelWidget" value="ShadowSoftnessText"/>
+                                <UserString key="SettingLabelCaption" value="ShadowSoftnessValue"/>
+                            </Widget>
+
                             <!-- Shadow Update Interval -->
                             <Widget type="HBox" align="Stretch">
                                 <UserString key="HStretch" value="true"/>

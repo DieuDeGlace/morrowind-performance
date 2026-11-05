@@ -21,3 +21,20 @@ powershell -ExecutionPolicy Bypass -File CI\build-windows-release.ps1 -Jobs 4
 The script installs the upstream dependency versions into `deps`, verifies the vcpkg archive against the official SHA-512 manifest, configures x64 `Release` with link-time optimization, builds all desktop programs and the three upstream test suites, runs those suites, stages the portable program, runs its version command, and writes a ZIP and SHA-256 checksum into `release`.
 
 The Windows Performance Release workflow provides the same build through GitHub Actions. Game data is not included. A Release configuration is an optimized build of this development fork, not an official stable OpenMW release. Testing with real game data and target GPUs is required to assess visual correctness and performance.
+
+
+## Adjustable soft shadows (performance release 2)
+
+In the PC game open Options → Video → Shadows, enable Soft Shadows, then set
+Soft Shadow Width. The 0.5–3.0 multiplier is independent of map resolution;
+1.0 preserves the existing soft filter. It updates through the normal Shadows
+settings handler. The eight-sample count and all culling/shadow-reuse features
+are retained. Higher widths may reduce small contact shadows.
+
+For settings.cfg, merge into the existing [Shadows] section:
+
+    soft shadows = true
+    soft shadow radius = 1.5
+
+This setting belongs to the performance build; stock OpenMW 0.51 requires this
+build or its own compatible shader modification. Existing defaults remain.

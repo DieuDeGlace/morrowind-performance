@@ -110,6 +110,11 @@ float getFilteredShadowing(sampler2DShadow tex, vec4 coord, mat4 matrix)
     offs_y *= penumbra;
 #endif
 
+    // Adjustable footprint, independent of shadow-map resolution and the
+    // preserved eight-sample quality. Radius 1.0 is the original filter.
+    offs_x *= @softShadowRadius;
+    offs_y *= @softShadowRadius;
+
     // ---- Sample shadow map with rotated spiral disc ----
     float rotation = getIGNRotation();
     float c = cos(rotation);

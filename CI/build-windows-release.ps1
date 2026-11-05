@@ -105,7 +105,7 @@ try {
         [regex]::Match($cmakeSource, "set\(OPENMW_VERSION_$part (\d+)\)").Groups[1].Value
     }
     $version = $versionParts -join '.'
-    $packageName = "OpenMW-$version-performance-Windows-x64"
+    $packageName = "OpenMW-$version-performance.2-Windows-x64"
     $releaseRoot = Join-Path $repoRoot 'release'
     $packageDir = Join-Path $releaseRoot $packageName
     & $cmake --install $buildDir --prefix $packageDir --config Release
