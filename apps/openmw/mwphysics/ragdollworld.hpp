@@ -2,9 +2,12 @@
 #define OPENMW_MWPHYSICS_RAGDOLLWORLD_HPP
 
 #include <cstdint>
+#include <memory>
 #include <vector>
 
 #include <BulletDynamics/Dynamics/btDiscreteDynamicsWorld.h>
+
+class btPoint2PointConstraint;
 
 namespace MWPhysics
 {
@@ -22,6 +25,15 @@ namespace MWPhysics
 
         RagdollWorld(btDispatcher* dispatcher, btBroadphaseInterface* broadphase,
             btConstraintSolver* solver, btCollisionConfiguration* configuration);
+        ~RagdollWorld() override;
+
+        bool hasGrab() const { return mGrab != nullptr; }
+        bool isGrabbed(const Island& rig) const { return mGrabbedRig == &rig; }
+        void grab(Island& rig, btRigidBody& part, const btVector3& point, const btVector3& eye,
+            const btQuaternion& view, btScalar impulseLimit);
+        void moveGrab(const btVector3& eye, const btQuaternion& view, btScalar reach, float dt);
+        btVector3 clipGrabTarget(const btVector3& eye, const btVector3& target) const;
+        void releaseGrab();
 
         bool hasCapacity() const;
         void addRig(Island& rig);
@@ -34,6 +46,10 @@ namespace MWPhysics
     private:
         void updateAabbs() override;
 
+        std::unique_ptr<btPoint2PointConstraint> mGrab;
+        Island* mGrabbedRig = nullptr;
+        btVector3 mGrabViewOffset;
+        btVector3 mGrabStart;
         unsigned mRigCount = 0;
         std::vector<Island*> mAwakeRigs;
         std::uint64_t mStepCount = 0;

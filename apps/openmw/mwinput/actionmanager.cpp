@@ -20,6 +20,8 @@
 
 #include "../mwmechanics/actorutil.hpp"
 #include "../mwmechanics/npcstats.hpp"
+#include "../mwphysics/ragdoll.hpp"
+#include "../mwphysics/raycasting.hpp"
 
 #include "actions.hpp"
 #include "bindingsmanager.hpp"
@@ -36,6 +38,13 @@ namespace MWInput
 
     void ActionManager::update(float dt)
     {
+        if (mCorpseActivation)
+        {
+            updateCorpseActivation(dt);
+            resetIdleTime();
+            return;
+        }
+
         if (mBindingsManager->actionIsActive(A_MoveForward) || mBindingsManager->actionIsActive(A_MoveBackward)
             || mBindingsManager->actionIsActive(A_MoveLeft) || mBindingsManager->actionIsActive(A_MoveRight)
             || mBindingsManager->actionIsActive(A_Jump) || mBindingsManager->actionIsActive(A_Sneak)
@@ -257,9 +266,76 @@ namespace MWInput
         }
         else if (MWBase::Environment::get().getInputManager()->getControlSwitch("playercontrols"))
         {
-            MWWorld::Player& player = MWBase::Environment::get().getWorld()->getPlayer();
-            player.activate();
+            const auto world = MWBase::Environment::get().getWorld();
+            MWWorld::Player& player = world->getPlayer();
+            if (!player.canActivate() || mCorpseActivation)
+                return;
+
+            const auto focus = world->getFocusObject();
+            if (MWPhysics::Ragdoll::canGrab(focus))
+            {
+                mCorpseActivation = focus.getCellRef().getRefNum();
+                return;
+            }
+            player.activate(focus);
         }
+    }
+
+    void ActionManager::updateCorpseActivation(float dt)
+    {
+        const auto& environment = MWBase::Environment::get();
+        const auto world = environment.getWorld();
+        auto& player = world->getPlayer();
+        if (!player.canActivate() || player.wasTeleported()
+            || !environment.getInputManager()->getControlSwitch("playercontrols"))
+        {
+            cancelCorpseActivation();
+            return;
+        }
+
+        constexpr float holdThreshold = .35f;
+        const bool held = mBindingsManager->getActionValue(A_Activate) > .6f;
+        if (held && mGrabAttempted)
+        {
+            MWPhysics::Ragdoll::moveGrab(player.getPlayer(), dt);
+            return;
+        }
+        if (held)
+        {
+            mActivateHoldTime += dt;
+            if (mActivateHoldTime < holdThreshold)
+                return;
+        }
+        else if (mGrabAttempted)
+        {
+            cancelCorpseActivation();
+            return;
+        }
+
+        const auto focus = world->getFocusObject();
+        const bool sameTarget = !focus.isEmpty() && focus.getCellRef().getRefNum() == *mCorpseActivation;
+        if (!held)
+        {
+            cancelCorpseActivation();
+            if (sameTarget)
+                player.activate(focus);
+            return;
+        }
+
+        mGrabAttempted = true;
+        if (sameTarget)
+            MWPhysics::Ragdoll::grab(player.getPlayer(), focus, world->getFocusRay().mHitPos);
+    }
+
+    void ActionManager::cancelCorpseActivation()
+    {
+        if (!mCorpseActivation)
+            return;
+        if (mGrabAttempted)
+            MWPhysics::Ragdoll::releaseGrab();
+        mCorpseActivation.reset();
+        mActivateHoldTime = 0.f;
+        mGrabAttempted = false;
     }
 
     bool ActionManager::isSneaking() const

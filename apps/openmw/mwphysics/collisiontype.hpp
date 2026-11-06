@@ -18,7 +18,8 @@ namespace MWPhysics
             | CollisionType_Door | CollisionType_Projectile | CollisionType_Water,
         CollisionType_CameraOnly = 1 << 6,
         CollisionType_VisualOnly = 1 << 7,
-        CollisionType_Ragdoll = 1 << 8
+        CollisionType_Ragdoll = 1 << 8,
+        CollisionType_RagdollScenery = CollisionType_World | CollisionType_Door | CollisionType_HeightMap
     };
 
 }

@@ -9,7 +9,10 @@ handles other skeletons.
 The rig parts use the original skeleton and a shared Bullet solver. They
 collide with terrain, doors and world geometry. Player melee can wake a
 settled corpse and push the part it reaches. Bodies retain their inventory
-and ordinary activation. Joint poses are session-only.
+and ordinary activation. Tap Activate to loot a supported corpse. Hold
+Activate for about a third of a second to grab a limb, then walk or look
+around to drag it. Releasing Activate drops the body. Joint poses are
+session-only.
 
 The solver takes fixed 120 Hz steps while bodies are awake and stops when
 the last rig settles. It caps simultaneous awake rigs at 12 and retained
@@ -29,3 +32,8 @@ player melee swings, then stages five exterior creatures and swings a
 sword at a guar. The log records rig creation, articulation, settling
 and hit location. The same replay with OPENMW_RAGDOLLS=0 exercises the
 original death path.
+
+For an input-driven drag replay, use ragdoll-drag-smoke.txt instead.
+Wait for RAGDOLL_TEST_DRAG_READY, tap Activate once, then hold Activate
+and move. The log records the tap, the grabbed body part and the distance
+it moved before release.

@@ -22,7 +22,10 @@
 
 #include "../mwbase/environment.hpp"
 #include "../mwbase/world.hpp"
-#include "../mwrender/animation.hpp"
+#include "../mwmechanics/creaturestats.hpp"
+#include "../mwrender/actoranimation.hpp"
+#include "../mwrender/camera.hpp"
+#include "../mwworld/class.hpp"
 
 #include "physicssystem.hpp"
 #include "ragdollworld.hpp"
@@ -127,7 +130,48 @@ namespace MWPhysics
             { "Bone23", "Bone24", 15, 2.f, 1.f, 1.1f, .25f, .2f },
         };
 
-        constexpr int sScenery = CollisionType_World | CollisionType_Door | CollisionType_HeightMap;
+        struct PartHit
+        {
+            btRigidBody* mBody = nullptr;
+            btVector3 mPoint;
+        };
+
+        PartHit findPart(RagdollWorld& world, const btVector3& from, const btVector3& to, btScalar radius)
+        {
+            const btSphereShape sweep(radius);
+            const auto rotation = btQuaternion::getIdentity();
+            btCollisionWorld::ClosestConvexResultCallback hit(from, to);
+            hit.m_collisionFilterGroup = CollisionType_Actor | CollisionType_World;
+            hit.m_collisionFilterMask = CollisionType_RagdollScenery | CollisionType_Ragdoll;
+            world.convexSweepTest(&sweep, btTransform(rotation, from), btTransform(rotation, to), hit);
+            if (!hit.hasHit()
+                || hit.m_hitCollisionObject->getBroadphaseHandle()->m_collisionFilterGroup != CollisionType_Ragdoll)
+                return {};
+            return { btRigidBody::upcast(const_cast<btCollisionObject*>(hit.m_hitCollisionObject)), hit.m_hitPointWorld };
+        }
+
+        Ragdoll* grabbableCorpse(const MWWorld::Ptr& corpse)
+        {
+            if (!Ragdoll::enabled() || corpse.isEmpty() || !corpse.getClass().isActor()
+                || !corpse.getClass().getCreatureStats(corpse).isDead())
+                return nullptr;
+            const auto* animation = dynamic_cast<const MWRender::ActorAnimation*>(
+                MWBase::Environment::get().getWorld()->getAnimation(corpse));
+            return animation ? animation->getRagdoll() : nullptr;
+        }
+
+        osg::Vec3f playerEye(MWBase::World& world, const MWWorld::Ptr& player)
+        {
+            return player.getRefData().getPosition().asVec3()
+                + osg::Vec3f(0.f, 0.f, 1.7f * world.getHalfExtents(player, true).z());
+        }
+
+        osg::Vec3f grabEye(MWBase::World& world, const MWWorld::Ptr& player, const MWRender::Camera& camera)
+        {
+            if (camera.getMode() == MWRender::Camera::Mode::FirstPerson)
+                return osg::Vec3f(camera.getPosition());
+            return playerEye(world, player);
+        }
 
         osg::Matrixf toMatrix(const btTransform& transform)
         {
@@ -159,11 +203,11 @@ namespace MWPhysics
             if (!mRegistered)
                 return;
             mPhysics.withRagdollWorld([this](RagdollWorld& world) {
+                world.removeRig(*this);
                 for (const auto& joint : mJoints)
                     world.removeConstraint(joint.get());
                 for (const auto& part : mParts)
                     world.removeRigidBody(part.mBody.get());
-                world.removeRig(*this);
             });
         }
 
@@ -271,6 +315,8 @@ namespace MWPhysics
                 const osg::Vec3f segment = part.mEnd - pivot;
                 const float length = segment.length();
                 const float cylinder = std::max(0.f, length - 2.f * radius);
+                part.mRadius = radius;
+                part.mHalfLength = cylinder * .5f;
                 btQuaternion rotation = btQuaternion::getIdentity();
                 if (cylinder > 0.f)
                 {
@@ -323,7 +369,7 @@ namespace MWPhysics
 
             mPhysics.withRagdollWorld([&](RagdollWorld& world) {
                 for (const auto& part : mParts)
-                    world.addRigidBody(part.mBody.get(), CollisionType_Ragdoll, sScenery);
+                    world.addRigidBody(part.mBody.get(), CollisionType_Ragdoll, CollisionType_RagdollScenery);
                 for (const auto& joint : mJoints)
                     world.addConstraint(joint.get(), true);
                 world.addRig(*this);
@@ -357,7 +403,7 @@ namespace MWPhysics
         {
             mPoseStep = step;
             reportArticulation();
-            return updateRestState(elapsed);
+            return mPhysics.getRagdollWorld()->isGrabbed(*this) || updateRestState(elapsed);
         }
 
         void restorePose() const
@@ -370,13 +416,8 @@ namespace MWPhysics
             const btVector3& direction, float strength)
         {
             const bool wasAsleep = !mAwake;
-            if (wasAsleep && !world.wakeRig(*this))
+            if (!wake(world))
                 return;
-            for (Part& part : mParts)
-                part.mBody->activate(true);
-            mAwake = true;
-            mActivityTime = 0.f;
-            mQuietTime = 0.f;
 
             btVector3 push = direction;
             push.setZ(.35f + std::max(btScalar(0), direction.z()) * .25f);
@@ -388,7 +429,51 @@ namespace MWPhysics
                              << (wasAsleep ? " (woke)" : "");
         }
 
+        void grab(RagdollWorld& world, const btVector3& point, const btVector3& eye, const btQuaternion& view,
+            btScalar reach)
+        {
+            // The rendered hit can land on clothing or on a hand beyond a capsule.
+            // Find the closest point on this corpse's collision shapes.
+            Part* held = nullptr;
+            btVector3 contact;
+            btScalar bestDistance = BT_LARGE_FLOAT;
+            for (Part& part : mParts)
+            {
+                const auto& transform = part.mBody->getWorldTransform();
+                const btVector3 local = transform.invXform(point);
+                const btVector3 axis(0, btClamped(local.y(), -part.mHalfLength, part.mHalfLength), 0);
+                const btVector3 radial = local - axis;
+                const btScalar length = radial.length();
+                const btScalar distance = btMax(btScalar(0), length - part.mRadius);
+                if (distance >= bestDistance)
+                    continue;
+                bestDistance = distance;
+                held = &part;
+                contact = distance > 0 ? transform * (axis + radial * (part.mRadius / length)) : point;
+            }
+
+            if (!held || (contact - eye).length2() > reach * reach || !wake(world))
+                return;
+
+            auto& body = *held->mBody;
+            const btScalar impulse = btClamped(8 * btSqrt(mMass / body.getInvMass()), btScalar(8), btScalar(160));
+            world.grab(*this, body, contact, eye, view, impulse);
+            Log(Debug::Info) << "Ragdoll grab: " << mActorId << " held at " << held->mNode->getName();
+        }
+
     private:
+        bool wake(RagdollWorld& world)
+        {
+            if (!mAwake && !world.wakeRig(*this))
+                return false;
+            for (Part& part : mParts)
+                part.mBody->activate(true);
+            mAwake = true;
+            mActivityTime = 0.f;
+            mQuietTime = 0.f;
+            return true;
+        }
+
         struct Part
         {
             osg::ref_ptr<osg::MatrixTransform> mNode;
@@ -400,6 +485,8 @@ namespace MWPhysics
             btTransform mRestReference;
             btQuaternion mInitialJointRotation;
             std::size_t mParent = 0;
+            btScalar mRadius = 0;
+            btScalar mHalfLength = 0;
             std::unique_ptr<btCollisionShape> mShape;
             std::unique_ptr<btRigidBody> mBody;
         };
@@ -528,21 +615,68 @@ namespace MWPhysics
         const btVector3 direction = Misc::Convert::toBullet(aim * osg::Vec3f(0.f, 1.f, 0.f));
         const btVector3 from = Misc::Convert::toBullet(eye);
         const btVector3 to = from + direction * (reach + halfExtents.x() + .5f * halfExtents.z());
-        const btSphereShape sweep(4.f);
-        const auto rotation = btQuaternion::getIdentity();
-
         physics->withRagdollWorld([&](RagdollWorld& dynamics) {
-            btCollisionWorld::ClosestConvexResultCallback hit(from, to);
-            hit.m_collisionFilterGroup = CollisionType_Actor | CollisionType_World;
-            hit.m_collisionFilterMask = sScenery | CollisionType_Ragdoll;
-            dynamics.convexSweepTest(&sweep, btTransform(rotation, from), btTransform(rotation, to), hit);
-            if (!hit.hasHit()
-                || hit.m_hitCollisionObject->getBroadphaseHandle()->m_collisionFilterGroup != CollisionType_Ragdoll)
-                return;
-
-            auto& body = *btRigidBody::upcast(const_cast<btCollisionObject*>(hit.m_hitCollisionObject));
-            static_cast<Rig*>(body.getUserPointer())->push(
-                dynamics, body, hit.m_hitPointWorld, direction, attackStrength);
+            const PartHit hit = findPart(dynamics, from, to, 4.f);
+            if (hit.mBody)
+                static_cast<Rig*>(hit.mBody->getUserPointer())
+                    ->push(dynamics, *hit.mBody, hit.mPoint, direction, attackStrength);
         });
+    }
+
+    bool Ragdoll::canGrab(const MWWorld::Ptr& corpse)
+    {
+        return grabbableCorpse(corpse) != nullptr;
+    }
+
+    void Ragdoll::grab(const MWWorld::Ptr& player, const MWWorld::Ptr& corpse, const osg::Vec3f& point)
+    {
+        const auto world = MWBase::Environment::get().getWorld();
+        auto* physics = world->getRagdollPhysics();
+        Ragdoll* ragdoll = grabbableCorpse(corpse);
+        if (!physics || !ragdoll)
+            return;
+
+        const auto& camera = *world->getCamera();
+        const btVector3 eye = Misc::Convert::toBullet(grabEye(*world, player, camera));
+        const btVector3 target = Misc::Convert::toBullet(point);
+        const btScalar reach = world->getMaxActivationDistance();
+        if ((target - eye).length2() > reach * reach)
+            return;
+
+        const btQuaternion view = Misc::Convert::toBullet(camera.getOrient());
+        physics->withRagdollWorld([&](RagdollWorld& dynamics) {
+            constexpr btScalar focusTolerance = 12;
+            if ((target - dynamics.clipGrabTarget(eye, target)).length2() <= focusTolerance * focusTolerance)
+                ragdoll->mRig->grab(dynamics, target, eye, view, reach);
+        });
+    }
+
+    void Ragdoll::moveGrab(const MWWorld::Ptr& player, float dt)
+    {
+        const auto world = MWBase::Environment::get().getWorld();
+        auto* physics = world->getRagdollPhysics();
+        if (!physics || !physics->getRagdollWorld()->hasGrab())
+            return;
+
+        const auto& camera = *world->getCamera();
+        if (camera.getMode() != MWRender::Camera::Mode::FirstPerson
+            && camera.getMode() != MWRender::Camera::Mode::ThirdPerson)
+        {
+            releaseGrab();
+            return;
+        }
+
+        const auto eye = Misc::Convert::toBullet(grabEye(*world, player, camera));
+        const auto view = Misc::Convert::toBullet(camera.getOrient());
+        physics->withRagdollWorld([&](RagdollWorld& dynamics) {
+            dynamics.moveGrab(eye, view, world->getMaxActivationDistance(), dt);
+        });
+    }
+
+    void Ragdoll::releaseGrab()
+    {
+        auto* physics = MWBase::Environment::get().getWorld()->getRagdollPhysics();
+        if (physics && physics->getRagdollWorld()->hasGrab())
+            physics->withRagdollWorld([](RagdollWorld& world) { world.releaseGrab(); });
     }
 }

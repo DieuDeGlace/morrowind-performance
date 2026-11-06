@@ -33,6 +33,7 @@ namespace SDLUtil
         bool isKeyDown(SDL_Scancode key);
 
         void setMouseVisible(bool visible);
+        bool hasWindowFocus() const { return mWindowHasFocus; }
         void setMouseRelative(bool relative);
         bool getMouseRelative() { return mMouseRelative; }
         void setGrabPointer(bool grab);

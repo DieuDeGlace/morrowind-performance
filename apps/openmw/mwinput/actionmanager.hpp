@@ -2,6 +2,9 @@
 #define MWINPUT_ACTIONMANAGER_H
 
 #include <functional>
+#include <optional>
+
+#include <components/esm3/refnum.hpp>
 
 namespace MWInput
 {
@@ -13,6 +16,7 @@ namespace MWInput
         ActionManager(BindingsManager* bindingsManager, std::function<void()> takeScreenshot);
 
         void update(float dt);
+        void cancelCorpseActivation();
 
         void executeAction(int action);
 
@@ -35,11 +39,15 @@ namespace MWInput
 
     private:
         void handleGuiArrowKey(int action);
+        void updateCorpseActivation(float dt);
 
         BindingsManager* mBindingsManager;
         std::function<void()> mTakeScreenshot;
 
         float mTimeIdle;
+        std::optional<ESM::RefNum> mCorpseActivation;
+        float mActivateHoldTime = 0.f;
+        bool mGrabAttempted = false;
     };
 }
 #endif

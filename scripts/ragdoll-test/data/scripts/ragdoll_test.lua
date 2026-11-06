@@ -5,6 +5,7 @@ local vfs = require('openmw.vfs')
 local world = require('openmw.world')
 
 local smoke = vfs.fileExists('ragdoll-smoke.txt')
+local dragSmoke = vfs.fileExists('ragdoll-drag-smoke.txt')
 local office = 'Seyda Neen, Census and Excise Office'
 local stage = 'enter'
 local elapsed = 0
@@ -49,7 +50,12 @@ local function update(dt)
         end
         local npc = spawn(player, 'fargoth', util.vector3(0, 55, 35), true)
         world.createObject('gold_001', 17):moveInto(npc)
-        if not smoke then
+        if dragSmoke then
+            require('openmw.interfaces').Activation.addHandlerForObject(npc, function()
+                print('RAGDOLL_TEST_DRAG_TAP')
+                return false
+            end)
+        elseif not smoke then
             world.createObject('iron longsword'):moveInto(player)
             spawn(player, 'skeleton', util.vector3(75, 88, 35), true)
             spawn(player, 'rat_diseased', util.vector3(-64, 85, 35), true)
@@ -64,12 +70,18 @@ local function update(dt)
     elseif stage == 'wait interior' and deathsFinished() then
         assert(types.Actor.inventory(targets[1]):countOf('gold_001') >= 17, 'Corpse inventory lost')
         print('RAGDOLL_TEST_INTERIOR_DEATH_AND_INVENTORY')
-        if smoke then
+        if dragSmoke then
+            stage = 'drag'
+            deadline = elapsed + 12
+        elseif smoke then
             stage = 'strike'
             deadline = elapsed + 11
         else
             stage = 'done'
         end
+    elseif stage == 'drag' then
+        player:sendEvent('RagdollTest_Drag', targets[1])
+        stage = 'done'
     elseif stage == 'strike' then
         player:sendEvent('RagdollTest_Strike', { target = targets[1] })
         stage = 'leave interior'
@@ -121,7 +133,7 @@ return {
             if not ok then
                 print('RAGDOLL_TEST_FAIL', err)
                 stage = 'done'
-                if smoke then core.quit() end
+                if smoke or dragSmoke then core.quit() end
             end
         end,
     },

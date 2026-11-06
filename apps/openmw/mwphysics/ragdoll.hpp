@@ -26,6 +26,10 @@ namespace MWPhysics
         static std::unique_ptr<Ragdoll> create(
             const MWWorld::Ptr& actor, const MWRender::Animation& animation, const osg::Vec3f& velocity);
         static void hit(const MWWorld::Ptr& player, float reach, float attackStrength);
+        static bool canGrab(const MWWorld::Ptr& corpse);
+        static void grab(const MWWorld::Ptr& player, const MWWorld::Ptr& corpse, const osg::Vec3f& point);
+        static void moveGrab(const MWWorld::Ptr& player, float dt);
+        static void releaseGrab();
 
         ~Ragdoll();
         void updatePose();

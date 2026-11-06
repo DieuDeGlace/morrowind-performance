@@ -50,6 +50,7 @@ namespace MWRender
 
         void removeFromScene() override;
         osg::Vec3f runAnimation(float duration) override;
+        MWPhysics::Ragdoll* getRagdoll() const { return mRagdoll.get(); }
 
     protected:
         void resetRagdoll();

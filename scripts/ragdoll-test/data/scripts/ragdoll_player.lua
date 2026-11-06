@@ -6,6 +6,8 @@ local types = require('openmw.types')
 local util = require('openmw.util')
 
 local target
+local dragAimTime
+local stableAimTime
 local swingTime
 local nextStrike = 0
 
@@ -35,6 +37,12 @@ return {
         RagdollTest_Look = function(npc)
             aimAt(npc.position + util.vector3(0, 0, 22))
         end,
+        RagdollTest_Drag = function(npc)
+            target = npc
+            dragAimTime = 0
+            stableAimTime = 0
+            camera.setMode(camera.MODE.FirstPerson)
+        end,
         RagdollTest_Strike = function(attack)
             target = attack.target
             swingTime = 0
@@ -51,6 +59,28 @@ return {
     engineHandlers = {
         onFrame = function(dt)
             if not target then return end
+            if dragAimTime then
+                local focus = camera.getFocusRay().hitObject
+                dragAimTime = dragAimTime + dt
+                if focus == target then
+                    stableAimTime = stableAimTime + dt
+                else
+                    stableAimTime = 0
+                    local direction = (findBody() - camera.getPosition()):normalize()
+                    camera.setYaw(math.atan2(direction.x, direction.y))
+                    camera.setPitch(math.asin(-direction.z))
+                end
+                if stableAimTime >= .55 then
+                    print('RAGDOLL_TEST_DRAG_READY')
+                    dragAimTime = nil
+                    target = nil
+                elseif dragAimTime >= 5 then
+                    print('RAGDOLL_TEST_FAIL could not aim at corpse', focus, target)
+                    dragAimTime = nil
+                    target = nil
+                end
+                return
+            end
             swingTime = swingTime + dt
             if swingTime >= 6 then
                 self.controls.use = self.ATTACK_TYPE.NoAttack
