@@ -63,19 +63,7 @@ namespace MWPhysics
             return;
         }
 
-        btVector3 target = eye + quatRotate(view, mGrabViewOffset);
-        const btVector3 offset = target - eye;
-        btCollisionWorld::ClosestRayResultCallback obstruction(eye, target);
-        obstruction.m_collisionFilterGroup = CollisionType_Actor;
-        obstruction.m_collisionFilterMask = CollisionType_RagdollScenery;
-        rayTest(eye, target, obstruction);
-        if (obstruction.hasHit())
-        {
-            constexpr btScalar clearance = 5;
-            const btScalar fraction = btMax(btScalar(0), obstruction.m_closestHitFraction - clearance / offset.length());
-            target = eye + offset * fraction;
-        }
-
+        btVector3 target = clipGrabTarget(eye, eye + quatRotate(view, mGrabViewOffset));
         const btVector3 previous = mGrab->getPivotInB();
         const btVector3 delta = target - previous;
         const btScalar maxTravel = 400 * std::clamp(dt, 0.f, .05f);
@@ -83,6 +71,25 @@ namespace MWPhysics
         if (distance > maxTravel)
             target = previous + delta * (maxTravel / distance);
         mGrab->setPivotB(target);
+    }
+
+    btVector3 RagdollWorld::clipGrabTarget(const btVector3& eye, const btVector3& target) const
+    {
+        const btVector3 offset = target - eye;
+        const btScalar distance = offset.length();
+        if (distance < 1)
+            return target;
+
+        btCollisionWorld::ClosestRayResultCallback obstruction(eye, target);
+        obstruction.m_collisionFilterGroup = CollisionType_Actor;
+        obstruction.m_collisionFilterMask = CollisionType_RagdollScenery;
+        rayTest(eye, target, obstruction);
+        if (!obstruction.hasHit())
+            return target;
+
+        constexpr btScalar clearance = 5;
+        const btScalar fraction = btMax(btScalar(0), obstruction.m_closestHitFraction - clearance / distance);
+        return eye + offset * fraction;
     }
 
     void RagdollWorld::releaseGrab()

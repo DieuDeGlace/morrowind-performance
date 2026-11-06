@@ -150,6 +150,16 @@ namespace MWPhysics
             return { btRigidBody::upcast(const_cast<btCollisionObject*>(hit.m_hitCollisionObject)), hit.m_hitPointWorld };
         }
 
+        Ragdoll* grabbableCorpse(const MWWorld::Ptr& corpse)
+        {
+            if (!Ragdoll::enabled() || corpse.isEmpty() || !corpse.getClass().isActor()
+                || !corpse.getClass().getCreatureStats(corpse).isDead())
+                return nullptr;
+            const auto* animation = dynamic_cast<const MWRender::ActorAnimation*>(
+                MWBase::Environment::get().getWorld()->getAnimation(corpse));
+            return animation ? animation->getRagdoll() : nullptr;
+        }
+
         osg::Vec3f playerEye(MWBase::World& world, const MWWorld::Ptr& player)
         {
             return player.getRefData().getPosition().asVec3()
@@ -305,6 +315,8 @@ namespace MWPhysics
                 const osg::Vec3f segment = part.mEnd - pivot;
                 const float length = segment.length();
                 const float cylinder = std::max(0.f, length - 2.f * radius);
+                part.mRadius = radius;
+                part.mHalfLength = cylinder * .5f;
                 btQuaternion rotation = btQuaternion::getIdentity();
                 if (cylinder > 0.f)
                 {
@@ -417,16 +429,36 @@ namespace MWPhysics
                              << (wasAsleep ? " (woke)" : "");
         }
 
-        void grab(RagdollWorld& world, const MWWorld::Ptr& corpse, btRigidBody& body, const btVector3& point,
-            const btVector3& eye, const btQuaternion& view)
+        void grab(RagdollWorld& world, const btVector3& point, const btVector3& eye, const btQuaternion& view,
+            btScalar reach)
         {
-            if (mRoot.get() != corpse.getRefData().getBaseNode() || !wake(world))
+            // The rendered hit can land on clothing or on a hand beyond a capsule.
+            // Find the closest point on this corpse's collision shapes.
+            Part* held = nullptr;
+            btVector3 contact;
+            btScalar bestDistance = BT_LARGE_FLOAT;
+            for (Part& part : mParts)
+            {
+                const auto& transform = part.mBody->getWorldTransform();
+                const btVector3 local = transform.invXform(point);
+                const btVector3 axis(0, btClamped(local.y(), -part.mHalfLength, part.mHalfLength), 0);
+                const btVector3 radial = local - axis;
+                const btScalar length = radial.length();
+                const btScalar distance = btMax(btScalar(0), length - part.mRadius);
+                if (distance >= bestDistance)
+                    continue;
+                bestDistance = distance;
+                held = &part;
+                contact = distance > 0 ? transform * (axis + radial * (part.mRadius / length)) : point;
+            }
+
+            if (!held || (contact - eye).length2() > reach * reach || !wake(world))
                 return;
 
+            auto& body = *held->mBody;
             const btScalar impulse = btClamped(8 * btSqrt(mMass / body.getInvMass()), btScalar(8), btScalar(160));
-            world.grab(*this, body, point, eye, view, impulse);
-            const Part& part = mParts[static_cast<std::size_t>(body.getUserIndex())];
-            Log(Debug::Info) << "Ragdoll grab: " << mActorId << " held at " << part.mNode->getName();
+            world.grab(*this, body, contact, eye, view, impulse);
+            Log(Debug::Info) << "Ragdoll grab: " << mActorId << " held at " << held->mNode->getName();
         }
 
     private:
@@ -453,6 +485,8 @@ namespace MWPhysics
             btTransform mRestReference;
             btQuaternion mInitialJointRotation;
             std::size_t mParent = 0;
+            btScalar mRadius = 0;
+            btScalar mHalfLength = 0;
             std::unique_ptr<btCollisionShape> mShape;
             std::unique_ptr<btRigidBody> mBody;
         };
@@ -591,37 +625,29 @@ namespace MWPhysics
 
     bool Ragdoll::canGrab(const MWWorld::Ptr& corpse)
     {
-        if (!enabled() || corpse.isEmpty() || !corpse.getClass().isActor()
-            || !corpse.getClass().getCreatureStats(corpse).isDead())
-            return false;
-        const auto* animation = dynamic_cast<const MWRender::ActorAnimation*>(
-            MWBase::Environment::get().getWorld()->getAnimation(corpse));
-        return animation && animation->hasRagdoll();
+        return grabbableCorpse(corpse) != nullptr;
     }
 
     void Ragdoll::grab(const MWWorld::Ptr& player, const MWWorld::Ptr& corpse, const osg::Vec3f& point)
     {
         const auto world = MWBase::Environment::get().getWorld();
         auto* physics = world->getRagdollPhysics();
-        if (!physics || !canGrab(corpse))
+        Ragdoll* ragdoll = grabbableCorpse(corpse);
+        if (!physics || !ragdoll)
             return;
 
         const auto& camera = *world->getCamera();
         const btVector3 eye = Misc::Convert::toBullet(grabEye(*world, player, camera));
-        const btVector3 from = Misc::Convert::toBullet(osg::Vec3f(camera.getPosition()));
         const btVector3 target = Misc::Convert::toBullet(point);
-        const btVector3 offset = target - from;
         const btScalar reach = world->getMaxActivationDistance();
-        if (offset.length2() < 1 || (target - eye).length2() > reach * reach)
+        if ((target - eye).length2() > reach * reach)
             return;
 
-        const btVector3 to = target + offset.normalized() * 16;
         const btQuaternion view = Misc::Convert::toBullet(camera.getOrient());
         physics->withRagdollWorld([&](RagdollWorld& dynamics) {
-            const PartHit hit = findPart(dynamics, from, to, 6.f);
-            if (hit.mBody && (hit.mPoint - eye).length2() <= reach * reach)
-                static_cast<Rig*>(hit.mBody->getUserPointer())
-                    ->grab(dynamics, corpse, *hit.mBody, hit.mPoint, eye, view);
+            constexpr btScalar focusTolerance = 12;
+            if ((target - dynamics.clipGrabTarget(eye, target)).length2() <= focusTolerance * focusTolerance)
+                ragdoll->mRig->grab(dynamics, target, eye, view, reach);
         });
     }
 

@@ -32,6 +32,7 @@ namespace MWPhysics
         void grab(Island& rig, btRigidBody& part, const btVector3& point, const btVector3& eye,
             const btQuaternion& view, btScalar impulseLimit);
         void moveGrab(const btVector3& eye, const btQuaternion& view, btScalar reach, float dt);
+        btVector3 clipGrabTarget(const btVector3& eye, const btVector3& target) const;
         void releaseGrab();
 
         bool hasCapacity() const;
