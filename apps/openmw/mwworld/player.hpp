@@ -87,7 +87,8 @@ namespace MWWorld
         MWMechanics::DrawState getDrawState(); /// \todo constness
 
         /// Activate the object under the crosshair, if any
-        void activate();
+        bool canActivate();
+        void activate(const MWWorld::Ptr& target);
 
         void yaw(float yaw);
         void pitch(float pitch);

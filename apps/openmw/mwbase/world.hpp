@@ -63,6 +63,7 @@ namespace MWPhysics
 {
     class RayCastingResult;
     class RayCastingInterface;
+    class PhysicsSystem;
 }
 
 namespace MWRender
@@ -255,6 +256,7 @@ namespace MWBase
         ///< @param changeEvent If false, do not trigger cell change flag or detect worldspace changes
 
         virtual MWWorld::Ptr getFocusObject() = 0;
+        virtual osg::Vec3f getFocusHitPosition() const { return {}; }
         ///< Return pointer to the object the player is looking at, if it is within activation range
 
         virtual float getDistanceToFocusObject() = 0;
@@ -311,6 +313,7 @@ namespace MWBase
         virtual void updateAnimatedCollisionShape(const MWWorld::Ptr& ptr) = 0;
 
         virtual const MWPhysics::RayCastingInterface* getRayCasting() const = 0;
+        virtual MWPhysics::PhysicsSystem* getRagdollPhysics() { return nullptr; }
 
         virtual bool castRenderingRay(MWPhysics::RayCastingResult& res, const osg::Vec3f& from, const osg::Vec3f& to,
             bool ignorePlayer, bool ignoreActors, std::span<const MWWorld::Ptr> ignoreList = {})

@@ -1406,6 +1406,11 @@ namespace MWWorld
             DetourNavigator::ObjectId(&object), shapes, object.getTransform(), navigatorUpdateGuard);
     }
 
+    MWPhysics::PhysicsSystem* World::getRagdollPhysics()
+    {
+        return mPhysics->getRagdollWorld() ? mPhysics.get() : nullptr;
+    }
+
     const MWPhysics::RayCastingInterface* World::getRayCasting() const
     {
         return mPhysics.get();
@@ -1719,6 +1724,7 @@ namespace MWWorld
         focusObject = rayToObject.mHitObject;
         if (focusObject.isEmpty() && rayToObject.mHitRefnum.isSet())
             focusObject = MWBase::Environment::get().getWorldModel()->getPtr(rayToObject.mHitRefnum);
+        mFocusHitPosition = rayToObject.mHit ? rayToObject.mHitPointWorld : osg::Vec3f{};
         if (rayToObject.mHit)
             mDistanceToFocusObject = (rayToObject.mRatio * maxDistance) - camDist;
         else

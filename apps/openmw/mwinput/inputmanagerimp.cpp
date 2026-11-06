@@ -64,6 +64,7 @@ namespace MWInput
 
         if (disableControls)
         {
+            mActionManager->cancelCorpseActivation();
             mMouseManager->updateCursorMode();
             return;
         }
@@ -75,6 +76,8 @@ namespace MWInput
         mControllerManager->update(dt);
         mMouseManager->update(dt);
         mSensorManager->update(dt);
+        if (!mInputWrapper->hasWindowFocus())
+            mActionManager->cancelCorpseActivation();
         mActionManager->update(dt);
 
         if (Settings::input().mEnableGyroscope)

@@ -186,25 +186,20 @@ namespace MWWorld
         return ptr.getClass().getNpcStats(ptr).getDrawState();
     }
 
-    void Player::activate()
+    bool Player::canActivate()
     {
         if (MWBase::Environment::get().getWindowManager()->isGuiMode())
-            return;
+            return false;
 
-        MWWorld::Ptr player = getPlayer();
-        const MWMechanics::NpcStats& playerStats = player.getClass().getNpcStats(player);
-        if (playerStats.isParalyzed() || playerStats.getKnockedDown() || playerStats.isDead())
-            return;
+        const MWWorld::Ptr player = getPlayer();
+        const auto& stats = player.getClass().getNpcStats(player);
+        return !stats.isParalyzed() && !stats.getKnockedDown() && !stats.isDead();
+    }
 
-        MWWorld::Ptr toActivate = MWBase::Environment::get().getWorld()->getFocusObject();
-
-        if (toActivate.isEmpty())
-            return;
-
-        if (!toActivate.getClass().hasToolTip(toActivate))
-            return;
-
-        MWBase::Environment::get().getLuaManager()->objectActivated(toActivate, player);
+    void Player::activate(const MWWorld::Ptr& target)
+    {
+        if (!target.isEmpty() && target.getClass().hasToolTip(target))
+            MWBase::Environment::get().getLuaManager()->objectActivated(target, getPlayer());
     }
 
     bool Player::wasTeleported() const

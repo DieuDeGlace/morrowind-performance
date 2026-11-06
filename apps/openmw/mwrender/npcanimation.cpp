@@ -451,6 +451,7 @@ namespace MWRender
 
     void NpcAnimation::updateNpcBase()
     {
+        resetRagdoll();
         clearAnimSources();
         for (size_t i = 0; i < ESM::PRT_Count; i++)
             removeIndividualPart((ESM::PartReferenceType)i);
@@ -698,7 +699,8 @@ namespace MWRender
 
     osg::Vec3f NpcAnimation::runAnimation(float timepassed)
     {
-        osg::Vec3f ret = Animation::runAnimation(timepassed);
+        osg::Vec3f ret = mSoundsDisabled || mViewMode != VM_Normal ? Animation::runAnimation(timepassed)
+                                                               : ActorAnimation::runAnimation(timepassed);
 
         mHeadAnimationTime->update(timepassed);
 

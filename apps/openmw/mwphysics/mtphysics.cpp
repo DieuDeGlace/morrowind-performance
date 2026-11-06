@@ -631,6 +631,12 @@ namespace MWPhysics
         return { cb.m_hitPointWorld };
     }
 
+    void PhysicsTaskScheduler::withExclusiveCollisionWorld(const std::function<void()>& operation)
+    {
+        MaybeExclusiveLock lock(mCollisionWorldMutex, mLockingPolicy);
+        operation();
+    }
+
     void PhysicsTaskScheduler::aabbTest(
         const btVector3& aabbMin, const btVector3& aabbMax, btBroadphaseAabbCallback& callback)
     {

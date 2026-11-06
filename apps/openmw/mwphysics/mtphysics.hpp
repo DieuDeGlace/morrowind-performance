@@ -53,6 +53,8 @@ namespace MWPhysics
 
         void resetSimulation(const ActorMap& actors);
 
+        void withExclusiveCollisionWorld(const std::function<void()>& operation);
+
         // Thread safe wrappers
         void rayTest(const btVector3& rayFromWorld, const btVector3& rayToWorld,
             btCollisionWorld::RayResultCallback& resultCallback) const;

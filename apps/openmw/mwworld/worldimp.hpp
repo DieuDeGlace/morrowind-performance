@@ -122,6 +122,7 @@ namespace MWWorld
         float mSwimHeightScale;
 
         float mDistanceToFocusObject;
+        osg::Vec3f mFocusHitPosition;
 
         bool mTeleportEnabled;
         bool mLevitationEnabled;
@@ -346,6 +347,7 @@ namespace MWWorld
         ///< @param changeEvent If false, do not trigger cell change flag or detect worldspace changes
 
         MWWorld::Ptr getFocusObject() override;
+        osg::Vec3f getFocusHitPosition() const override { return mFocusHitPosition; }
         ///< Return pointer to the object the player is looking at, if it is within activation range
 
         float getDistanceToFocusObject() override;
@@ -395,6 +397,7 @@ namespace MWWorld
         void updateAnimatedCollisionShape(const Ptr& ptr) override;
 
         const MWPhysics::RayCastingInterface* getRayCasting() const override;
+        MWPhysics::PhysicsSystem* getRagdollPhysics() override;
 
         bool castRenderingRay(MWPhysics::RayCastingResult& res, const osg::Vec3f& from, const osg::Vec3f& to,
             bool ignorePlayer, bool ignoreActors, std::span<const MWWorld::Ptr> ignoreList) override;

@@ -2,6 +2,7 @@
 #define GAME_RENDER_ACTORANIMATION_H
 
 #include <map>
+#include <optional>
 
 #include <osg/ref_ptr>
 
@@ -27,6 +28,11 @@ namespace SceneUtil
     class LightListCallback;
 }
 
+namespace MWPhysics
+{
+    class Ragdoll;
+}
+
 namespace MWRender
 {
 
@@ -44,8 +50,11 @@ namespace MWRender
         bool updateCarriedLeftVisible(const int weaptype) const override;
 
         void removeFromScene() override;
+        osg::Vec3f runAnimation(float duration) override;
+        bool hasRagdoll() const { return mRagdoll != nullptr; }
 
     protected:
+        void resetRagdoll();
         osg::Group* getBoneByName(std::string_view boneName) const;
         void updateHolsteredWeapon(bool showHolsteredWeapons);
         void updateHolsteredShield(bool showCarriedLeft);
@@ -71,6 +80,9 @@ namespace MWRender
 
         typedef std::map<MWWorld::ConstPtr, osg::ref_ptr<SceneUtil::LightSource>> ItemLightMap;
         ItemLightMap mItemLights;
+        std::unique_ptr<MWPhysics::Ragdoll> mRagdoll;
+        std::optional<osg::Vec3f> mPreviousRagdollPosition;
+        bool mTriedRagdoll = false;
     };
 
 }

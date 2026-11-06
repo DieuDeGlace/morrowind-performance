@@ -1,8 +1,12 @@
 #ifndef MWINPUT_ACTIONMANAGER_H
 #define MWINPUT_ACTIONMANAGER_H
 
+#include <optional>
+
 #include <osg/ref_ptr>
 #include <osgViewer/ViewerEventHandlers>
+
+#include <components/esm3/refnum.hpp>
 
 namespace osgViewer
 {
@@ -21,6 +25,7 @@ namespace MWInput
             osg::ref_ptr<osgViewer::ScreenCaptureHandler> screenCaptureHandler);
 
         void update(float dt);
+        void cancelCorpseActivation();
 
         void executeAction(int action);
 
@@ -43,12 +48,16 @@ namespace MWInput
 
     private:
         void handleGuiArrowKey(int action);
+        void updateCorpseActivation(float dt);
 
         BindingsManager* mBindingsManager;
         osg::ref_ptr<osgViewer::Viewer> mViewer;
         osg::ref_ptr<osgViewer::ScreenCaptureHandler> mScreenCaptureHandler;
 
         float mTimeIdle;
+        std::optional<ESM::RefNum> mCorpseActivation;
+        float mActivateHoldTime = 0.f;
+        bool mGrabAttempted = false;
     };
 }
 #endif
