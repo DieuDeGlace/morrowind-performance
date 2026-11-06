@@ -17,6 +17,11 @@ namespace ESM
     struct BodyPart;
 }
 
+namespace MWPhysics
+{
+    class TarhielRagdoll;
+}
+
 namespace MWSound
 {
     class Sound;
@@ -74,6 +79,7 @@ namespace MWRender
 
         std::shared_ptr<HeadAnimationTime> mHeadAnimationTime;
         std::shared_ptr<WeaponAnimationTime> mWeaponAnimationTime;
+        std::unique_ptr<MWPhysics::TarhielRagdoll> mTarhielRagdoll;
 
         bool mSoundsDisabled;
 

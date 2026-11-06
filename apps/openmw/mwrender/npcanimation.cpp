@@ -34,6 +34,7 @@
 #include "../mwmechanics/actorutil.hpp"
 #include "../mwmechanics/npcstats.hpp"
 #include "../mwmechanics/weapontype.hpp"
+#include "../mwphysics/tarhielragdoll.hpp"
 
 #include "../mwbase/environment.hpp"
 #include "../mwbase/mechanicsmanager.hpp"
@@ -459,6 +460,8 @@ namespace MWRender
 
     void NpcAnimation::updateNpcBase()
     {
+        if (mTarhielRagdoll || (!mSoundsDisabled && MWPhysics::TarhielRagdoll::enabledFor(mPtr)))
+            mTarhielRagdoll = std::make_unique<MWPhysics::TarhielRagdoll>();
         clearAnimSources();
         for (size_t i = 0; i < ESM::PRT_Count; i++)
             removeIndividualPart((ESM::PartReferenceType)i);
@@ -706,6 +709,21 @@ namespace MWRender
 
     osg::Vec3f NpcAnimation::runAnimation(float timepassed)
     {
+        if (mTarhielRagdoll && mViewMode == VM_Normal)
+        {
+            const bool wasActive = mTarhielRagdoll->active();
+            if (mTarhielRagdoll->update(mPtr, *this, timepassed))
+            {
+                if (!wasActive)
+                {
+                    // Remove keyframe controllers before scene traversal writes the bones.
+                    mStates.clear();
+                    resetActiveGroups();
+                }
+                return {};
+            }
+        }
+
         osg::Vec3f ret = Animation::runAnimation(timepassed);
 
         mHeadAnimationTime->update(timepassed);

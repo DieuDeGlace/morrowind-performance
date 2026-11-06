@@ -88,7 +88,7 @@ add_openmw_dir (mwworld
 
 add_openmw_dir (mwphysics
     physicssystem trace collisiontype actor convert object heightfield closestnotmerayresultcallback
-    contacttestresultcallback stepper movementsolver projectile
+    contacttestresultcallback stepper movementsolver projectile tarhielragdoll
     actorconvexcallback raycasting mtphysics contacttestwrapper projectileconvexcallback
     )
 
@@ -188,6 +188,7 @@ target_link_libraries(openmw-lib
     ${RecastNavigation_LIBRARIES}
     osg-ffmpeg-videoplayer
     oics
+    ${OPENMW_BULLET_DYNAMICS_LIBRARIES}
     components
 )
 
