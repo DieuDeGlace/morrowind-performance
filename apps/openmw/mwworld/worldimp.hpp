@@ -403,6 +403,7 @@ namespace MWWorld
         void updateAnimatedCollisionShape(const Ptr& ptr) override;
 
         const MWPhysics::RayCastingInterface* getRayCasting() const override;
+        MWPhysics::PhysicsSystem* getRagdollPhysics() override;
 
         bool castRenderingRay(MWPhysics::RayCastingResult& res, const osg::Vec3f& from, const osg::Vec3f& to,
             bool ignorePlayer, bool ignoreActors, bool ignoreTerrain,

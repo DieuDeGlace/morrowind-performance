@@ -11,6 +11,7 @@
 #include <BulletCollision/CollisionShapes/btConeShape.h>
 #include <BulletCollision/CollisionShapes/btSphereShape.h>
 #include <BulletCollision/CollisionShapes/btStaticPlaneShape.h>
+#include <BulletDynamics/ConstraintSolver/btSequentialImpulseConstraintSolver.h>
 
 #include <LinearMath/btIDebugDraw.h>
 #include <LinearMath/btQuickprof.h>
@@ -50,6 +51,8 @@
 #include "mtphysics.hpp"
 #include "object.hpp"
 #include "projectile.hpp"
+#include "ragdoll.hpp"
+#include "ragdollworld.hpp"
 
 namespace
 {
@@ -106,8 +109,17 @@ namespace MWPhysics
         mDispatcher = std::make_unique<btCollisionDispatcher>(mCollisionConfiguration.get());
         mBroadphase = std::make_unique<btDbvtBroadphase>();
 
-        mCollisionWorld
-            = std::make_unique<btCollisionWorld>(mDispatcher.get(), mBroadphase.get(), mCollisionConfiguration.get());
+        if (Ragdoll::enabled())
+        {
+            mRagdollSolver = std::make_unique<btSequentialImpulseConstraintSolver>();
+            auto world = std::make_unique<RagdollWorld>(
+                mDispatcher.get(), mBroadphase.get(), mRagdollSolver.get(), mCollisionConfiguration.get());
+            mRagdollWorld = world.get();
+            mCollisionWorld = std::move(world);
+        }
+        else
+            mCollisionWorld = std::make_unique<btCollisionWorld>(
+                mDispatcher.get(), mBroadphase.get(), mCollisionConfiguration.get());
 
         // Don't update AABBs of all objects every frame. Most objects in MW are static, so we don't need this.
         // Should a "static" object ever be moved, we have to update its AABB manually using
@@ -145,6 +157,11 @@ namespace MWPhysics
     Resource::BulletShapeManager* PhysicsSystem::getShapeManager()
     {
         return mShapeManager.get();
+    }
+
+    void PhysicsSystem::withRagdollWorld(const std::function<void(RagdollWorld&)>& operation)
+    {
+        mTaskScheduler->withExclusiveCollisionWorld([&] { operation(*mRagdollWorld); });
     }
 
     bool PhysicsSystem::toggleDebugRendering()
@@ -229,7 +246,7 @@ namespace MWPhysics
 
         ClosestNotMeRayResultCallback resultCallback(ignoreList, targetCollisionObjects, btFrom, btTo);
         resultCallback.m_collisionFilterGroup = group;
-        resultCallback.m_collisionFilterMask = mask;
+        resultCallback.m_collisionFilterMask = mask & ~CollisionType_Ragdoll;
 
         mTaskScheduler->rayTest(btFrom, btTo, resultCallback);
 
@@ -251,7 +268,7 @@ namespace MWPhysics
         btCollisionWorld::ClosestConvexResultCallback callback(
             Misc::Convert::toBullet(from), Misc::Convert::toBullet(to));
         callback.m_collisionFilterGroup = group;
-        callback.m_collisionFilterMask = mask;
+        callback.m_collisionFilterMask = mask & ~CollisionType_Ragdoll;
 
         btSphereShape shape(radius);
         const btQuaternion btrot = btQuaternion::getIdentity();
@@ -354,7 +371,7 @@ namespace MWPhysics
 
         ContactTestResultCallback resultCallback(me);
         resultCallback.m_collisionFilterGroup = collisionGroup;
-        resultCallback.m_collisionFilterMask = collisionMask;
+        resultCallback.m_collisionFilterMask = collisionMask & ~CollisionType_Ragdoll;
         mTaskScheduler->contactTest(me, resultCallback);
         return resultCallback.mResult;
     }
@@ -703,6 +720,9 @@ namespace MWPhysics
                 changed = false;
             }
         }
+        if (!skipSimulation && dt > 0.f && mRagdollWorld && mRagdollWorld->hasAwakeRigs())
+            withRagdollWorld([&](RagdollWorld& world) { world.advance(dt); });
+
         for (auto& [_, object] : mObjects)
             object->resetCollisions();
 

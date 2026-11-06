@@ -29,6 +29,8 @@
 #include "../mwmechanics/creaturestats.hpp"
 #include "../mwmechanics/drawstate.hpp"
 #include "../mwmechanics/weapontype.hpp"
+#include "../mwphysics/ragdoll.hpp"
+#include "../mwbase/world.hpp"
 #include "../mwworld/cellstore.hpp"
 #include "../mwworld/class.hpp"
 #include "../mwworld/esmstore.hpp"
@@ -64,6 +66,62 @@ namespace MWRender
     ActorAnimation::~ActorAnimation()
     {
         removeFromSceneImpl();
+    }
+
+    void ActorAnimation::resetRagdoll()
+    {
+        mRagdoll.reset();
+        mTriedRagdoll = false;
+        mPreviousRagdollPosition.reset();
+    }
+
+    osg::Vec3f ActorAnimation::runAnimation(float duration)
+    {
+        if (!MWPhysics::Ragdoll::enabled() || mPtr == MWMechanics::getPlayer())
+            return Animation::runAnimation(duration);
+
+        const osg::Vec3f position = mPtr.getRefData().getPosition().asVec3();
+        if (!mPtr.getClass().getCreatureStats(mPtr).isDead())
+        {
+            if (mRagdoll)
+                mRagdoll->restorePose();
+            if (mTriedRagdoll)
+                resetRagdoll();
+            if (duration > 0.f)
+                mPreviousRagdollPosition = position;
+            return Animation::runAnimation(duration);
+        }
+
+        if (!mTriedRagdoll && duration > 0.f)
+        {
+            mTriedRagdoll = true;
+            osg::Vec3f velocity;
+            if (mPreviousRagdollPosition)
+            {
+                const osg::Vec3f movement = position - *mPreviousRagdollPosition;
+                if (movement.length2() < 256.f * 256.f)
+                {
+                    velocity = movement / duration;
+                    const float speed = velocity.length();
+                    if (speed > 240.f)
+                        velocity *= 240.f / speed;
+                }
+            }
+            mRagdoll = MWPhysics::Ragdoll::create(mPtr, *this, velocity);
+        }
+
+        if (!mRagdoll)
+            return Animation::runAnimation(duration);
+
+        // Clearing the death group lets CharacterController finish the
+        // original death lifecycle, including the transition to a lootable corpse.
+        if (!mStates.empty())
+        {
+            mStates.clear();
+            resetActiveGroups();
+        }
+        mRagdoll->updatePose();
+        return {};
     }
 
     PartHolderPtr ActorAnimation::attachMesh(
@@ -591,6 +649,7 @@ namespace MWRender
 
     void ActorAnimation::removeFromScene()
     {
+        resetRagdoll();
         removeFromSceneImpl();
         Animation::removeFromScene();
     }

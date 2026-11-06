@@ -265,7 +265,7 @@ namespace MWRender
 
     osg::Vec3f CreatureWeaponAnimation::runAnimation(float duration)
     {
-        osg::Vec3f ret = Animation::runAnimation(duration);
+        osg::Vec3f ret = ActorAnimation::runAnimation(duration);
 
         WeaponAnimation::configureControllers(mPtr.getRefData().getPosition().rot[0] + getBodyPitchRadians());
 

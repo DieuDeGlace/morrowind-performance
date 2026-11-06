@@ -29,6 +29,7 @@ namespace Resource
 }
 
 class btCollisionWorld;
+class btConstraintSolver;
 class btIDebugDraw;
 class btBroadphaseInterface;
 class btDefaultCollisionConfiguration;
@@ -49,6 +50,7 @@ namespace MWPhysics
     class Actor;
     class PhysicsTaskScheduler;
     class Projectile;
+    class RagdollWorld;
     enum ScriptedCollisionType : char;
 
     using ActorMap = std::unordered_map<const MWWorld::LiveCellRefBase*, std::shared_ptr<Actor>>;
@@ -149,6 +151,9 @@ namespace MWPhysics
         virtual ~PhysicsSystem();
 
         Resource::BulletShapeManager* getShapeManager();
+
+        RagdollWorld* getRagdollWorld() const { return mRagdollWorld; }
+        void withRagdollWorld(const std::function<void(RagdollWorld&)>& operation);
 
         void enableWater(float height);
         void setWaterHeight(float height);
@@ -293,7 +298,9 @@ namespace MWPhysics
         std::unique_ptr<btBroadphaseInterface> mBroadphase;
         std::unique_ptr<btDefaultCollisionConfiguration> mCollisionConfiguration;
         std::unique_ptr<btCollisionDispatcher> mDispatcher;
+        std::unique_ptr<btConstraintSolver> mRagdollSolver;
         std::unique_ptr<btCollisionWorld> mCollisionWorld;
+        RagdollWorld* mRagdollWorld = nullptr;
         std::unique_ptr<PhysicsTaskScheduler> mTaskScheduler;
 
         std::unique_ptr<Resource::BulletShapeManager> mShapeManager;

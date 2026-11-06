@@ -70,6 +70,7 @@ namespace MWPhysics
 {
     class RayCastingResult;
     class RayCastingInterface;
+    class PhysicsSystem;
 }
 
 namespace MWRender
@@ -322,6 +323,7 @@ namespace MWBase
         virtual void updateAnimatedCollisionShape(const MWWorld::Ptr& ptr) = 0;
 
         virtual const MWPhysics::RayCastingInterface* getRayCasting() const = 0;
+        virtual MWPhysics::PhysicsSystem* getRagdollPhysics() { return nullptr; }
 
         virtual bool castRenderingRay(MWPhysics::RayCastingResult& res, const osg::Vec3f& from, const osg::Vec3f& to,
             bool ignorePlayer, bool ignoreActors, bool ignoreTerrain, std::span<const MWWorld::Ptr> ignoreList = {})

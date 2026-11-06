@@ -1420,6 +1420,11 @@ namespace MWWorld
             DetourNavigator::ObjectId(&object), shapes, object.getTransform(), navigatorUpdateGuard);
     }
 
+    MWPhysics::PhysicsSystem* World::getRagdollPhysics()
+    {
+        return mPhysics->getRagdollWorld() ? mPhysics.get() : nullptr;
+    }
+
     const MWPhysics::RayCastingInterface* World::getRayCasting() const
     {
         return mPhysics.get();

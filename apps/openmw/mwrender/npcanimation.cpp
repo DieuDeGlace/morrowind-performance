@@ -34,7 +34,6 @@
 #include "../mwmechanics/actorutil.hpp"
 #include "../mwmechanics/npcstats.hpp"
 #include "../mwmechanics/weapontype.hpp"
-#include "../mwphysics/tarhielragdoll.hpp"
 
 #include "../mwbase/environment.hpp"
 #include "../mwbase/mechanicsmanager.hpp"
@@ -460,8 +459,7 @@ namespace MWRender
 
     void NpcAnimation::updateNpcBase()
     {
-        if (mTarhielRagdoll || (!mSoundsDisabled && MWPhysics::TarhielRagdoll::enabledFor(mPtr)))
-            mTarhielRagdoll = std::make_unique<MWPhysics::TarhielRagdoll>();
+        resetRagdoll();
         clearAnimSources();
         for (size_t i = 0; i < ESM::PRT_Count; i++)
             removeIndividualPart((ESM::PartReferenceType)i);
@@ -709,22 +707,8 @@ namespace MWRender
 
     osg::Vec3f NpcAnimation::runAnimation(float timepassed)
     {
-        if (mTarhielRagdoll && mViewMode == VM_Normal)
-        {
-            if (mTarhielRagdoll->update(mPtr, *this, timepassed))
-            {
-                // Mechanics can start the death group after this frame's pose
-                // update. Clear it on the next update so kill() can finish.
-                if (!mStates.empty())
-                {
-                    mStates.clear();
-                    resetActiveGroups();
-                }
-                return {};
-            }
-        }
-
-        osg::Vec3f ret = Animation::runAnimation(timepassed);
+        osg::Vec3f ret = mSoundsDisabled || mViewMode != VM_Normal ? Animation::runAnimation(timepassed)
+                                                               : ActorAnimation::runAnimation(timepassed);
 
         mHeadAnimationTime->update(timepassed);
 

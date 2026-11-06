@@ -46,6 +46,7 @@
 #include "../mwmechanics/setbaseaisetting.hpp"
 #include "../mwmechanics/spellcasting.hpp"
 #include "../mwmechanics/weapontype.hpp"
+#include "../mwphysics/ragdoll.hpp"
 
 #include "../mwworld/actionopen.hpp"
 #include "../mwworld/actiontalk.hpp"
@@ -581,13 +582,15 @@ namespace MWClass
 
         MWMechanics::applyFatigueLoss(ptr, weapon, attackStrength);
 
-        if (victim.isEmpty()) // Didn't hit anything
+        if (victim.isEmpty() || victim.getClass().getCreatureStats(victim).isDead())
+        {
+            if (MWPhysics::Ragdoll::enabled() && ptr == MWMechanics::getPlayer())
+                MWPhysics::Ragdoll::hit(ptr, MWMechanics::getMeleeWeaponReach(ptr, weapon), attackStrength);
             return;
+        }
 
         const MWWorld::Class& othercls = victim.getClass();
         MWMechanics::CreatureStats& otherstats = othercls.getCreatureStats(victim);
-        if (otherstats.isDead()) // Can't hit dead actors
-            return;
 
         if (!MWMechanics::isInMeleeReach(ptr, victim, MWMechanics::getMeleeWeaponReach(ptr, weapon)))
             return;

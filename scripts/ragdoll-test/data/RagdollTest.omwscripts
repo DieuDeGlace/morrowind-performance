@@ -1,0 +1,3 @@
+GLOBAL: scripts/ragdoll_test.lua
+PLAYER: scripts/ragdoll_player.lua
+CUSTOM: scripts/ragdoll_target.lua
