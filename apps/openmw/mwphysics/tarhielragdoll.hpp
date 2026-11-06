@@ -26,7 +26,6 @@ namespace MWPhysics
         ~TarhielRagdoll();
 
         static bool enabledFor(const MWWorld::Ptr& actor);
-        bool active() const;
         bool update(const MWWorld::Ptr& actor, const MWRender::Animation& animation, float dt);
 
     private:

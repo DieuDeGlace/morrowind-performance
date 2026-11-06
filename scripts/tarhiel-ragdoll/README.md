@@ -9,7 +9,7 @@ Set OPENMW_TARHIEL_RAGDOLL=1 for the test process. The NPC animation hands the
 pose to the rig at death for the vanilla Tarhiel record, agronian guy, in
 exteriors. The 11 bodies and 10 joints use a local terrain snapshot. The
 simulation steps at 120 Hz, applies a pose only after a physics step, and stops
-when the bodies sleep. The rig releases its resources when the model unloads.
+when the rig stays still or Bullet puts the bodies to sleep. The rig releases its resources when the model unloads.
 
 To replay the scene, use a separate config and user data directory, register
 data/ from this directory, and enable TarhielTest.omwscripts after the

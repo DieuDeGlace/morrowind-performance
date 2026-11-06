@@ -20,6 +20,7 @@
 
 #include <components/debug/debuglog.hpp>
 #include <components/misc/convert.hpp>
+#include <components/sceneutil/positionattitudetransform.hpp>
 
 #include "../mwbase/environment.hpp"
 #include "../mwbase/world.hpp"
@@ -126,6 +127,10 @@ namespace MWPhysics
             if (!actor.isInCell() || !actor.getCell()->isExterior())
                 return false;
 
+            osg::Node* actorRoot = actor.getRefData().getBaseNode();
+            if (actorRoot == nullptr)
+                return false;
+
             // Resolve all bones before changing the actor's animation or pose.
             for (size_t i = 0; i < mParts.size(); ++i)
             {
@@ -137,9 +142,15 @@ namespace MWPhysics
                     Log(Debug::Warning) << "Tarhiel ragdoll: missing bone " << sParts[i].mBone;
                     return false;
                 }
-                const auto paths = part.mNode->getParentalNodePaths();
-                if (paths.size() != 1 || paths.front().size() < 2)
+                // Rendering can attach the world scene to multiple cameras.
+                // Only the path within this actor is relevant to its bones.
+                const auto paths = part.mNode->getParentalNodePaths(actorRoot);
+                if (paths.size() != 1 || paths.front().size() < 2 || paths.front().front() != actorRoot)
+                {
+                    Log(Debug::Warning) << "Tarhiel ragdoll: ambiguous actor path for " << sParts[i].mBone << " ("
+                                        << paths.size() << " paths)";
                     return false;
+                }
 
                 part.mParentPath = paths.front();
                 part.mParentPath.pop_back();
@@ -153,7 +164,11 @@ namespace MWPhysics
             const auto worldspace = actor.getCell()->getCell()->getWorldSpace();
             const osg::Vec3f center = mParts[Pelvis].mInitialWorld.getTrans();
             if (!createTerrain(world, worldspace, center))
+            {
+                Log(Debug::Warning) << "Tarhiel ragdoll: terrain unavailable at pelvis " << center.x() << ", "
+                                    << center.y() << ", " << center.z();
                 return false;
+            }
 
             // Lift the initial capsules out of shallow overlaps at the handoff.
             // The visual pose and all joint anchors are translated by the same amount.
@@ -166,7 +181,10 @@ namespace MWPhysics
                 const osg::Vec3f pivot = part.mInitialWorld.getTrans();
                 const auto tip = spec.mTip.empty() ? std::nullopt : animation.getNodeWorldTransform(spec.mTip);
                 if (!spec.mTip.empty() && !tip)
+                {
+                    Log(Debug::Warning) << "Tarhiel ragdoll: missing segment endpoint " << spec.mTip;
                     return false;
+                }
 
                 const osg::Vec3f end = tip ? osg::Vec3f(tip->getTrans()) : pivot;
                 const osg::Vec3f segment = end - pivot;
@@ -209,6 +227,7 @@ namespace MWPhysics
                 part.mBody->setCcdSweptSphereRadius(spec.mRadius * 0.55f);
                 part.mBody->setLinearVelocity(Misc::Convert::toBullet(velocity));
                 mWorld.addRigidBody(part.mBody.get());
+                part.mRestReference = part.mBody->getWorldTransform();
 
                 if (i == Pelvis)
                     continue;
@@ -239,7 +258,8 @@ namespace MWPhysics
             if (mSettled || dt <= 0.f)
                 return;
 
-            if (mWorld.stepSimulation(std::min(dt, sMaxFrameTime), 6, sFixedStep) == 0)
+            const int steps = mWorld.stepSimulation(std::min(dt, sMaxFrameTime), 6, sFixedStep);
+            if (steps == 0)
                 return;
             for (size_t index : mPoseOrder)
             {
@@ -250,7 +270,7 @@ namespace MWPhysics
             }
             reportArticulation();
 
-            mSettled = std::ranges::none_of(mParts, [](const Part& part) { return part.mBody->isActive(); });
+            updateRestState(static_cast<float>(steps) * sFixedStep);
             if (mSettled)
                 Log(Debug::Info) << "Tarhiel ragdoll: settled";
         }
@@ -270,6 +290,7 @@ namespace MWPhysics
             osg::Matrixf mInitialWorld;
             osg::Matrixf mBoneToBody;
             btTransform mInitialBody;
+            btTransform mRestReference;
             btQuaternion mInitialJointRotation;
             std::unique_ptr<btCollisionShape> mShape;
             std::unique_ptr<btRigidBody> mBody;
@@ -310,13 +331,35 @@ namespace MWPhysics
             return true;
         }
 
+        void updateRestState(float elapsed)
+        {
+            // Measure displacement over a window. Small contact impulses can
+            // keep Bullet's island awake even when the displayed pose is still.
+            const bool moved = std::ranges::any_of(mParts, [](const Part& part) {
+                const auto& current = part.mBody->getWorldTransform();
+                return (current.getOrigin() - part.mRestReference.getOrigin()).length2() > 1.f
+                    || std::abs(current.getRotation().dot(part.mRestReference.getRotation())) < 0.99975f;
+            });
+            if (moved)
+            {
+                mQuietTime = 0.f;
+                for (Part& part : mParts)
+                    part.mRestReference = part.mBody->getWorldTransform();
+            }
+            else
+                mQuietTime += elapsed;
+
+            mSettled = mQuietTime >= 0.8f
+                || std::ranges::none_of(mParts, [](const Part& part) { return part.mBody->isActive(); });
+        }
+
         float jointMotion(PartIndex index) const
         {
             const Part& child = mParts[index];
             const Part& parent = mParts[sParts[index].mParent];
             const btQuaternion relative = parent.mBody->getWorldTransform().getRotation().inverse()
                 * child.mBody->getWorldTransform().getRotation();
-            return (child.mInitialJointRotation.inverse() * relative).getAngleShortestPath();
+            return static_cast<float>((child.mInitialJointRotation.inverse() * relative).getAngleShortestPath());
         }
 
         void reportArticulation()
@@ -344,6 +387,7 @@ namespace MWPhysics
         std::array<Part, PartCount> mParts;
         std::array<size_t, PartCount> mPoseOrder{};
         std::vector<std::unique_ptr<btConeTwistConstraint>> mJoints;
+        float mQuietTime = 0.f;
         float mElbowMotion = 0.f;
         float mKneeMotion = 0.f;
         bool mReportedArticulation = false;
@@ -361,11 +405,6 @@ namespace MWPhysics
         }();
         static const ESM::RefId tarhiel = ESM::RefId::stringRefId("agronian guy");
         return enabled && actor.getCellRef().getRefId() == tarhiel;
-    }
-
-    bool TarhielRagdoll::active() const
-    {
-        return mRig != nullptr;
     }
 
     bool TarhielRagdoll::update(const MWWorld::Ptr& actor, const MWRender::Animation& animation, float dt)

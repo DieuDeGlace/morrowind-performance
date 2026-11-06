@@ -2,7 +2,7 @@ local camera = require('openmw.camera')
 local debug = require('openmw.debug')
 local capture
 local nextImage = 1
-local imageTimes = { 0.2, 0.6, 1.1, 3.2 }
+local imageTimes = { 0.25, 3, 8, 15 }
 return {
     eventHandlers = {
         TarhielTest_Camera = function()

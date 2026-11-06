@@ -37,10 +37,10 @@ local function update(dt)
         if smoke then player:sendEvent('TarhielTest_Capture') end
     end
 
-    if smoke and deathTime and elapsed > deathTime + 7 then
+    if smoke and deathTime and elapsed > deathTime + 17 then
         print('TARHIEL_TEST_COMPLETE')
         core.quit()
-    elseif smoke and elapsed > 24 then
+    elseif smoke and elapsed > 33 then
         error('Timed out waiting for Tarhiel to fall')
     end
 end

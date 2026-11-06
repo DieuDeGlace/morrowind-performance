@@ -711,12 +711,12 @@ namespace MWRender
     {
         if (mTarhielRagdoll && mViewMode == VM_Normal)
         {
-            const bool wasActive = mTarhielRagdoll->active();
             if (mTarhielRagdoll->update(mPtr, *this, timepassed))
             {
-                if (!wasActive)
+                // Mechanics can start the death group after this frame's pose
+                // update. Clear it on the next update so kill() can finish.
+                if (!mStates.empty())
                 {
-                    // Remove keyframe controllers before scene traversal writes the bones.
                     mStates.clear();
                     resetActiveGroups();
                 }
