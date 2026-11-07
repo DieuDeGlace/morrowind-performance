@@ -10,6 +10,7 @@ local dragAimTime
 local stableAimTime
 local swingTime
 local nextStrike = 0
+local chargeTime = .58
 
 local function aimAt(point)
     local direction = (point - camera.getPosition()):normalize()
@@ -47,6 +48,7 @@ return {
             target = attack.target
             swingTime = 0
             nextStrike = 0
+            chargeTime = attack.chargeTime or .58
             camera.setMode(camera.MODE.FirstPerson)
             controls.overrideCombatControls(true)
             if attack.weapon then
@@ -58,7 +60,7 @@ return {
     },
     engineHandlers = {
         onFrame = function(dt)
-            if not target then return end
+            if not target or not target:isValid() or not target.cell then return end
             if dragAimTime then
                 local focus = camera.getFocusRay().hitObject
                 dragAimTime = dragAimTime + dt
@@ -90,7 +92,7 @@ return {
             end
             if swingTime >= nextStrike then
                 aimAt(findBody())
-                nextStrike = swingTime + 1.3
+                nextStrike = swingTime + chargeTime + .72
             end
             self.controls.use = nextStrike - swingTime > .72 and self.ATTACK_TYPE.Any or self.ATTACK_TYPE.NoAttack
         end,

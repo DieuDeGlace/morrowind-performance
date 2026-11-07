@@ -27,8 +27,8 @@ around to drag it. Releasing Activate drops the body. Joint poses are
 session-only.
 
 The solver takes fixed 120 Hz steps while bodies are awake and stops when
-the last rig settles. It caps simultaneous awake rigs at 12 and retained
-rigs at 64 on desktop (6 awake and 32 retained on Android). Rig bodies stay outside the normal actor movement and ray query
+the last rig or item settles. It caps simultaneous awake rigs at 12 and retained
+rigs at 64. Rig bodies stay outside the normal actor movement and ray query
 filters. Rig profiles are in apps/openmw/mwphysics/ragdoll.cpp.
 
 ## Replay
@@ -67,7 +67,7 @@ their initial fall; limbs should rotate relative to the torso before settling.
 
 ## Full base-game and expansion coverage replay
 
-On the Windows 0.53 engine, with Morrowind.esm, Tribunal.esm and Bloodmoon.esm enabled, use the opt-in marker
+With Morrowind.esm, Tribunal.esm and Bloodmoon.esm enabled, use the opt-in marker
 ragdoll-all-actors.txt instead of ragdoll-smoke.txt. This disposable replay stages
 all 89 distinct creature model paths and both sexes of all 10 NPC races, three
 actors at a time. It uses temporary nonessential, script-free copies of records
@@ -76,5 +76,24 @@ lifecycle and corpse inventory, allows the initial fall, then removes the batch.
 The log maps each source record to its generated record ID. For every spawned
 actor, verify a corresponding native "activated" entry, plus articulation or
 whole-model movement where the model permits it. The marker is not supplied in
-the interactive demo. The complete coverage replay uses the 0.53 Lua record-drafting API; the native automatic rig generator is shared with the Android 0.51 engine.
+the interactive demo.
 
+## Native item replay
+
+Native inventory-item physics is enabled with the physics preview. The default
+collision policy follows MaxYari/OpenMWLuaPhysics 1.4; see PERFORMANCE-BUILD.md
+for eligible types, compatibility, limits and optional debris assets.
+Hold Activate to grab an item, release to drop it, and press Use while holding
+to throw. Tap Activate retains ordinary pickup. Melee can push eligible items.
+
+For the disposable regression, load ItemPhysicsTest.omwscripts instead of
+RagdollTest.omwscripts and launch with --skip-menu --start "Seyda Neen".
+It checks lazy activation, gravity/floor collision, moving-item pickup/removal,
+holding/throwing, scripted teleport and position/rotation save/reload. It creates
+a test save only in the selected disposable profile. ITEM_TEST_COMPLETE marks
+success. Do not enable MaxYari's solver manifest during the native replay.
+
+ItemImpactTest.omwscripts instead checks a real charged player melee swing and
+optional bottle debris. This replay requires the reference mod's installed
+asset data folder, with its Lua manifest disabled. The third-party assets are
+not included here. ITEM_IMPACT_TEST_COMPLETE marks success.
