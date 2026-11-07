@@ -339,7 +339,8 @@ namespace MWPhysics
                 parent = bones[parent].mParent;
             if (parent == NoParent)
                 continue;
-            const float distance = (bones[i].mWorld.getTrans() - bones[parent].mWorld.getTrans()).length();
+            const float distance
+                = static_cast<float>((bones[i].mWorld.getTrans() - bones[parent].mWorld.getTrans()).length());
             // Coincident mesh/shadow transforms are not separate joints.
             // Collapsing them is essential for vertex-morphed creatures.
             if (distance < minimum)

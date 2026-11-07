@@ -280,7 +280,7 @@ namespace MWPhysics
                 part.mParentPath.pop_back();
                 part.mOriginalLocal = node->getMatrix();
                 part.mInitialWorld = part.mOriginalLocal * osg::computeLocalToWorld(part.mParentPath);
-                part.mStart = start ? *start : part.mInitialWorld.getTrans();
+                part.mStart = start ? *start : osg::Vec3f(part.mInitialWorld.getTrans());
                 part.mEnd = end ? *end : part.mStart;
                 mPoseOrder.push_back(mParts.size());
                 mParts.push_back(std::move(part));
