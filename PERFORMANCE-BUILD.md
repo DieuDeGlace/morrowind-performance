@@ -39,7 +39,7 @@ For settings.cfg, merge into the existing [Shadows] section:
 This setting belongs to the performance build; stock OpenMW 0.51 requires this
 build or its own compatible shader modification. Existing defaults remain.
 
-## Physics preview 3: general actor model support
+## Physics preview 3: general actor and item physics
 
 With OPENMW_RAGDOLLS=1, deaths attempt physics for all NPC and creature model
 types, including custom skeletons and incomplete Bip01 variants. Existing tuned
@@ -47,8 +47,36 @@ rigs remain preferred. Automatic discovery uses actual skin influences or
 geometry-bearing transforms and limits each generated rig to 24 bodies.
 Vertex-morphed/unrigged models such as the kwama forager get whole-body collision
 and dragging; independent limbs require usable joints. The existing awake and
-retained-rig limits still apply. Loose-item physics is outside this change.
+retained-rig limits still apply. Living actors keep their normal animation and movement.
 
 The complete Windows package includes openmw-launcher.exe and all other desktop
 applications. Start-Physics-Launcher.cmd enables physics for launcher-started
 games. See RAGDOLL-TEST.md for the opt-in comprehensive actor replay.
+
+## Native items
+
+The preview follows the default object rules of MaxYari's Lua Physics Engine:
+https://github.com/MaxYari/OpenMWLuaPhysics (reference 1.4).
+Clothing, armor, books, ingredients, miscellaneous items, potions, weapons,
+apparatus, lockpicks, probes and repair tools can be pushed, grabbed and thrown.
+Doors, containers, static scenery, activators and lights stay with their
+ordinary behavior. Untouched items remain still; interaction wakes gravity.
+Tap Activate to pick up; hold Activate to grab; Use while holding throws.
+
+The default Potato collision policy uses world geometry and living actors,
+with item/item and item/corpse collisions disabled. Items sleep after one second
+below the linear speed threshold. Native limits are 32 awake and 128 retained
+items on desktop, 16 awake and 64 retained on Android. Item transforms update
+ordinary world records and survive saves; actor joint poses remain session-only.
+Owned-item disturbance/destruction uses the engine's crime detection.
+
+Optional installed meshes/debris assets allow matching unscripted miscellaneous
+items to break into bounded debris. No third-party meshes, sounds, scripts or
+textures are distributed. Without matching debris assets, items stay intact.
+This is an independent native implementation of the defaults, not the mod's
+full Lua interfaces, optional Normal collision mode or Impact Effects package.
+
+Native item simulation automatically yields when LuaPhysicsEngine.omwscripts
+or its engine scripts are configured. To use native items, disable that manifest;
+its asset data folder may remain enabled for optional debris. Actor ragdolls
+remain available. OPENMW_ITEMS=0 disables native items independently.

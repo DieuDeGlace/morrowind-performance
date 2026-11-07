@@ -29,6 +29,8 @@ local function update(dt)
             if actor ~= player then actor.enabled = false end
         end
         bottle = spawn(player, 'misc_com_bottle_01', util.vector3(0, 55, 150))
+        stage, deadline = 'record spawn', elapsed + .2
+    elseif stage == 'record spawn' then
         origin = bottle.position
         stage, deadline = 'lazy', elapsed + 1
     elseif stage == 'lazy' then
