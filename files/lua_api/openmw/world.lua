@@ -302,3 +302,23 @@
 -- @param #number hours Number of hours to advance time
 
 return nil
+
+
+---
+-- Native item physics extension provided by this performance/physics fork.
+-- Requires native physics to be enabled. Mutating calls are queued to the main
+-- game thread. Inventory items use lazy sphere bodies; other record types
+-- remain fixed. Physics is disabled when LuaPhysicsEngine.omwscripts is enabled.
+-- @field #NativePhysics physics
+
+---
+-- @type NativePhysics
+-- @field #function isEnabled Returns whether the native item backend is enabled.
+-- @field #function applyImpulse (item, impulse, culprit) Wake an item and apply an
+-- impulse (game units * mass / second). Culprit is an optional GameObject used for
+-- ownership consequences. A zero impulse wakes gravity. Items in inventories or
+-- inactive cells are ignored.
+-- @field #function grab (item, point) Grab an eligible object from the player camera,
+-- respecting activation reach and world obstructions.
+-- @field #function release () Release the current physics grab.
+-- @field #function throw () Release a held item and apply the default throw impulse.

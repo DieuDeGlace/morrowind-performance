@@ -304,6 +304,25 @@ namespace MWPhysics
         return body;
     }
 
+    bool ItemPhysics::applyImpulse(const MWWorld::Ptr& item, const osg::Vec3f& impulse, const MWWorld::Ptr& culprit)
+    {
+        if (!finite(impulse) || impulse.length2() > 1e12f)
+            return false;
+        const auto body = getOrCreate(item);
+        if (!body)
+            return false;
+        if (!body->mRegistered && std::count_if(mBodies.begin(), mBodies.end(), [](const auto& entry) {
+                return entry.second->mRegistered;
+            }) >= MaxAwake)
+            return false;
+        mPhysics.withRagdollWorld([&](RagdollWorld& world) {
+            body->wake(world);
+            body->mCulprit = culprit;
+            body->mBody->applyCentralImpulse(Misc::Convert::toBullet(impulse));
+        });
+        return true;
+    }
+
     bool ItemPhysics::grab(const MWWorld::Ptr& player, const MWWorld::Ptr& item, const osg::Vec3f& point,
         const osg::Vec3f& eye, const osg::Quat& view, float reach)
     {

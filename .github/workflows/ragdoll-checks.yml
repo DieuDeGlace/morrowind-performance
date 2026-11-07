@@ -7,6 +7,7 @@ on:
       - 'apps/openmw/mwphysics/ragdoll*.hpp'
       - 'apps/openmw_tests/mwphysics/testragdoll*.cpp'
       - 'apps/openmw/mwphysics/itemphysics*'
+      - 'apps/openmw/mwlua/worldbindings.cpp'
       - 'apps/openmw_tests/mwphysics/testitemphysics*.cpp'
   workflow_dispatch:
 
@@ -21,7 +22,7 @@ jobs:
       - name: Install header dependencies
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends g++ libopenscenegraph-dev libbullet-dev libboost-dev libgtest-dev
+          sudo apt-get install -y --no-install-recommends g++ libopenscenegraph-dev libbullet-dev libboost-dev libgtest-dev libluajit-5.1-dev
       - name: Check actor physics regressions compile
         run: |
           g++ -std=c++20 -fsyntax-only -I. -I/usr/include/bullet apps/openmw_tests/mwphysics/testragdollautorig.cpp apps/openmw_tests/mwphysics/testragdollcontrollers.cpp
@@ -40,6 +41,7 @@ jobs:
       - name: Check native item integration compiles
         run: |
           g++ -std=c++20 -fsyntax-only -I. -I/usr/include/bullet -Iextern/sol3 -Iextern/sol_config apps/openmw/mwphysics/itemphysics.cpp apps/openmw/mwphysics/ragdoll.cpp
+          g++ -std=c++20 -fsyntax-only -I. -I/usr/include/bullet -Iextern/sol3 -Iextern/sol_config -I/usr/include/luajit-2.1 apps/openmw/mwlua/worldbindings.cpp
       - name: Run native item policy tests
         run: |
           g++ -std=c++20 -I. apps/openmw_tests/mwphysics/testitemphysicsrules.cpp -lgtest_main -lgtest -pthread -o /tmp/item-physics-tests

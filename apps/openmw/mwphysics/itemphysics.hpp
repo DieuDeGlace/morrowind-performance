@@ -24,6 +24,7 @@ namespace MWPhysics
 
         bool enabled();
         bool canGrab(const MWWorld::Ptr& item);
+        bool applyImpulse(const MWWorld::Ptr& item, const osg::Vec3f& impulse, const MWWorld::Ptr& culprit);
         bool grab(const MWWorld::Ptr& player, const MWWorld::Ptr& item, const osg::Vec3f& point, const osg::Vec3f& eye,
             const osg::Quat& view, float reach);
         bool throwHeld(const MWWorld::Ptr& player, const osg::Quat& view);
