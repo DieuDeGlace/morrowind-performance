@@ -140,7 +140,7 @@ namespace MWPhysics
 
         mTaskScheduler = std::make_unique<PhysicsTaskScheduler>(mPhysicsDt, mCollisionWorld.get());
         if (mRagdollWorld)
-            mItemPhysics = std::make_unique<ItemPhysics>(*this);
+            mItemPhysics = std::make_unique<ItemPhysics>(*this, mResourceSystem);
     }
 
     PhysicsSystem::~PhysicsSystem()

@@ -3,6 +3,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <string>
+#include <string_view>
+#include <vector>
 
 #include <components/esm/defs.hpp>
 #include <osg/Vec3f>
@@ -62,6 +65,31 @@ namespace MWPhysics::ItemPhysicsRules
     inline int crimeAmount(int value, bool destroyed = false)
     {
         return std::max(25, static_cast<int>(value * (destroyed ? 2.f : .1f)));
+    }
+
+    // Optional debris assets use names such as
+    // misc_com_bottle_&05&06__blue_chunk_0.nif. Expand the selector, never
+    // infer destructibility for models without an installed matching asset.
+    inline std::vector<std::string> debrisTargets(std::string_view stem)
+    {
+        if (stem.starts_with("x"))
+            stem.remove_prefix(1);
+        stem = stem.substr(0, stem.find("__"));
+        const auto selector = stem.find("_&");
+        if (selector == std::string_view::npos)
+            return { std::string(stem) };
+        std::vector<std::string> result;
+        const std::string prefix(stem.substr(0, selector + 1));
+        std::size_t position = selector + 1;
+        while ((position = stem.find('&', position)) != std::string_view::npos)
+        {
+            const auto first = ++position;
+            while (position < stem.size() && stem[position] >= '0' && stem[position] <= '9')
+                ++position;
+            if (position > first)
+                result.push_back(prefix + std::string(stem.substr(first, position - first)));
+        }
+        return result;
     }
 
     class SleepTimer

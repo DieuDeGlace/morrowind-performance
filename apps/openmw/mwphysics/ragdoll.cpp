@@ -134,6 +134,15 @@ namespace MWPhysics
             { "Bone23", "Bone24", 15, 2.f, 1.f, 1.1f, .25f, .2f },
         };
 
+        template <class World>
+        bool castItemRay(World& world, RayCastingResult& result, const osg::Vec3f& from, const osg::Vec3f& to)
+        {
+            if constexpr (requires { world.castRenderingRay(result, from, to, true, false, false); })
+                return world.castRenderingRay(result, from, to, true, false, false);
+            else
+                return world.castRenderingRay(result, from, to, true, false);
+        }
+
         struct PartHit
         {
             btRigidBody* mBody = nullptr;
@@ -683,10 +692,14 @@ namespace MWPhysics
         const btVector3 from = Misc::Convert::toBullet(eye);
         const float hitReach = reach + halfExtents.x() + .5f * halfExtents.z();
         const btVector3 to = from + direction * hitReach;
-        if (auto* items = physics->getItemPhysics(); items
-            && items->hit(player, world->getFocusObject(), eye, osg::Vec3f(Misc::Convert::toOsg(direction)), hitReach,
-                attackStrength))
-            return;
+        if (auto* items = physics->getItemPhysics(); items && items->enabled())
+        {
+            RayCastingResult hit;
+            const osg::Vec3f aim(Misc::Convert::toOsg(direction));
+            if (castItemRay(*world, hit, eye, eye + aim * hitReach)
+                && items->hit(player, hit.mHitObject, hit.mHitPos, eye, aim, hitReach, attackStrength))
+                return;
+        }
         if (!physics->getRagdollWorld()->hasRigs())
             return;
         physics->withRagdollWorld([&](RagdollWorld& dynamics) {
