@@ -29,6 +29,7 @@
 #include "../mwworld/class.hpp"
 
 #include "physicssystem.hpp"
+#include "ragdollautorig.hpp"
 #include "ragdollcontrollers.hpp"
 #include "ragdollworld.hpp"
 
@@ -246,9 +247,6 @@ namespace MWPhysics
                 specs = sMudcrab;
                 profile = "mudcrab";
             }
-            else
-                return false;
-
             const auto findBone = [&](std::string_view name) {
                 return animation.getNode(prefix.empty() ? name : std::string(prefix) + std::string(name));
             };
@@ -264,48 +262,89 @@ namespace MWPhysics
                 }
             }
 
-            mParts.reserve(parts.size());
-            mPoseOrder.reserve(parts.size());
-            for (const PartSpec& spec : parts)
-            {
+            // A partial/custom Bip01 rig must use automatic discovery too,
+            // rather than failing because just one template bone is missing.
+            if (!std::ranges::all_of(parts, [&](const PartSpec& part) {
+                    return dynamic_cast<const osg::MatrixTransform*>(findBone(part.mBone))
+                        && (part.mTip.empty() || findBone(part.mTip));
+                }))
+                parts.clear();
+
+            const auto appendPart = [&](osg::MatrixTransform* node, const osg::Vec3f* start,
+                                        const osg::Vec3f* end) {
                 Part part;
-                part.mNode
-                    = dynamic_cast<osg::MatrixTransform*>(const_cast<osg::Node*>(findBone(spec.mBone)));
-                if (!part.mNode)
-                    return false;
-                part.mParentPath = actorPath(*part.mNode, *mRoot);
+                part.mNode = node;
+                part.mParentPath = actorPath(*node, *mRoot);
                 if (part.mParentPath.empty())
                     return false;
                 part.mParentPath.pop_back();
-                part.mOriginalLocal = part.mNode->getMatrix();
+                part.mOriginalLocal = node->getMatrix();
                 part.mInitialWorld = part.mOriginalLocal * osg::computeLocalToWorld(part.mParentPath);
-                part.mEnd = part.mInitialWorld.getTrans();
-                if (!spec.mTip.empty())
-                {
-                    const auto* tip = findBone(spec.mTip);
-                    if (!tip)
-                        return false;
-                    const auto path = actorPath(*tip, *mRoot);
-                    if (path.empty())
-                        return false;
-                    part.mEnd = osg::computeLocalToWorld(path).getTrans();
-                }
+                part.mStart = start ? *start : part.mInitialWorld.getTrans();
+                part.mEnd = end ? *end : part.mStart;
                 mPoseOrder.push_back(mParts.size());
                 mParts.push_back(std::move(part));
+                return true;
+            };
+
+            float size = 1.f;
+            if (parts.empty())
+            {
+                const auto* model = animation.getObjectRoot();
+                if (!model)
+                    return false;
+                mModelFrame = std::make_unique<RagdollModelFrame>(*const_cast<osg::Group*>(model));
+                auto* frame = mModelFrame->get();
+                if (!frame)
+                    return false;
+                const auto path = actorPath(*frame, *mRoot);
+                if (path.empty())
+                    return false;
+                AutoRagdoll generated = makeAutoRagdoll(*frame, osg::computeLocalToWorld(path));
+                if (generated.mParts.empty())
+                {
+                    Log(Debug::Warning) << "Ragdoll: " << mActorId << " has no usable model geometry";
+                    return false;
+                }
+                profile = generated.mParts.size() > 1 ? "automatic skeleton" : "whole model (no usable joints)";
+                for (const auto& part : generated.mParts)
+                {
+                    if (!appendPart(part.mNode, &part.mStart, &part.mEnd))
+                        return false;
+                    parts.push_back({ "", "", part.mParent, part.mRadius, part.mMass, 1.1f, .85f, .45f });
+                }
+                mAnimatedNodes = std::move(generated.mAnimatedNodes);
+            }
+            else
+            {
+                mParts.reserve(parts.size());
+                for (const PartSpec& spec : parts)
+                {
+                    osg::Vec3f end;
+                    const osg::Vec3f* endpoint = nullptr;
+                    if (!spec.mTip.empty())
+                    {
+                        const auto path = actorPath(*findBone(spec.mTip), *mRoot);
+                        if (path.empty())
+                            return false;
+                        end = osg::computeLocalToWorld(path).getTrans();
+                        endpoint = &end;
+                    }
+                    auto* node = dynamic_cast<osg::MatrixTransform*>(const_cast<osg::Node*>(findBone(spec.mBone)));
+                    if (!appendPart(node, nullptr, endpoint))
+                        return false;
+                }
+
+                // Scale known templates using actual torso and leg lengths.
+                size = static_cast<float>(mParts[0].mInitialWorld.getScale().x());
+                if (profile == "Bip01")
+                {
+                    const auto length = [&](std::size_t index) { return (mParts[index].mEnd - mParts[index].mStart).length(); };
+                    size = (length(Chest) + length(LeftThigh) + length(LeftCalf)) / 88.f;
+                }
+                size = std::clamp(size, .2f, 4.f);
             }
             std::ranges::sort(mPoseOrder, {}, [&](std::size_t index) { return mParts[index].mParentPath.size(); });
-
-            // Scale the Bip01 template using the actual torso and leg
-            // lengths. This covers small creatures, large ones and ref scale.
-            float size = static_cast<float>(mParts[0].mInitialWorld.getScale().x());
-            if (profile == "Bip01")
-            {
-                const auto length = [&](std::size_t index) {
-                    return (mParts[index].mEnd - mParts[index].mInitialWorld.getTrans()).length();
-                };
-                size = (length(Chest) + length(LeftThigh) + length(LeftCalf)) / 88.f;
-            }
-            size = std::clamp(size, .2f, 4.f);
 
             mJoints.reserve(mParts.size() - 1);
             for (std::size_t i = 0; i < mParts.size(); ++i)
@@ -314,7 +353,7 @@ namespace MWPhysics
                 Part& part = mParts[i];
                 const float radius = spec.mRadius * size;
                 const osg::Vec3f pivot = part.mInitialWorld.getTrans();
-                const osg::Vec3f segment = part.mEnd - pivot;
+                const osg::Vec3f segment = part.mEnd - part.mStart;
                 const float length = segment.length();
                 const float cylinder = std::max(0.f, length - 2.f * radius);
                 part.mRadius = radius;
@@ -328,7 +367,7 @@ namespace MWPhysics
                 else
                     part.mShape = std::make_unique<btSphereShape>(radius);
 
-                const btVector3 center = Misc::Convert::toBullet(pivot + segment * .5f);
+                const btVector3 center = Misc::Convert::toBullet(part.mStart + segment * .5f);
                 const btTransform initial(rotation, center);
                 part.mBoneToBody = part.mInitialWorld * osg::Matrixf::inverse(toMatrix(initial));
                 const float mass = spec.mMass * size * size;
@@ -397,6 +436,9 @@ namespace MWPhysics
                     if (visited.insert(part.mNode.get()).second)
                         mControllers.suspend(*part.mNode);
                 }
+                for (const auto& node : mAnimatedNodes)
+                    if (visited.insert(node.get()).second)
+                        mControllers.suspend(*node);
                 mControllersSuspended = true;
             }
 
@@ -492,6 +534,7 @@ namespace MWPhysics
             osg::Matrixf mOriginalLocal;
             osg::Matrixf mInitialWorld;
             osg::Matrixf mBoneToBody;
+            osg::Vec3f mStart;
             osg::Vec3f mEnd;
             btTransform mRestReference;
             btQuaternion mInitialJointRotation;
@@ -557,7 +600,9 @@ namespace MWPhysics
         PhysicsSystem& mPhysics;
         ESM::RefId mActorId;
         osg::ref_ptr<SceneUtil::PositionAttitudeTransform> mRoot;
+        std::unique_ptr<RagdollModelFrame> mModelFrame;
         std::vector<Part> mParts;
+        std::vector<osg::ref_ptr<osg::Node>> mAnimatedNodes;
         std::vector<std::size_t> mPoseOrder;
         std::vector<std::unique_ptr<btConeTwistConstraint>> mJoints;
         RagdollControllers mControllers;

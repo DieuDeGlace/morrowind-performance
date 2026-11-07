@@ -322,6 +322,12 @@ namespace SceneUtil
         }
     }
 
+    const std::vector<RigGeometry::BoneInfo>& RigGeometry::getBoneInfo() const
+    {
+        static const std::vector<BoneInfo> empty;
+        return mData ? mData->mBones : empty;
+    }
+
     void RigGeometry::setBoneInfo(std::vector<BoneInfo>&& bones)
     {
         if (!mData)

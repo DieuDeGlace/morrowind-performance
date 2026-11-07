@@ -343,6 +343,7 @@ namespace MWRender
         osg::Group* getOrCreateObjectRoot();
 
         osg::Group* getObjectRoot();
+        const osg::Group* getObjectRoot() const { return mObjectRoot.get(); }
 
         /**
          * @brief Add an effect mesh attached to a bone or the insert scene node

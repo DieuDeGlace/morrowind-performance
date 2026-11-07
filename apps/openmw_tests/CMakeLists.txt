@@ -7,6 +7,7 @@ file(GLOB UNITTEST_SRC_FILES
     options.cpp
 
     mwphysics/testragdollcontrollers.cpp
+    mwphysics/testragdollautorig.cpp
 
     mwworld/teststore.cpp
     mwworld/testduration.cpp
