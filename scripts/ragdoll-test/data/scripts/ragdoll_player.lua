@@ -19,6 +19,9 @@ local function aimAt(point)
 end
 
 local function findBody()
+    if not types.Actor.objectIsInstance(target) then
+        return target:getBoundingBox().center
+    end
     local position = target.position
     for z = 8, 36, 7 do
         for y = -35, 45, 10 do
@@ -60,7 +63,13 @@ return {
     },
     engineHandlers = {
         onFrame = function(dt)
-            if not target or not target:isValid() or not target.cell then return end
+            if not target then return end
+            if not target:isValid() or not target.cell or target.count <= 0 then
+                self.controls.use = self.ATTACK_TYPE.NoAttack
+                controls.overrideCombatControls(false)
+                target = nil
+                return
+            end
             if dragAimTime then
                 local focus = camera.getFocusRay().hitObject
                 dragAimTime = dragAimTime + dt
@@ -83,6 +92,7 @@ return {
                 end
                 return
             end
+            if not types.Actor.objectIsInstance(target) then aimAt(findBody()) end
             swingTime = swingTime + dt
             if swingTime >= 6 then
                 self.controls.use = self.ATTACK_TYPE.NoAttack
