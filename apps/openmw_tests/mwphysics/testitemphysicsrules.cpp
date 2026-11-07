@@ -33,6 +33,15 @@ namespace
         EXPECT_FLOAT_EQ(metal.mMass, ordinary.mMass * 2.f);
     }
 
+    TEST(ItemPhysicsRules, InstalledDebrisSelectorsKeepTheirExplicitModelNumbers)
+    {
+        EXPECT_EQ(Rules::debrisTargets("misc_com_bottle_&05&06__blue_chunk_0"),
+            (std::vector<std::string>{ "misc_com_bottle_05", "misc_com_bottle_06" }));
+        EXPECT_EQ(
+            Rules::debrisTargets("misc_com_bottle__brown_chunk_5"), (std::vector<std::string>{ "misc_com_bottle" }));
+        EXPECT_EQ(Rules::debrisTargets("xmisc_com_jug_01__chunk_0"), (std::vector<std::string>{ "misc_com_jug_01" }));
+    }
+
     TEST(ItemPhysicsRules, HeldOrMovingItemsCannotSleep)
     {
         Rules::SleepTimer timer;

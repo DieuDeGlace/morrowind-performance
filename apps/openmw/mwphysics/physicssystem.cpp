@@ -146,7 +146,7 @@ namespace MWPhysics
         mDebugDrawer = std::make_unique<MWRender::DebugDrawer>(mParentNode, mCollisionWorld.get(), mDebugDrawEnabled);
         mTaskScheduler = std::make_unique<PhysicsTaskScheduler>(mPhysicsDt, mCollisionWorld.get(), mDebugDrawer.get());
         if (mRagdollWorld)
-            mItemPhysics = std::make_unique<ItemPhysics>(*this);
+            mItemPhysics = std::make_unique<ItemPhysics>(*this, mResourceSystem);
     }
 
     PhysicsSystem::~PhysicsSystem()

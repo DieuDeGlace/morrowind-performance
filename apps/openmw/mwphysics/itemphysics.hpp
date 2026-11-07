@@ -1,13 +1,22 @@
 #ifndef OPENMW_MWPHYSICS_ITEMPHYSICS_HPP
 #define OPENMW_MWPHYSICS_ITEMPHYSICS_HPP
 
+#include <components/vfs/pathutil.hpp>
 #include <cstdint>
+#include <deque>
 #include <memory>
+#include <string>
 #include <unordered_map>
+#include <vector>
 
 #include "../mwworld/ptr.hpp"
 #include <osg/Quat>
 #include <osg/Vec3f>
+
+namespace Resource
+{
+    class ResourceSystem;
+}
 
 namespace MWPhysics
 {
@@ -19,7 +28,7 @@ namespace MWPhysics
     class ItemPhysics
     {
     public:
-        explicit ItemPhysics(PhysicsSystem& physics);
+        ItemPhysics(PhysicsSystem& physics, Resource::ResourceSystem* resources);
         ~ItemPhysics();
 
         bool enabled();
@@ -28,7 +37,7 @@ namespace MWPhysics
         bool grab(const MWWorld::Ptr& player, const MWWorld::Ptr& item, const osg::Vec3f& point, const osg::Vec3f& eye,
             const osg::Quat& view, float reach);
         bool throwHeld(const MWWorld::Ptr& player, const osg::Quat& view);
-        bool hit(const MWWorld::Ptr& player, const MWWorld::Ptr& target, const osg::Vec3f& eye,
+        bool hit(const MWWorld::Ptr& player, const MWWorld::Ptr& target, const osg::Vec3f& point, const osg::Vec3f& eye,
             const osg::Vec3f& direction, float reach, float strength);
 
         void prepare(float dt);
@@ -40,7 +49,14 @@ namespace MWPhysics
     private:
         class Body;
         std::shared_ptr<Body> getOrCreate(const MWWorld::Ptr& item);
+        bool fracture(const std::shared_ptr<Body>& body);
+        void buildDebrisIndex();
         PhysicsSystem& mPhysics;
+        Resource::ResourceSystem* mResources;
+        std::unordered_map<std::string, std::vector<VFS::Path::Normalized>> mDebris;
+        std::unordered_map<std::string, ESM::RefId> mDebrisRecords;
+        std::deque<MWWorld::Ptr> mDebrisPieces;
+        bool mDebrisIndexed = false;
         std::unordered_map<const MWWorld::LiveCellRefBase*, std::shared_ptr<Body>> mBodies;
         bool mSynchronizing = false;
         bool mCompatibilityChecked = false;
