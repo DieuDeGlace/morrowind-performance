@@ -86,7 +86,7 @@ namespace MWPhysics
         mCollisionObject->setWorldTransform(transform);
         mTaskScheduler->addCollisionObject(
             mCollisionObject.get(), CollisionType_HeightMap,
-            CollisionType_Actor | CollisionType_Projectile | CollisionType_Ragdoll);
+            CollisionType_Actor | CollisionType_Projectile | CollisionType_Ragdoll | CollisionType_DynamicItem);
     }
 
     HeightField::~HeightField()

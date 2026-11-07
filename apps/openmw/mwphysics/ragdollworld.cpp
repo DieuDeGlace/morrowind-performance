@@ -18,8 +18,8 @@ namespace MWPhysics
         constexpr unsigned sMaxRigs = 64;
     }
 
-    RagdollWorld::RagdollWorld(btDispatcher* dispatcher, btBroadphaseInterface* broadphase,
-        btConstraintSolver* solver, btCollisionConfiguration* configuration)
+    RagdollWorld::RagdollWorld(btDispatcher* dispatcher, btBroadphaseInterface* broadphase, btConstraintSolver* solver,
+        btCollisionConfiguration* configuration)
         : btDiscreteDynamicsWorld(dispatcher, broadphase, solver, configuration)
     {
         setGravity(btVector3(0.f, 0.f, -627.2f));
@@ -129,6 +129,18 @@ namespace MWPhysics
         return true;
     }
 
+    void RagdollWorld::addItem(Island& item)
+    {
+        mAwakeItems.push_back(&item);
+    }
+
+    void RagdollWorld::removeItem(Island& item)
+    {
+        if (isGrabbed(item))
+            releaseGrab();
+        std::erase(mAwakeItems, &item);
+    }
+
     void RagdollWorld::advance(float dt)
     {
         const int steps = stepSimulation(std::min(dt, .05f), 6, sFixedStep);
@@ -138,9 +150,9 @@ namespace MWPhysics
         // Predictive contacts can reference scenery that unloads between frames.
         releasePredictiveContacts();
         mStepCount += steps;
-        std::erase_if(mAwakeRigs, [&](Island* rig) {
-            return !rig->advance(mStepCount, static_cast<float>(steps) * sFixedStep);
-        });
+        const float elapsed = static_cast<float>(steps) * sFixedStep;
+        std::erase_if(mAwakeRigs, [&](Island* rig) { return !rig->advance(mStepCount, elapsed); });
+        std::erase_if(mAwakeItems, [&](Island* item) { return !item->advance(mStepCount, elapsed); });
     }
 
     void RagdollWorld::updateAabbs()

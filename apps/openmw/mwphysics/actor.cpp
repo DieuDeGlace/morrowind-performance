@@ -148,7 +148,7 @@ namespace MWPhysics
     {
         int collisionMask = CollisionType_World | CollisionType_HeightMap;
         if (mExternalCollisionMode)
-            collisionMask |= CollisionType_Actor | CollisionType_Projectile | CollisionType_Door;
+            collisionMask |= CollisionType_Actor | CollisionType_Projectile | CollisionType_Door | CollisionType_DynamicItem;
         if (mCanWaterWalk)
             collisionMask |= CollisionType_Water;
         return collisionMask;

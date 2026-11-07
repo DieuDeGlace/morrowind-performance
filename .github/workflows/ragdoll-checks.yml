@@ -6,6 +6,8 @@ on:
       - '.github/workflows/ragdoll-checks.yml'
       - 'apps/openmw/mwphysics/ragdoll*.hpp'
       - 'apps/openmw_tests/mwphysics/testragdoll*.cpp'
+      - 'apps/openmw/mwphysics/itemphysics*'
+      - 'apps/openmw_tests/mwphysics/testitemphysics*.cpp'
   workflow_dispatch:
 
 permissions:
@@ -35,3 +37,10 @@ jobs:
             -Wl,--gc-sections -lgtest_main -lgtest -losg -losgUtil -losgAnimation -losgParticle -lOpenThreads -pthread \
             -o /tmp/ragdoll-autorig-tests
           /tmp/ragdoll-autorig-tests
+      - name: Check native item integration compiles
+        run: |
+          g++ -std=c++20 -fsyntax-only -I. -I/usr/include/bullet -Iextern/sol3 -Iextern/sol_config apps/openmw/mwphysics/itemphysics.cpp
+      - name: Run native item policy tests
+        run: |
+          g++ -std=c++20 -I. apps/openmw_tests/mwphysics/testitemphysicsrules.cpp -lgtest_main -lgtest -pthread -o /tmp/item-physics-tests
+          /tmp/item-physics-tests

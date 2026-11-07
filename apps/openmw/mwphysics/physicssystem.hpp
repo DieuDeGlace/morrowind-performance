@@ -51,6 +51,7 @@ namespace MWPhysics
     class PhysicsTaskScheduler;
     class Projectile;
     class RagdollWorld;
+    class ItemPhysics;
     enum ScriptedCollisionType : char;
 
     using ActorMap = std::unordered_map<const MWWorld::LiveCellRefBase*, std::shared_ptr<Actor>>;
@@ -153,6 +154,8 @@ namespace MWPhysics
         Resource::BulletShapeManager* getShapeManager();
 
         RagdollWorld* getRagdollWorld() const { return mRagdollWorld; }
+        ItemPhysics* getItemPhysics() const { return mItemPhysics.get(); }
+        const ActorMap& getActors() const { return mActors; }
         void withRagdollWorld(const std::function<void(RagdollWorld&)>& operation);
 
         void enableWater(float height);
@@ -302,6 +305,7 @@ namespace MWPhysics
         std::unique_ptr<btCollisionWorld> mCollisionWorld;
         RagdollWorld* mRagdollWorld = nullptr;
         std::unique_ptr<PhysicsTaskScheduler> mTaskScheduler;
+        std::unique_ptr<ItemPhysics> mItemPhysics;
 
         std::unique_ptr<Resource::BulletShapeManager> mShapeManager;
         Resource::ResourceSystem* mResourceSystem;

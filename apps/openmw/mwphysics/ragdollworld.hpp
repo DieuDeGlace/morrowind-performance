@@ -23,8 +23,8 @@ namespace MWPhysics
             virtual bool advance(std::uint64_t step, float elapsed) = 0;
         };
 
-        RagdollWorld(btDispatcher* dispatcher, btBroadphaseInterface* broadphase,
-            btConstraintSolver* solver, btCollisionConfiguration* configuration);
+        RagdollWorld(btDispatcher* dispatcher, btBroadphaseInterface* broadphase, btConstraintSolver* solver,
+            btCollisionConfiguration* configuration);
         ~RagdollWorld() override;
 
         bool hasGrab() const { return mGrab != nullptr; }
@@ -41,6 +41,9 @@ namespace MWPhysics
         bool wakeRig(Island& rig);
         bool hasRigs() const { return mRigCount != 0; }
         bool hasAwakeRigs() const { return !mAwakeRigs.empty(); }
+        void addItem(Island& item);
+        void removeItem(Island& item);
+        bool hasAwakeBodies() const { return !mAwakeRigs.empty() || !mAwakeItems.empty(); }
         void advance(float dt);
 
     private:
@@ -52,6 +55,7 @@ namespace MWPhysics
         btVector3 mGrabStart;
         unsigned mRigCount = 0;
         std::vector<Island*> mAwakeRigs;
+        std::vector<Island*> mAwakeItems;
         std::uint64_t mStepCount = 0;
     };
 }

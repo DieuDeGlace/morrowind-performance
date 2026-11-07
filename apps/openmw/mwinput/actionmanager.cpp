@@ -297,6 +297,13 @@ namespace MWInput
         const bool held = mBindingsManager->getActionValue(A_Activate) > .6f;
         if (held && mGrabAttempted)
         {
+            if (mBindingsManager->getActionValue(A_Use) > .6f
+                && MWPhysics::Ragdoll::throwGrabbedItem(player.getPlayer()))
+            {
+                player.getPlayer().getClass().getCreatureStats(player.getPlayer()).setAttackingOrSpell(false);
+                cancelCorpseActivation();
+                return;
+            }
             MWPhysics::Ragdoll::moveGrab(player.getPlayer(), dt);
             return;
         }
