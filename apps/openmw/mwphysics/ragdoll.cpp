@@ -758,7 +758,7 @@ namespace MWPhysics
 
     bool Ragdoll::throwGrabbedItem(const MWWorld::Ptr& player)
     {
-        const auto* world = MWBase::Environment::get().getWorld();
+        const auto world = MWBase::Environment::get().getWorld();
         auto* physics = world->getRagdollPhysics();
         return physics && physics->getItemPhysics()
             && physics->getItemPhysics()->throwHeld(player, world->getCamera()->getOrient());

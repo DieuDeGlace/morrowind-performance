@@ -453,7 +453,7 @@ namespace MWPhysics
                     && body->mOffenses <= ItemPhysicsRules::MinorOffenseLimit)
                     continue;
                 MWWorld::Ptr victim;
-                auto* mechanics = MWBase::Environment::get().getMechanicsManager();
+                const auto mechanics = MWBase::Environment::get().getMechanicsManager();
                 if (mechanics->isAllowedToUse(body->mCulprit, body->mPtr, victim))
                     continue;
                 body->mCrimeReported = mechanics->commitCrime(body->mCulprit, victim,
