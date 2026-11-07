@@ -14,7 +14,10 @@ $required = @(
 )
 $missing = @($required | Where-Object {
     $path = Join-Path $PackageDir $_
-    -not (Test-Path -LiteralPath $path -PathType Leaf) -or (Get-Item -LiteralPath $path).Length -eq 0
+    # files/openmw-cs.cfg is intentionally empty upstream; its packed file
+    # must exist, but has no bytes until editor defaults are added.
+    -not (Test-Path -LiteralPath $path -PathType Leaf) -or
+        ($_ -ne 'defaults-cs.bin' -and (Get-Item -LiteralPath $path).Length -eq 0)
 })
 foreach ($directory in 'resources/shaders', 'resources/vfs') {
     $path = Join-Path $PackageDir $directory

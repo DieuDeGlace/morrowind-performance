@@ -21,3 +21,13 @@ jobs:
           name: OpenMW-performance-Windows-x64
           path: release/*.zip
           if-no-files-found: error
+
+      - name: Preserve release staging and test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenMW-release-staging-and-tests
+          path: |
+            release/
+            build-release/*-tests.xml
+          if-no-files-found: ignore
