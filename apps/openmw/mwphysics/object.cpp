@@ -30,7 +30,7 @@ namespace MWPhysics
         mCollisionObject->setUserPointer(this);
         mShapeInstance->setLocalScaling(mScale);
         mTaskScheduler->addCollisionObject(mCollisionObject.get(), collisionType,
-            CollisionType_Actor | CollisionType_HeightMap | CollisionType_Projectile | CollisionType_Ragdoll);
+            CollisionType_Actor | CollisionType_HeightMap | CollisionType_Projectile | CollisionType_Ragdoll | CollisionType_DynamicItem);
     }
 
     Object::~Object()

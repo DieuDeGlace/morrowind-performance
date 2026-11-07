@@ -88,7 +88,7 @@ add_openmw_dir (mwworld
 
 add_openmw_dir (mwphysics
     physicssystem trace collisiontype actor convert object heightfield closestnotmerayresultcallback
-    contacttestresultcallback stepper movementsolver projectile ragdoll ragdollworld
+    contacttestresultcallback stepper movementsolver projectile ragdoll ragdollworld itemphysics itemphysicsrules
     actorconvexcallback raycasting mtphysics contacttestwrapper projectileconvexcallback
     )
 

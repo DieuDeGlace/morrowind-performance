@@ -57,6 +57,7 @@
 #include "object.hpp"
 #include "projectile.hpp"
 #include "ragdoll.hpp"
+#include "itemphysics.hpp"
 #include "ragdollworld.hpp"
 
 namespace
@@ -144,6 +145,8 @@ namespace MWPhysics
 
         mDebugDrawer = std::make_unique<MWRender::DebugDrawer>(mParentNode, mCollisionWorld.get(), mDebugDrawEnabled);
         mTaskScheduler = std::make_unique<PhysicsTaskScheduler>(mPhysicsDt, mCollisionWorld.get(), mDebugDrawer.get());
+        if (mRagdollWorld)
+            mItemPhysics = std::make_unique<ItemPhysics>(*this);
     }
 
     PhysicsSystem::~PhysicsSystem()
@@ -153,6 +156,7 @@ namespace MWPhysics
         if (mWaterCollisionObject)
             mTaskScheduler->removeCollisionObject(mWaterCollisionObject.get());
 
+        mItemPhysics.reset();
         mTaskScheduler->releaseSharedStates();
         mHeightFields.clear();
         mObjects.clear();
@@ -252,7 +256,7 @@ namespace MWPhysics
 
         ClosestNotMeRayResultCallback resultCallback(ignoreList, targetCollisionObjects, btFrom, btTo);
         resultCallback.m_collisionFilterGroup = group;
-        resultCallback.m_collisionFilterMask = mask & ~CollisionType_Ragdoll;
+        resultCallback.m_collisionFilterMask = mask & ~(CollisionType_Ragdoll | CollisionType_DynamicItem);
 
         mTaskScheduler->rayTest(btFrom, btTo, resultCallback);
 
@@ -274,7 +278,7 @@ namespace MWPhysics
         btCollisionWorld::ClosestConvexResultCallback callback(
             Misc::Convert::toBullet(from), Misc::Convert::toBullet(to));
         callback.m_collisionFilterGroup = group;
-        callback.m_collisionFilterMask = mask & ~CollisionType_Ragdoll;
+        callback.m_collisionFilterMask = mask & ~(CollisionType_Ragdoll | CollisionType_DynamicItem);
 
         btSphereShape shape(radius);
         const btQuaternion btrot = btQuaternion::getIdentity();
@@ -377,7 +381,7 @@ namespace MWPhysics
 
         ContactTestResultCallback resultCallback(me);
         resultCallback.m_collisionFilterGroup = collisionGroup;
-        resultCallback.m_collisionFilterMask = collisionMask & ~CollisionType_Ragdoll;
+        resultCallback.m_collisionFilterMask = collisionMask & ~(CollisionType_Ragdoll | CollisionType_DynamicItem);
         mTaskScheduler->contactTest(me, resultCallback);
         return resultCallback.mResult;
     }
@@ -458,6 +462,8 @@ namespace MWPhysics
 
     void PhysicsSystem::remove(const MWWorld::Ptr& ptr)
     {
+        if (mItemPhysics)
+            mItemPhysics->remove(ptr);
         if (auto foundObject = mObjects.find(ptr.mRef); foundObject != mObjects.end())
         {
             mAnimatedObjects.erase(foundObject->second.get());
@@ -479,6 +485,8 @@ namespace MWPhysics
 
     void PhysicsSystem::updatePtr(const MWWorld::Ptr& old, const MWWorld::Ptr& updated)
     {
+        if (mItemPhysics)
+            mItemPhysics->updatePtr(old, updated);
         if (auto foundObject = mObjects.find(old.mRef); foundObject != mObjects.end())
             foundObject->second->updatePtr(updated);
         else if (auto foundActor = mActors.find(old.mRef); foundActor != mActors.end())
@@ -531,6 +539,8 @@ namespace MWPhysics
 
     void PhysicsSystem::updateScale(const MWWorld::Ptr& ptr)
     {
+        if (mItemPhysics)
+            mItemPhysics->externalTransform(ptr);
         if (auto foundObject = mObjects.find(ptr.mRef); foundObject != mObjects.end())
         {
             float scale = ptr.getCellRef().getScale();
@@ -546,6 +556,8 @@ namespace MWPhysics
 
     void PhysicsSystem::updateRotation(const MWWorld::Ptr& ptr, osg::Quat rotate)
     {
+        if (mItemPhysics)
+            mItemPhysics->externalTransform(ptr);
         if (auto foundObject = mObjects.find(ptr.mRef); foundObject != mObjects.end())
         {
             foundObject->second->setRotation(rotate);
@@ -563,6 +575,8 @@ namespace MWPhysics
 
     void PhysicsSystem::updatePosition(const MWWorld::Ptr& ptr)
     {
+        if (mItemPhysics)
+            mItemPhysics->externalTransform(ptr);
         if (auto foundObject = mObjects.find(ptr.mRef); foundObject != mObjects.end())
         {
             foundObject->second->updatePosition();
@@ -726,8 +740,12 @@ namespace MWPhysics
                 changed = false;
             }
         }
-        if (!skipSimulation && dt > 0.f && mRagdollWorld && mRagdollWorld->hasAwakeRigs())
+        if (!skipSimulation && dt > 0.f && mRagdollWorld && mRagdollWorld->hasAwakeBodies())
+        {
+            mItemPhysics->prepare(dt);
             withRagdollWorld([&](RagdollWorld& world) { world.advance(dt); });
+            mItemPhysics->synchronize();
+        }
 
         for (auto& [_, object] : mObjects)
             object->resetCollisions();

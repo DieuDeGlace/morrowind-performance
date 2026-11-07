@@ -30,6 +30,7 @@ namespace MWPhysics
         static void grab(const MWWorld::Ptr& player, const MWWorld::Ptr& corpse, const osg::Vec3f& point);
         static void moveGrab(const MWWorld::Ptr& player, float dt);
         static void releaseGrab();
+        static bool throwGrabbedItem(const MWWorld::Ptr& player);
 
         ~Ragdoll();
         void updatePose();

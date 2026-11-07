@@ -19,6 +19,7 @@ namespace MWPhysics
         CollisionType_CameraOnly = 1 << 6,
         CollisionType_VisualOnly = 1 << 7,
         CollisionType_Ragdoll = 1 << 8,
+        CollisionType_DynamicItem = 1 << 9,
         CollisionType_RagdollScenery = CollisionType_World | CollisionType_Door | CollisionType_HeightMap
     };
 

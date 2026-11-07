@@ -28,6 +28,7 @@
 #include "../mwrender/camera.hpp"
 #include "../mwworld/class.hpp"
 
+#include "itemphysics.hpp"
 #include "physicssystem.hpp"
 #include "ragdollautorig.hpp"
 #include "ragdollcontrollers.hpp"
@@ -670,7 +671,7 @@ namespace MWPhysics
     {
         const auto world = MWBase::Environment::get().getWorld();
         auto* physics = world->getRagdollPhysics();
-        if (!physics || !physics->getRagdollWorld()->hasRigs())
+        if (!physics)
             return;
 
         const auto& position = player.getRefData().getPosition();
@@ -680,7 +681,14 @@ namespace MWPhysics
             * osg::Quat(position.rot[2], osg::Vec3f(0.f, 0.f, -1.f));
         const btVector3 direction = Misc::Convert::toBullet(aim * osg::Vec3f(0.f, 1.f, 0.f));
         const btVector3 from = Misc::Convert::toBullet(eye);
-        const btVector3 to = from + direction * (reach + halfExtents.x() + .5f * halfExtents.z());
+        const float hitReach = reach + halfExtents.x() + .5f * halfExtents.z();
+        const btVector3 to = from + direction * hitReach;
+        if (auto* items = physics->getItemPhysics(); items
+            && items->hit(player, world->getFocusObject(), eye, osg::Vec3f(Misc::Convert::toOsg(direction)), hitReach,
+                attackStrength))
+            return;
+        if (!physics->getRagdollWorld()->hasRigs())
+            return;
         physics->withRagdollWorld([&](RagdollWorld& dynamics) {
             const PartHit hit = findPart(dynamics, from, to, 4.f);
             if (hit.mBody)
@@ -691,7 +699,10 @@ namespace MWPhysics
 
     bool Ragdoll::canGrab(const MWWorld::Ptr& corpse)
     {
-        return grabbableCorpse(corpse) != nullptr;
+        if (grabbableCorpse(corpse))
+            return true;
+        auto* physics = MWBase::Environment::get().getWorld()->getRagdollPhysics();
+        return physics && physics->getItemPhysics() && physics->getItemPhysics()->canGrab(corpse);
     }
 
     void Ragdoll::grab(const MWWorld::Ptr& player, const MWWorld::Ptr& corpse, const osg::Vec3f& point)
@@ -699,13 +710,20 @@ namespace MWPhysics
         const auto world = MWBase::Environment::get().getWorld();
         auto* physics = world->getRagdollPhysics();
         Ragdoll* ragdoll = grabbableCorpse(corpse);
-        if (!physics || !ragdoll)
+        if (!physics)
             return;
 
         const auto& camera = *world->getCamera();
         const btVector3 eye = Misc::Convert::toBullet(grabEye(*world, player, camera));
         const btVector3 target = Misc::Convert::toBullet(point);
         const btScalar reach = world->getMaxActivationDistance();
+        if (!ragdoll)
+        {
+            if (auto* items = physics->getItemPhysics())
+                items->grab(player, corpse, point, osg::Vec3f(Misc::Convert::toOsg(eye)), camera.getOrient(),
+                    static_cast<float>(reach));
+            return;
+        }
         if ((target - eye).length2() > reach * reach)
             return;
 
@@ -736,6 +754,14 @@ namespace MWPhysics
         const auto view = Misc::Convert::toBullet(camera.getOrient());
         physics->withRagdollWorld(
             [&](RagdollWorld& dynamics) { dynamics.moveGrab(eye, view, world->getMaxActivationDistance(), dt); });
+    }
+
+    bool Ragdoll::throwGrabbedItem(const MWWorld::Ptr& player)
+    {
+        const auto world = MWBase::Environment::get().getWorld();
+        auto* physics = world->getRagdollPhysics();
+        return physics && physics->getItemPhysics()
+            && physics->getItemPhysics()->throwHeld(player, world->getCamera()->getOrient());
     }
 
     void Ragdoll::releaseGrab()

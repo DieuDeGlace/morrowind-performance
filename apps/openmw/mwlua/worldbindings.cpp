@@ -24,6 +24,9 @@
 #include "../mwbase/statemanager.hpp"
 #include "../mwbase/windowmanager.hpp"
 #include "../mwbase/world.hpp"
+#include "../mwphysics/itemphysics.hpp"
+#include "../mwphysics/physicssystem.hpp"
+#include "../mwphysics/ragdoll.hpp"
 #include "../mwworld/action.hpp"
 #include "../mwworld/class.hpp"
 #include "../mwworld/datetimemanager.hpp"
@@ -279,6 +282,50 @@ namespace MWLua
                 },
                 "_runStandardUseAction");
         };
+
+        // Native physics extension for mods. World mutations run in the
+        // main action queue, just like teleport and other world operations.
+        sol::table physics(context.mLua->unsafeState(), sol::create);
+        physics["isEnabled"] = [] {
+            auto* system = MWBase::Environment::get().getWorld()->getRagdollPhysics();
+            return system && system->getItemPhysics() && system->getItemPhysics()->enabled();
+        };
+        physics["applyImpulse"] = [context](const GObject& item, osg::Vec3f impulse, sol::optional<GObject> culprit) {
+            if (!std::isfinite(impulse.x()) || !std::isfinite(impulse.y()) || !std::isfinite(impulse.z())
+                || impulse.length2() > 1e12f)
+                throw std::runtime_error("A finite physics impulse with magnitude at most 1000000 is required");
+            context.mLuaManager->addAction(
+                [item, impulse, culprit] {
+                    const auto target = item.ptrOrEmpty();
+                    if (target.isEmpty())
+                        return;
+                    auto* system = MWBase::Environment::get().getWorld()->getRagdollPhysics();
+                    if (system && system->getItemPhysics())
+                        system->getItemPhysics()->applyImpulse(
+                            target, impulse, culprit ? culprit->ptrOrEmpty() : MWWorld::Ptr());
+                },
+                "NativePhysicsImpulse");
+        };
+        physics["grab"] = [context](const GObject& item, osg::Vec3f point) {
+            if (!std::isfinite(point.x()) || !std::isfinite(point.y()) || !std::isfinite(point.z()))
+                throw std::runtime_error("A finite grab point is required");
+            context.mLuaManager->addAction(
+                [item, point] {
+                    const auto target = item.ptrOrEmpty();
+                    if (!target.isEmpty())
+                        MWPhysics::Ragdoll::grab(MWBase::Environment::get().getWorld()->getPlayerPtr(), target, point);
+                },
+                "NativePhysicsGrab");
+        };
+        physics["release"] = [context] {
+            context.mLuaManager->addAction([] { MWPhysics::Ragdoll::releaseGrab(); }, "NativePhysicsRelease");
+        };
+        physics["throw"] = [context] {
+            context.mLuaManager->addAction(
+                [] { MWPhysics::Ragdoll::throwGrabbedItem(MWBase::Environment::get().getWorld()->getPlayerPtr()); },
+                "NativePhysicsThrow");
+        };
+        api["physics"] = LuaUtil::makeReadOnly(physics);
 
         api["vfx"] = initWorldVfxBindings(context);
 
