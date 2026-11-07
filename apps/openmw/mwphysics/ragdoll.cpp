@@ -7,6 +7,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <unordered_set>
 #include <vector>
 
 #include <BulletCollision/CollisionShapes/btCapsuleShape.h>
@@ -28,6 +29,7 @@
 #include "../mwworld/class.hpp"
 
 #include "physicssystem.hpp"
+#include "ragdollcontrollers.hpp"
 #include "ragdollworld.hpp"
 
 namespace MWPhysics
@@ -382,9 +384,21 @@ namespace MWPhysics
 
         void updatePose()
         {
-            const auto rootPosition = mRoot->getPosition();
-            if (mPoseApplied && mPoseStep == mLastStep && rootPosition == mLastRootPosition)
-                return;
+            if (!mControllersSuspended)
+            {
+                // Do this after ActorAnimation clears its external tracks.
+                // Include unmodelled spine/neck bones between simulated parts.
+                std::unordered_set<osg::Node*> visited;
+                for (const Part& part : mParts)
+                {
+                    for (osg::Node* node : part.mParentPath)
+                        if (visited.insert(node).second)
+                            mControllers.suspend(*node);
+                    if (visited.insert(part.mNode.get()).second)
+                        mControllers.suspend(*part.mNode);
+                }
+                mControllersSuspended = true;
+            }
 
             for (std::size_t index : mPoseOrder)
             {
@@ -393,21 +407,18 @@ namespace MWPhysics
                 const osg::Matrixf parentWorld = osg::computeLocalToWorld(part.mParentPath);
                 part.mNode->setMatrix(boneWorld * osg::Matrixf::inverse(parentWorld));
             }
-            mPoseApplied = true;
-            mLastRootPosition = rootPosition;
-
-            mLastStep = mPoseStep;
         }
 
-        bool advance(std::uint64_t step, float elapsed) override
+        bool advance(std::uint64_t, float elapsed) override
         {
-            mPoseStep = step;
             reportArticulation();
             return mPhysics.getRagdollWorld()->isGrabbed(*this) || updateRestState(elapsed);
         }
 
-        void restorePose() const
+        void restorePose()
         {
+            mControllers.restore();
+            mControllersSuspended = false;
             for (const Part& part : mParts)
                 part.mNode->setMatrix(part.mOriginalLocal);
         }
@@ -549,15 +560,14 @@ namespace MWPhysics
         std::vector<Part> mParts;
         std::vector<std::size_t> mPoseOrder;
         std::vector<std::unique_ptr<btConeTwistConstraint>> mJoints;
-        osg::Vec3f mLastRootPosition;
-        std::uint64_t mLastStep = 0;
-        std::uint64_t mPoseStep = 0;
+        RagdollControllers mControllers;
+        bool mControllersSuspended = false;
+
         float mMass = 0.f;
         float mActivityTime = 0.f;
         float mQuietTime = 0.f;
         bool mRegistered = false;
         bool mAwake = true;
-        bool mPoseApplied = false;
         bool mReportedArticulation = false;
     };
 
