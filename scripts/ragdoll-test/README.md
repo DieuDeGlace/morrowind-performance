@@ -37,3 +37,18 @@ For an input-driven drag replay, use ragdoll-drag-smoke.txt instead.
 Wait for RAGDOLL_TEST_DRAG_READY, tap Activate once, then hold Activate
 and move. The log records the tap, the grabbed body part and the distance
 it moved before release.
+
+## Skeleton ownership
+
+During ragdoll playback, embedded transform animation callbacks on simulated
+bones and their ancestors are suspended. Otherwise a NIF controller can restore
+its cached animation rotation after the physics pose is applied, making an
+articulated rig appear rigid. Unrelated callbacks (such as effects) keep running.
+Controllers are restored when normal animation resumes or the rig is removed.
+The pose is reapplied each animation update, including frames without a physics
+substep and root transform changes. This code is shared by Windows and Android.
+
+The RagdollControllers tests in openmw-tests reproduce the embedded NIF rotation
+overwrite and check callback preservation and restoration. For visual validation,
+use the replay above and check an NPC, guar, cliff racer, shalk, and mudcrab during
+their initial fall; limbs should rotate relative to the torso before settling.
