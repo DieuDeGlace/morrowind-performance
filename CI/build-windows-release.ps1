@@ -74,6 +74,11 @@ try {
         "-DCMAKE_PREFIX_PATH=$qtRoot", "-DLuaJit_INCLUDE_DIR=$installedDeps/include/luajit",
         "-DLuaJit_LIBRARY=$installedDeps/lib/lua51.lib", '-DOPENMW_USE_SYSTEM_SQLITE3=OFF',
         '-DOPENMW_USE_SYSTEM_YAML_CPP=OFF', '-DOPENMW_LTO_BUILD=ON',
+        '-DBUILD_OPENMW=ON', '-DBUILD_LAUNCHER=ON', '-DBUILD_WIZARD=ON',
+        '-DBUILD_OPENCS=ON', '-DBUILD_MWINIIMPORTER=ON', '-DBUILD_ESSIMPORTER=ON',
+        '-DBUILD_BSATOOL=ON', '-DBUILD_ESMTOOL=ON', '-DBUILD_NIFTEST=ON',
+        '-DBUILD_NAVMESHTOOL=ON', '-DBUILD_BULLETOBJECTTOOL=ON',
+        '-DOPENMW_DEPLOY_RUNTIME_DEPENDENCIES=ON', '-DDEPLOY_QT_TRANSLATIONS=ON',
         '-DBUILD_COMPONENTS_TESTS=ON', '-DBUILD_OPENMW_TESTS=ON', '-DBUILD_OPENCS_TESTS=ON')
     & $cmake @cmakeArgs
     Assert-NativeExit 'Configure Release'
@@ -110,6 +115,7 @@ try {
     $packageDir = Join-Path $releaseRoot $packageName
     & $cmake --install $buildDir --prefix $packageDir --config Release
     Assert-NativeExit 'Stage portable Release'
+    & "$repoRoot/CI/verify-windows-package.ps1" -PackageDir $packageDir
     Copy-Item "$repoRoot/PERFORMANCE-BUILD.md" $packageDir -Force
     Copy-Item "$repoRoot/files/performance-preset.cfg" $packageDir -Force
     $licenses = Join-Path $packageDir 'licenses'

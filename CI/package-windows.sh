@@ -17,10 +17,8 @@ SOURCE_DIR="${2:-${ROOT_DIR}}"
 OUTPUT_NAME="${3:-openmw-windows-x64}"
 PKG_DIR="${OUTPUT_NAME}"
 
-if [ ! -f "${BUILD_DIR}/openmw.exe" ]; then
-    echo "Error: ${BUILD_DIR}/openmw.exe not found. Build first."
-    exit 1
-fi
+# Validate before creating output: partial engine-only builds are not releases.
+powershell -NoProfile -ExecutionPolicy Bypass -File "${SOURCE_DIR}/CI/verify-windows-package.ps1" -PackageDir "${BUILD_DIR}"
 
 rm -rf "${PKG_DIR}"
 mkdir -p "${PKG_DIR}"
