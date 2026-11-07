@@ -98,6 +98,19 @@ namespace
         EXPECT_FALSE(std::ranges::any_of(rig.mAnimatedNodes, [&](const auto& n) { return n == emitter; }));
     }
 
+    TEST(RagdollAutoRig, WholeModelFitFollowsActorRotationAndScale)
+    {
+        osg::ref_ptr<osg::MatrixTransform> frame = new osg::MatrixTransform;
+        attach(*frame, geometry());
+        const osg::Matrixf world = osg::Matrixf::scale(2, 2, 2) * osg::Matrixf::rotate(.7f, osg::Vec3f(0, 0, 1))
+            * osg::Matrixf::translate(100, 200, 50);
+        const auto rig = MWPhysics::makeAutoRagdoll(*frame, world);
+        ASSERT_EQ(rig.mParts.size(), 1);
+        EXPECT_NEAR(rig.mParts[0].mRadius, 6.f, .001f);
+        EXPECT_NEAR((rig.mParts[0].mEnd - rig.mParts[0].mStart).length(), 48.f, .001f);
+        EXPECT_LT((rig.mParts[0].mStart - osg::Vec3f(0, -12, 0) * world).length(), .001f);
+    }
+
     TEST(RagdollAutoRig, RigidAnimatedPartsWorkWithoutSkinWeights)
     {
         osg::ref_ptr<osg::MatrixTransform> frame = new osg::MatrixTransform;

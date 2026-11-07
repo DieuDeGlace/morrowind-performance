@@ -117,6 +117,7 @@ namespace MWPhysics
             explicit CollectBones(const osg::Matrixf& world)
                 : osg::NodeVisitor(TRAVERSE_ALL_CHILDREN)
                 , mWorld(world)
+                , mInverseWorld(osg::Matrixf::inverse(world))
             {
             }
 
@@ -144,7 +145,11 @@ namespace MWPhysics
                 if (auto* holder = dynamic_cast<SceneUtil::RigGeometryHolder*>(&drawable))
                 {
                     if (auto rig = holder->getSourceRigGeometry())
-                        expand(mBounds, rig->getBoundingBox(), osg::computeLocalToWorld(getNodePath()) * mWorld);
+                    {
+                        const osg::Matrixf local = osg::computeLocalToWorld(getNodePath());
+                        expand(mBounds, rig->getBoundingBox(), local * mWorld);
+                        expand(mLocalBounds, rig->getBoundingBox(), local);
+                    }
                     return;
                 }
 
@@ -182,7 +187,9 @@ namespace MWPhysics
                     // SceneUtil influence list used by NIFs.
                     if (dynamic_cast<osgAnimation::RigGeometry*>(geometry))
                     {
-                        expand(mBounds, *bounds, osg::computeLocalToWorld(getNodePath()) * mWorld);
+                        const osg::Matrixf local = osg::computeLocalToWorld(getNodePath());
+                        expand(mBounds, *bounds, local * mWorld);
+                        expand(mLocalBounds, *bounds, local);
                         return;
                     }
                 }
@@ -193,6 +200,7 @@ namespace MWPhysics
                 const osg::Matrixf world = osg::computeLocalToWorld(getNodePath()) * mWorld;
                 expand(bone.mBounds, *bounds, world);
                 expand(mBounds, *bounds, world);
+                expand(mLocalBounds, *bounds, world * mInverseWorld);
                 bone.mUsed = true;
                 rememberPath(bone.mPath);
             }
@@ -215,6 +223,7 @@ namespace MWPhysics
                         box.expandBy(skin.mBoundSphere);
                         expand(bone.mBounds, box, bone.mWorld);
                         expand(mBounds, box, bone.mWorld);
+                        expand(mLocalBounds, box, bone.mWorld * mInverseWorld);
                     }
                     rememberPath(bone.mPath);
                 }
@@ -225,6 +234,7 @@ namespace MWPhysics
 
             std::vector<Bone> mBones;
             osg::BoundingBoxf mBounds;
+            osg::BoundingBoxf mLocalBounds;
             std::vector<osg::ref_ptr<osg::Node>> mAnimatedNodes;
 
         private:
@@ -256,6 +266,7 @@ namespace MWPhysics
             }
 
             osg::Matrixf mWorld;
+            osg::Matrixf mInverseWorld;
             std::unordered_map<const osg::Node*, std::size_t> mIndices;
             using Names
                 = std::unordered_map<std::string, std::size_t, Misc::StringUtils::CiHash, Misc::StringUtils::CiEqual>;
@@ -350,7 +361,11 @@ namespace MWPhysics
         {
             AutoRagdollPart part;
             part.mNode = &frame;
-            fitBounds(part, collected.mBounds);
+            fitBounds(part, collected.mLocalBounds);
+            part.mStart = part.mStart * world;
+            part.mEnd = part.mEnd * world;
+            const osg::Vec3f scale = world.getScale();
+            part.mRadius *= std::max({ std::abs(scale.x()), std::abs(scale.y()), std::abs(scale.z()) });
             part.mMass = std::clamp(
                 part.mRadius * part.mRadius * std::max((part.mEnd - part.mStart).length(), 2.f * part.mRadius) * .002f,
                 .2f, 80.f);
