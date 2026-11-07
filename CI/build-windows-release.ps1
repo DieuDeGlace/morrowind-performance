@@ -110,11 +110,12 @@ try {
         [regex]::Match($cmakeSource, "set\(OPENMW_VERSION_$part (\d+)\)").Groups[1].Value
     }
     $version = $versionParts -join '.'
-    $packageName = "OpenMW-$version-performance.2-Windows-x64"
+    $packageName = "OpenMW-$version-physics.preview.2-Windows-x64"
     $releaseRoot = Join-Path $repoRoot 'release'
     $packageDir = Join-Path $releaseRoot $packageName
     & $cmake --install $buildDir --prefix $packageDir --config Release
     Assert-NativeExit 'Stage portable Release'
+    & "$repoRoot/CI/add-physics-preview-files.ps1" -PackageDir $packageDir
     & "$repoRoot/CI/verify-windows-package.ps1" -PackageDir $packageDir
     Copy-Item "$repoRoot/PERFORMANCE-BUILD.md" $packageDir -Force
     Copy-Item "$repoRoot/files/performance-preset.cfg" $packageDir -Force
