@@ -683,12 +683,12 @@ namespace MWPhysics
         if (!physics)
             return;
 
-        const auto& position = player.getRefData().getPosition();
         const osg::Vec3f halfExtents = world->getHalfExtents(player, true);
-        const osg::Vec3f eye = position.asVec3() + osg::Vec3f(0.f, 0.f, 1.7f * halfExtents.z());
-        const osg::Quat aim = osg::Quat(position.rot[0], osg::Vec3f(-1.f, 0.f, 0.f))
-            * osg::Quat(position.rot[2], osg::Vec3f(0.f, 0.f, -1.f));
-        const btVector3 direction = Misc::Convert::toBullet(aim * osg::Vec3f(0.f, 1.f, 0.f));
+        const auto& camera = *world->getCamera();
+        // Use the visible first-person eye, including head/attack offsets.
+        // A fixed height can put a small item below the apparent crosshair.
+        const osg::Vec3f eye = grabEye(*world, player, camera);
+        const btVector3 direction = Misc::Convert::toBullet(camera.getOrient() * osg::Vec3f(0.f, 1.f, 0.f));
         const btVector3 from = Misc::Convert::toBullet(eye);
         const float hitReach = reach + halfExtents.x() + .5f * halfExtents.z();
         const btVector3 to = from + direction * hitReach;
