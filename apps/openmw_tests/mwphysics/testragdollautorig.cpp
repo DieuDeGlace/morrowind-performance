@@ -23,6 +23,7 @@ namespace
         vertices->push_back(osg::Vec3f(-3, -12, -2));
         vertices->push_back(osg::Vec3f(3, 12, 2));
         result->setVertexArray(vertices);
+        result->addPrimitiveSet(new osg::DrawArrays(osg::PrimitiveSet::LINES, 0, 2));
         return result;
     }
 
