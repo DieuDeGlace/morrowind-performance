@@ -1,0 +1,37 @@
+name: Ragdoll Source Checks
+
+on:
+  push:
+    paths:
+      - '.github/workflows/ragdoll-checks.yml'
+      - 'apps/openmw/mwphysics/ragdoll*.hpp'
+      - 'apps/openmw_tests/mwphysics/testragdoll*.cpp'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  syntax:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install header dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends g++ libopenscenegraph-dev libbullet-dev libboost-dev libgtest-dev
+      - name: Check actor physics regressions compile
+        run: |
+          g++ -std=c++20 -fsyntax-only -I. -I/usr/include/bullet apps/openmw_tests/mwphysics/testragdollautorig.cpp apps/openmw_tests/mwphysics/testragdollcontrollers.cpp
+
+
+      - name: Run automatic rig generation tests against real scene utilities
+        run: |
+          g++ -std=c++20 -O0 -ffunction-sections -fdata-sections -I. -I/usr/include/bullet \
+            apps/openmw_tests/mwphysics/testragdollautorig.cpp \
+            components/sceneutil/riggeometry.cpp components/sceneutil/morphgeometry.cpp \
+            components/sceneutil/skeleton.cpp components/sceneutil/riggeometryosgaextension.cpp \
+            components/debug/debuglog.cpp \
+            -Wl,--gc-sections -lgtest_main -lgtest -losg -losgUtil -losgAnimation -losgParticle -lOpenThreads -pthread \
+            -o /tmp/ragdoll-autorig-tests
+          /tmp/ragdoll-autorig-tests

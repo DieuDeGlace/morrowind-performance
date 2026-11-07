@@ -49,6 +49,7 @@ namespace SceneUtil
         using BoneWeights = std::vector<BoneWeight>;
 
         void setBoneInfo(std::vector<BoneInfo>&& bones);
+        const std::vector<BoneInfo>& getBoneInfo() const;
         // Convert influences in bone and weight list per vertex format
         void setInfluences(const std::vector<BoneWeights>& influences);
 

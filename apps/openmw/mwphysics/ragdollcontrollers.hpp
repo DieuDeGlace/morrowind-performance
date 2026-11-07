@@ -7,6 +7,7 @@
 #include <osg/Node>
 #include <osgAnimation/UpdateMatrixTransform>
 
+#include <components/nifosg/controller.hpp>
 #include <components/sceneutil/keyframe.hpp>
 
 namespace MWPhysics
@@ -29,7 +30,8 @@ namespace MWPhysics
             {
                 osg::ref_ptr<osg::Callback> next = callback->getNestedCallback();
                 if (dynamic_cast<SceneUtil::KeyframeController*>(callback.get())
-                    || dynamic_cast<osgAnimation::UpdateMatrixTransform*>(callback.get()))
+                    || dynamic_cast<osgAnimation::UpdateMatrixTransform*>(callback.get())
+                    || dynamic_cast<NifOsg::GeomMorpherController*>(callback.get()))
                 {
                     mRemoved.push_back({ &node, previous, callback });
                     node.removeUpdateCallback(callback);

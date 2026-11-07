@@ -44,6 +44,21 @@ namespace
         EXPECT_NE(bone->getMatrix(), physicsPose);
     }
 
+    TEST(RagdollControllers, FreezesMorphAnimationAndRestoresItForResurrection)
+    {
+        osg::ref_ptr<osg::Node> node = new osg::Node;
+        osg::ref_ptr<NifOsg::GeomMorpherController> morph = new NifOsg::GeomMorpherController;
+        osg::ref_ptr<CountUpdates> effect = new CountUpdates;
+        node->addUpdateCallback(morph);
+        node->addUpdateCallback(effect);
+        MWPhysics::RagdollControllers controllers;
+        controllers.suspend(*node);
+        EXPECT_EQ(node->getUpdateCallback(), effect.get());
+        controllers.restore();
+        EXPECT_EQ(node->getUpdateCallback(), morph.get());
+        EXPECT_EQ(morph->getNestedCallback(), effect.get());
+    }
+
     TEST(RagdollControllers, PreservesEffectsAndRestoresOriginalCallbackOrder)
     {
         osg::ref_ptr<osg::Node> node = new osg::Node;
