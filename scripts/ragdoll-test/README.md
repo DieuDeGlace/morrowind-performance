@@ -1,10 +1,22 @@
 # Native ragdoll experiment
 
 Set OPENMW_RAGDOLLS=1 for this OpenMW process. Actor animations hand off
-supported skeletons at death. The Bip01 and BBip01 maps cover humanoids and
-creatures with matching bones. Separate maps cover cliff racer wings and
-tail, shalk legs, and mudcrab claws and legs. The normal death animation
-handles other skeletons.
+all NPC and creature models at death. The Bip01 and BBip01 maps cover humanoids
+and creatures with matching bones. Tuned maps also cover cliff racer wings and
+tail, shalk legs, and mudcrab claws and legs.
+
+Other models use automatic discovery of skin bones, OSG bones, or separate rigid
+mesh parts. Their actual hierarchy, bounds, death pose and reference scale
+determine the bodies and joints. Incomplete custom Bip01 rigs also use this
+fallback. Generated rigs are capped at 24 bodies; the largest segments get
+priority over tiny facial/finger bones.
+
+Models without usable joints get one whole-model collision body. The vanilla
+kwama forager uses vertex morphs, not skinned limb bones, so it can fall, collide,
+be struck and dragged as a whole body; its limbs cannot articulate independently.
+Body morph animation is frozen during physics and restored with the transform
+controllers on resurrection. No model assets are replaced. Invalid/empty models
+and the existing simultaneous-rig limits can still use ordinary death handling.
 
 The rig parts use the original skeleton and a shared Bullet solver. They
 collide with terrain, doors and world geometry. Player melee can wake a
@@ -52,3 +64,16 @@ The RagdollControllers tests in openmw-tests reproduce the embedded NIF rotation
 overwrite and check callback preservation and restoration. For visual validation,
 use the replay above and check an NPC, guar, cliff racer, shalk, and mudcrab during
 their initial fall; limbs should rotate relative to the torso before settling.
+
+## Full base-game and expansion coverage replay
+
+With Morrowind.esm, Tribunal.esm and Bloodmoon.esm enabled, use the opt-in marker
+ragdoll-all-actors.txt instead of ragdoll-smoke.txt. This disposable replay stages
+all 89 distinct creature model paths and both sexes of all 10 NPC races, three
+actors at a time. It uses temporary nonessential, script-free copies of records
+to avoid quest death scripts and essential-actor warnings. It checks the death
+lifecycle and corpse inventory, allows the initial fall, then removes the batch.
+The log maps each source record to its generated record ID. For every spawned
+actor, verify a corresponding native "activated" entry, plus articulation or
+whole-model movement where the model permits it. The marker is not supplied in
+the interactive demo.

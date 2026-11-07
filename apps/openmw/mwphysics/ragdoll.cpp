@@ -389,6 +389,8 @@ namespace MWPhysics
                 part.mBody->setCcdSweptSphereRadius(radius * .55f);
                 part.mBody->setLinearVelocity(Misc::Convert::toBullet(velocity));
                 part.mRestReference = part.mBody->getWorldTransform();
+                if (i == 0)
+                    mInitialRootPosition = part.mRestReference.getOrigin();
                 part.mParent = spec.mParent;
 
                 if (i == 0)
@@ -582,6 +584,13 @@ namespace MWPhysics
         {
             if (mReportedArticulation)
                 return;
+            if (mParts.size() == 1
+                && (mParts[0].mBody->getWorldTransform().getOrigin() - mInitialRootPosition).length2() > 4.f)
+            {
+                Log(Debug::Info) << "Ragdoll: " << mActorId << " moved whole model";
+                mReportedArticulation = true;
+                return;
+            }
             for (std::size_t i = 1; i < mParts.size(); ++i)
             {
                 const Part& child = mParts[i];
@@ -609,6 +618,7 @@ namespace MWPhysics
         RagdollControllers mControllers;
         bool mControllersSuspended = false;
 
+        btVector3 mInitialRootPosition;
         float mMass = 0.f;
         float mActivityTime = 0.f;
         float mQuietTime = 0.f;

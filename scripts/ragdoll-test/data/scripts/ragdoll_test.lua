@@ -4,6 +4,10 @@ local util = require('openmw.util')
 local vfs = require('openmw.vfs')
 local world = require('openmw.world')
 
+if vfs.fileExists('ragdoll-all-actors.txt') then
+    return require('scripts.ragdoll_all_actors')
+end
+
 local smoke = vfs.fileExists('ragdoll-smoke.txt')
 local dragSmoke = vfs.fileExists('ragdoll-drag-smoke.txt')
 local office = 'Seyda Neen, Census and Excise Office'

@@ -38,3 +38,17 @@ For settings.cfg, merge into the existing [Shadows] section:
 
 This setting belongs to the performance build; stock OpenMW 0.51 requires this
 build or its own compatible shader modification. Existing defaults remain.
+
+## Physics preview 3: general actor model support
+
+With OPENMW_RAGDOLLS=1, deaths attempt physics for all NPC and creature model
+types, including custom skeletons and incomplete Bip01 variants. Existing tuned
+rigs remain preferred. Automatic discovery uses actual skin influences or
+geometry-bearing transforms and limits each generated rig to 24 bodies.
+Vertex-morphed/unrigged models such as the kwama forager get whole-body collision
+and dragging; independent limbs require usable joints. The existing awake and
+retained-rig limits still apply. Loose-item physics is outside this change.
+
+The complete Windows package includes openmw-launcher.exe and all other desktop
+applications. Start-Physics-Launcher.cmd enables physics for launcher-started
+games. See RAGDOLL-TEST.md for the opt-in comprehensive actor replay.
