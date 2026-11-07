@@ -257,8 +257,8 @@ namespace MWPhysics
 
             osg::Matrixf mWorld;
             std::unordered_map<const osg::Node*, std::size_t> mIndices;
-            using Names = std::unordered_map<std::string, std::size_t,
-                Misc::StringUtils::CiHash, Misc::StringUtils::CiEqual>;
+            using Names
+                = std::unordered_map<std::string, std::size_t, Misc::StringUtils::CiHash, Misc::StringUtils::CiEqual>;
             std::unordered_map<const osg::Node*, Names> mNames;
             std::vector<std::pair<const osg::Node*, SceneUtil::RigGeometry::BoneInfo>> mSkinBones;
             std::unordered_set<const osg::Node*> mRemembered;
@@ -281,8 +281,7 @@ namespace MWPhysics
 
     // Bounds and pivots are evaluated in the actual death pose, including
     // reference scale. No record IDs or bone naming convention are required.
-    inline AutoRagdoll makeAutoRagdoll(
-        osg::MatrixTransform& frame, const osg::Matrixf& world, std::size_t budget = 24)
+    inline AutoRagdoll makeAutoRagdoll(osg::MatrixTransform& frame, const osg::Matrixf& world, std::size_t budget = 24)
     {
         using namespace RagdollDetail;
         CollectBones collected(world);
@@ -352,8 +351,9 @@ namespace MWPhysics
             AutoRagdollPart part;
             part.mNode = &frame;
             fitBounds(part, collected.mBounds);
-            part.mMass = std::clamp(part.mRadius * part.mRadius
-                * std::max((part.mEnd - part.mStart).length(), 2.f * part.mRadius) * .002f, .2f, 80.f);
+            part.mMass = std::clamp(
+                part.mRadius * part.mRadius * std::max((part.mEnd - part.mStart).length(), 2.f * part.mRadius) * .002f,
+                .2f, 80.f);
             result.mParts.push_back(std::move(part));
         }
         else
@@ -390,11 +390,12 @@ namespace MWPhysics
                 if (best < minimum && bone.mBounds.valid())
                     fitBounds(part, bone.mBounds);
                 else
-                    part.mRadius = std::max(best * .18f,
-                        bone.mBounds.valid() ? bone.mBounds.radius() * .3f : span * .035f);
+                    part.mRadius
+                        = std::max(best * .18f, bone.mBounds.valid() ? bone.mBounds.radius() * .3f : span * .035f);
                 part.mRadius = std::clamp(part.mRadius, std::max(.05f, span * .006f), std::max(.05f, span * .15f));
                 part.mMass = std::clamp(part.mRadius * part.mRadius
-                    * std::max((part.mEnd - part.mStart).length(), 2.f * part.mRadius) * .002f, .2f, 60.f);
+                        * std::max((part.mEnd - part.mStart).length(), 2.f * part.mRadius) * .002f,
+                    .2f, 60.f);
             }
         }
         float largestMass = 0.f;

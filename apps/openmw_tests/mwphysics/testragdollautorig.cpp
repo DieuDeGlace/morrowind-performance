@@ -79,7 +79,8 @@ namespace
         morph->setSourceGeometry(source);
         auto* vertices = static_cast<osg::Vec3Array*>(source->getVertexArray());
         morph->addMorphTarget(vertices);
-        osg::ref_ptr<osg::Vec3Array> offsets = new osg::Vec3Array(2, osg::Vec3f(0, 50, 0));
+        osg::ref_ptr<osg::Vec3Array> offsets = new osg::Vec3Array(2);
+        std::fill(offsets->begin(), offsets->end(), osg::Vec3f(0, 50, 0));
         morph->addMorphTarget(offsets, .5f);
         attach(*body, morph);
         attach(*shadow, source);

@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   syntax:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - name: Install header dependencies
@@ -23,4 +23,5 @@ jobs:
       - name: Check actor physics regressions compile
         run: |
           g++ -std=c++20 -fsyntax-only -I. -I/usr/include/bullet apps/openmw_tests/mwphysics/testragdollautorig.cpp apps/openmw_tests/mwphysics/testragdollcontrollers.cpp
+
 

@@ -150,7 +150,8 @@ namespace MWPhysics
             if (!hit.hasHit()
                 || hit.m_hitCollisionObject->getBroadphaseHandle()->m_collisionFilterGroup != CollisionType_Ragdoll)
                 return {};
-            return { btRigidBody::upcast(const_cast<btCollisionObject*>(hit.m_hitCollisionObject)), hit.m_hitPointWorld };
+            return { btRigidBody::upcast(const_cast<btCollisionObject*>(hit.m_hitCollisionObject)),
+                hit.m_hitPointWorld };
         }
 
         Ragdoll* grabbableCorpse(const MWWorld::Ptr& corpse)
@@ -270,8 +271,7 @@ namespace MWPhysics
                 }))
                 parts.clear();
 
-            const auto appendPart = [&](osg::MatrixTransform* node, const osg::Vec3f* start,
-                                        const osg::Vec3f* end) {
+            const auto appendPart = [&](osg::MatrixTransform* node, const osg::Vec3f* start, const osg::Vec3f* end) {
                 Part part;
                 part.mNode = node;
                 part.mParentPath = actorPath(*node, *mRoot);
@@ -339,7 +339,8 @@ namespace MWPhysics
                 size = static_cast<float>(mParts[0].mInitialWorld.getScale().x());
                 if (profile == "Bip01")
                 {
-                    const auto length = [&](std::size_t index) { return (mParts[index].mEnd - mParts[index].mStart).length(); };
+                    const auto length
+                        = [&](std::size_t index) { return (mParts[index].mEnd - mParts[index].mStart).length(); };
                     size = (length(Chest) + length(LeftThigh) + length(LeftCalf)) / 88.f;
                 }
                 size = std::clamp(size, .2f, 4.f);
@@ -465,8 +466,8 @@ namespace MWPhysics
                 part.mNode->setMatrix(part.mOriginalLocal);
         }
 
-        void push(RagdollWorld& world, btRigidBody& body, const btVector3& point,
-            const btVector3& direction, float strength)
+        void push(
+            RagdollWorld& world, btRigidBody& body, const btVector3& point, const btVector3& direction, float strength)
         {
             const bool wasAsleep = !mAwake;
             if (!wake(world))
@@ -482,8 +483,8 @@ namespace MWPhysics
                              << (wasAsleep ? " (woke)" : "");
         }
 
-        void grab(RagdollWorld& world, const btVector3& point, const btVector3& eye, const btQuaternion& view,
-            btScalar reach)
+        void grab(
+            RagdollWorld& world, const btVector3& point, const btVector3& eye, const btQuaternion& view, btScalar reach)
         {
             // The rendered hit can land on clothing or on a hand beyond a capsule.
             // Find the closest point on this corpse's collision shapes.
@@ -723,9 +724,8 @@ namespace MWPhysics
 
         const auto eye = Misc::Convert::toBullet(grabEye(*world, player, camera));
         const auto view = Misc::Convert::toBullet(camera.getOrient());
-        physics->withRagdollWorld([&](RagdollWorld& dynamics) {
-            dynamics.moveGrab(eye, view, world->getMaxActivationDistance(), dt);
-        });
+        physics->withRagdollWorld(
+            [&](RagdollWorld& dynamics) { dynamics.moveGrab(eye, view, world->getMaxActivationDistance(), dt); });
     }
 
     void Ragdoll::releaseGrab()
