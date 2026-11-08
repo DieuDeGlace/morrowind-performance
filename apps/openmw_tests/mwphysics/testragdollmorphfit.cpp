@@ -75,6 +75,8 @@ namespace
     }
     TEST(RagdollMorphFit, RejectsMalformedAndNonFiniteGeometry)
     {
+        MWPhysics::MorphFit::Pose oversized(MWPhysics::MorphFit::MaxVertices + 1);
+        EXPECT_TRUE(MWPhysics::MorphFit::fit(oversized, { oversized, oversized }).mPivots.empty());
         const auto p = cylinder();
         auto bad = p;
         bad.back().x() = std::numeric_limits<float>::quiet_NaN();

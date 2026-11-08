@@ -44,11 +44,17 @@ namespace MWPhysics
                 if (!morph || !morph->getSourceGeometry())
                     return;
                 const auto& targets = morph->getMorphTargetList();
-                if (targets.size() < 2 || !targets[0].getOffsets() || targets[0].getOffsets()->size() < 24)
+                if (targets.size() < 2 || !targets[0].getOffsets() || targets[0].getOffsets()->size() < 24
+                    || targets[0].getOffsets()->size() > MorphFit::MaxVertices)
                     return;
                 Mesh mesh{ morph, osg::computeLocalToWorld(getNodePath()), getNodePath(), {}, false };
                 for (const auto& point : *targets[0].getOffsets())
-                    mesh.mBounds.expandBy(point * mesh.mMatrix);
+                {
+                    const auto transformed = point * mesh.mMatrix;
+                    if (!MorphFit::finite(transformed))
+                        return;
+                    mesh.mBounds.expandBy(transformed);
+                }
                 std::string name = morph->getName();
                 for (char& c : name)
                     c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
@@ -71,6 +77,8 @@ namespace MWPhysics
                 const float w = weights ? (i < weights->size() ? (*weights)[i] : 0.f) : targets[i].getWeight();
                 if (!std::isfinite(w))
                     return {};
+                if (w == 0.f)
+                    continue;
                 for (std::size_t v = 0; v < result.size(); ++v)
                     result[v] += (*offsets)[v] * w;
             }
@@ -142,13 +150,17 @@ namespace MWPhysics
             if (!actorBounds.valid())
                 return;
             const float span = (actorBounds._max - actorBounds._min).length();
+            if (!std::isfinite(span) || span < .01f || span > 100000.f)
+                return;
             const float actorVolume = volume(actorBounds);
             std::stable_sort(gathered.mMeshes.begin(), gathered.mMeshes.end(),
                 [](const auto& a, const auto& b) { return volume(a.mBounds) > volume(b.mBounds); });
             for (const auto& originalMesh : gathered.mMeshes)
             {
                 auto mesh = originalMesh;
-                if (mBodies >= 16 || mesh.mShadow)
+                if (mBodies + 5 > 16)
+                    break;
+                if (mesh.mShadow)
                     continue;
                 if ((mesh.mBounds._max - mesh.mBounds._min).length() < span * .42f
                     || volume(mesh.mBounds) < actorVolume * .02f)
@@ -240,14 +252,21 @@ namespace MWPhysics
                     shadow.mMatrix *= inverseAnchor;
                     const auto& base = *shadow.mMorph->getMorphTargetList()[0].getOffsets();
                     MorphFit::Weights weights(base.size(), std::vector<float>(count));
+                    const auto samples = std::min(MorphFit::MaxTrainingVertices, fitted->mRest.size());
+                    std::vector<std::pair<osg::Vec3f, std::size_t>> sampledRest;
+                    for (std::size_t sample = 0; sample < samples; ++sample)
+                    {
+                        const auto i = sample * (fitted->mRest.size() - 1) / (samples - 1);
+                        sampledRest.emplace_back(fitted->mRest[i] * mesh.mMatrix, i);
+                    }
                     for (std::size_t v = 0; v < base.size(); ++v)
                     {
                         const auto point = base[v] * shadow.mMatrix;
                         std::array<std::pair<float, std::size_t>, 3> near;
                         near.fill({ std::numeric_limits<float>::infinity(), 0 });
-                        for (std::size_t i = 0; i < fitted->mRest.size(); ++i)
+                        for (const auto& [position, i] : sampledRest)
                         {
-                            const float d = (point - fitted->mRest[i] * mesh.mMatrix).length2();
+                            const float d = (point - position).length2();
                             if (d < near[2].first)
                             {
                                 near[2] = { d, i };
@@ -314,11 +333,14 @@ namespace MWPhysics
                 if (normals->size() != vertices->size())
                     source->setNormalArray(nullptr);
                 else
+                {
+                    const auto inverse = osg::Matrixf::inverse(mesh.mMatrix);
                     for (auto& normal : *normals)
                     {
-                        normal = osg::Matrixf::transform3x3(osg::Matrixf::inverse(mesh.mMatrix), normal);
+                        normal = osg::Matrixf::transform3x3(inverse, normal);
                         normal.normalize();
                     }
+                }
             }
             if (auto* tangents = dynamic_cast<osg::Vec4Array*>(source->getTexCoordArray(7)))
                 for (auto& tangent : *tangents)
