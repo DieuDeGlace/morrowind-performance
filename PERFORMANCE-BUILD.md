@@ -80,3 +80,18 @@ Native item simulation automatically yields when LuaPhysicsEngine.omwscripts
 or its engine scripts are configured. To use native items, disable that manifest;
 its asset data folder may remain enabled for optional debris. Actor ragdolls
 remain available. OPENMW_ITEMS=0 disables native items independently.
+
+
+## Animation-guided body morph physics
+
+Death-only skinning now derives bend regions and smooth weights from a model's
+original vertex-morph animation. The kwama forager can bend in sections; other
+large deforming body meshes use the same bounded fitter. Existing limb bones
+remain connected to their original owners in mixed skeleton/morph models.
+Living models keep their original animation exactly. Death conversion freezes
+the current pose before binding the generated skin, and resurrection restores
+the original model. No modified game assets are distributed.
+
+This remains jointed rigid-body physics; elastic squash/stretch from impacts
+is not implemented. Unsupported/oversized geometry retains existing automatic
+or whole-model physics. See scripts/ragdoll-test/README.md for resource limits.
