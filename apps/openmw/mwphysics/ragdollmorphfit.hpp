@@ -139,7 +139,8 @@ namespace MWPhysics::MorphFit
     }
     inline void simplex(std::vector<float>& value, const std::array<std::size_t, 3>& support)
     {
-        std::array<float, 3> sorted{ value[support[0]], value[support[1]], value[support[2]] };
+        const std::array<float, 3> original{ value[support[0]], value[support[1]], value[support[2]] };
+        auto sorted = original;
         std::sort(sorted.begin(), sorted.end(), std::greater<float>());
         float sum = 0, theta = 0;
         for (std::size_t i = 0; i < 3; ++i)
@@ -148,10 +149,9 @@ namespace MWPhysics::MorphFit
             if (sorted[i] > (sum - 1.f) / static_cast<float>(i + 1))
                 theta = (sum - 1.f) / static_cast<float>(i + 1);
         }
-        auto old = value;
         std::fill(value.begin(), value.end(), 0.f);
-        for (auto i : support)
-            value[i] = std::max(0.f, old[i] - theta);
+        for (std::size_t i = 0; i < support.size(); ++i)
+            value[support[i]] = std::max(0.f, original[i] - theta);
     }
     // Fit only when death physics is requested. Templates cache the result;
     // living actors never replace or approximate their original morph tracks.
@@ -331,9 +331,10 @@ namespace MWPhysics::MorphFit
                     }
                     upper = std::max(upper, sum);
                 }
+                auto next = w[v];
                 for (int step = 0; step < 40; ++step)
                 {
-                    auto next = w[v];
+                    next = w[v];
                     for (auto a : support[v])
                     {
                         float grad = .035f * (w[v][a] - prior[v][a]) - g[a];
@@ -342,7 +343,7 @@ namespace MWPhysics::MorphFit
                         next[a] -= .95f * grad / std::max(upper, 1e-6f);
                     }
                     simplex(next, support[v]);
-                    w[v] = std::move(next);
+                    w[v].swap(next);
                 }
             }
         }
