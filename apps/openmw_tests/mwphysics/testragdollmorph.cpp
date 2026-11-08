@@ -17,8 +17,8 @@ namespace
                 for (int i = 0; i < 8; ++i)
                 {
                     const float angle = i * 6.2831853f / 8, along = y * 3.f - 36.f;
-                    p->emplace_back(3.f * std::cos(angle), along, 3.f * std::sin(angle));
-                    delta->emplace_back(0, -along * .15f, 8.f * std::sin(along * .06f));
+                    p->push_back(osg::Vec3f(3.f * std::cos(angle), along, 3.f * std::sin(angle)));
+                    delta->push_back(osg::Vec3f(0, -along * .15f, 8.f * std::sin(along * .06f)));
                 }
             osg::ref_ptr<osg::Geometry> source = new osg::Geometry;
             source->setVertexArray(p);
