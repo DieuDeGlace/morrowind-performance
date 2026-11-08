@@ -99,3 +99,18 @@ the original model. No modified game assets are distributed.
 This remains jointed rigid-body physics; elastic squash/stretch from impacts
 is not implemented. Unsupported/oversized geometry retains existing automatic
 or whole-model physics. See scripts/ragdoll-test/README.md for resource limits.
+
+## Physics preview 7: perspective soft-shadow receiver
+
+Soft-shadow directions now preserve homogeneous W when projecting the receiver
+plane through LiSPSM. The previous per-pixel lighting path dropped W, making the
+comparison plane disagree with the surface as the camera moved. The filter keeps
+its eight texture reads and adjustable width. This changes shader resources only;
+actor/item physics, shadow reuse and occlusion settings retain their behavior.
+
+`CI/test-shadow-filter-gpu.py` runs the production GLSL against an independent
+inverse-transpose plane oracle over 57 camera rotations, under orthographic and
+perspective projections. The release workflow runs it with headless Mesa before
+building the complete desktop package. To run locally, install `moderngl==5.12.0`
+and `numpy==2.2.6`, then run `python CI/test-shadow-filter-gpu.py`.
+GPU fixtures do not establish that every game scene or driver is flicker-free.

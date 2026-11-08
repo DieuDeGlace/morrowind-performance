@@ -79,12 +79,11 @@ float getFilteredShadowing(sampler2DShadow tex, vec4 coord, mat4 matrix)
     vec3 viewBitangent = cross(viewNormal, viewTangent);
 
     // Transform tangents to shadow space and find resulting UV directions
-    vec3 shadowTangent = normalize((matrix * vec4(viewTangent, 0.0)).xyz);
-    vec3 shadowBitangent = normalize((matrix * vec4(viewBitangent, 0.0)).xyz);
-    vec4 tangentCoord = coord + vec4(shadowTangent, 0.0);
-    vec4 bitangentCoord = coord + vec4(shadowBitangent, 0.0);
-    vec3 filterX = normalize((tangentCoord.xyz / tangentCoord.w) - shadowUV);
-    vec3 filterY = normalize((bitangentCoord.xyz / bitangentCoord.w) - shadowUV);
+    vec4 shadowTangent = matrix * vec4(viewTangent, 0.0);
+    vec4 shadowBitangent = matrix * vec4(viewBitangent, 0.0);
+    // Differentiate homogeneous division; directions can change w under LiSPSM.
+    vec3 filterX = normalize(shadowTangent.xyz - shadowUV * shadowTangent.w);
+    vec3 filterY = normalize(shadowBitangent.xyz - shadowUV * shadowBitangent.w);
 #else
     // Fallback: use screen-space derivatives
     vec3 filterX = normalize(dFdx(shadowUV));
