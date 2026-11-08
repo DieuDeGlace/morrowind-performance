@@ -38,6 +38,10 @@ jobs:
             -Wl,--gc-sections -lgtest_main -lgtest -losg -losgUtil -losgAnimation -losgParticle -lOpenThreads -pthread \
             -o /tmp/ragdoll-autorig-tests
           /tmp/ragdoll-autorig-tests
+      - name: Test animation-guided morph fitting
+        run: |
+          g++ -std=c++20 -O2 -I. apps/openmw_tests/mwphysics/testragdollmorphfit.cpp -lgtest_main -lgtest -losg -lOpenThreads -pthread -o /tmp/morph-fit-tests
+          /tmp/morph-fit-tests
       - name: Check native item integration compiles
         run: |
           g++ -std=c++20 -fsyntax-only -I. -I/usr/include/bullet -Iextern/sol3 -Iextern/sol_config apps/openmw/mwphysics/itemphysics.cpp apps/openmw/mwphysics/ragdoll.cpp

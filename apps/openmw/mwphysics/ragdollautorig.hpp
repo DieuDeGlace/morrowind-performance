@@ -346,6 +346,11 @@ namespace MWPhysics
             if (distance < minimum)
                 continue;
             importance[i] = distance + (bones[i].mBounds.valid() ? bones[i].mBounds.radius() : 0.f);
+            // Keep the fitted skin's endpoint helpers together with its body;
+            // losing only an endpoint would produce a broad leaf collider.
+            bool morph = false;
+            if (bones[i].mNode->getUserValue("ragdoll.morph", morph) && morph)
+                importance[i] += span * 2.f;
             meaningful.push_back(i);
         }
 

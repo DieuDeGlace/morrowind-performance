@@ -127,6 +127,13 @@ namespace NifOsg
 
         bool empty() const { return !mKeys || mKeys->mKeys.empty(); }
 
+        void appendKeyTimes(std::vector<float>& times) const
+        {
+            if (mKeys)
+                for (const auto& key : mKeys->mKeys)
+                    times.push_back(key.first);
+        }
+
     private:
         template <typename ValueType>
         ValueType interpolate(
@@ -217,6 +224,38 @@ namespace NifOsg
         META_Object(NifOsg, GeomMorpherController)
 
         void operator()(SceneUtil::MorphGeometry*, osg::NodeVisitor*);
+
+        // Read-only samples for fitting death-only body articulation. Sampling
+        // copies each interpolator so its living playback cursor is untouched.
+        std::vector<std::vector<float>> getMorphSamples() const
+        {
+            std::vector<float> times;
+            for (const auto& track : mKeyFrames)
+                track.appendKeyTimes(times);
+            if (times.empty())
+                return {};
+            std::sort(times.begin(), times.end());
+            const float start = times.front(), stop = times.back();
+            for (int i = 0; i < 84; ++i)
+                times.push_back(start + (stop - start) * i / 83.f);
+            std::sort(times.begin(), times.end());
+            times.erase(std::unique(times.begin(), times.end()), times.end());
+            std::vector<std::vector<float>> result;
+            const std::size_t count = std::min<std::size_t>(64, times.size());
+            for (std::size_t frame = 0; frame < count; ++frame)
+            {
+                const float time = times[frame * (times.size() - 1) / std::max<std::size_t>(1, count - 1)];
+                std::vector<float> weights(mKeyFrames.size());
+                for (std::size_t i = 1; i < mKeyFrames.size(); ++i)
+                {
+                    auto track = mKeyFrames[i];
+                    if (!track.empty())
+                        weights[i] = track.interpKey(time) * (i < mWeights.size() ? mWeights[i] : 1.f);
+                }
+                result.push_back(std::move(weights));
+            }
+            return result;
+        }
 
     private:
         std::vector<FloatInterpolator> mKeyFrames;
