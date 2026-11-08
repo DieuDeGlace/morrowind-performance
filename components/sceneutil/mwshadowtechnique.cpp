@@ -2023,9 +2023,8 @@ bool MWShadowTechnique::computeShadowCameraSettings(Frustum& frustum, LightData&
         if (settings->getShadowMapProjectionHint() == ShadowSettings::ORTHOGRAPHIC_SHADOW_MAP)
         {
             // OPENMW_ANDROID_051_ORTHO_FIXED_EYE_VOLUME
-            // Diagnostic A/B: the Android shadow-camera volume follows only
-            // the camera position and sunlight direction, never the current
-            // look direction/FOV/frustum corners. This intentionally trades
+            // Follow the camera position and sunlight direction without
+            // rotating the volume with the main camera view. This trades
             // texel efficiency for a rotation-invariant shadow projection.
             const double halfExtent = osg::maximum<double>(512.0, settings->getMaximumShadowMapDistance());
             const double depthExtent = halfExtent * 2.0;

@@ -564,6 +564,15 @@ namespace MWRender
             if (!bs.valid() || bs.radius() < mOccluderMinRadius)
                 continue;
 
+            // Doors must remain visible at every size, including large modded doors.
+            bool skipOcclusion = false;
+            child->getUserValue("skipOcclusion", skipOcclusion);
+            if (skipOcclusion)
+            {
+                child->accept(*cv);
+                continue;
+            }
+
             // Paged chunks and other oversized objects — test visibility, rasterize stored occluders
             if (bs.radius() > mOccluderMaxRadius)
             {
@@ -607,7 +616,10 @@ namespace MWRender
             // Get cached occluder mesh (with AABB for visibility test)
             const OccluderMesh& mesh = getOccluderMesh(child);
             if (!mesh.aabb.valid())
+            {
+                child->accept(*cv);
                 continue;
+            }
 
             if (mCuller->testVisibleAABB(mesh.aabb))
             {

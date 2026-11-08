@@ -2452,18 +2452,6 @@ namespace NifOsg
                 case Nif::RC_NiZBufferProperty:
                 {
                     const Nif::NiZBufferProperty* zprop = static_cast<const Nif::NiZBufferProperty*>(property);
-#ifdef ANDROID
-                    // OPENMW_ANDROID_051_GHOSTFENCE_DEPTH_DIAG
-                    const std::string androidDiagFilename
-                        = Misc::StringUtils::lowerCase(mFilename.filename().value());
-                    if (androidDiagFilename.starts_with("ex_gg_fence_"))
-                    {
-                        Log(Debug::Info) << "OpenMW 0.51 Ghostfence diag: zbuffer file=" << mFilename
-                                         << " node="" << node->getName() << """
-                                         << " depthTest=" << zprop->depthTest()
-                                         << " depthWrite=" << zprop->depthWrite();
-                    }
-#endif
                     osg::StateSet* stateset = node->getOrCreateStateSet();
                     // The test function from this property seems to be ignored.
                     handleDepthFlags(stateset, zprop->depthTest(), zprop->depthWrite());
@@ -2765,21 +2753,6 @@ namespace NifOsg
                     case Nif::RC_NiAlphaProperty:
                     {
                         const Nif::NiAlphaProperty* alphaprop = static_cast<const Nif::NiAlphaProperty*>(property);
-#ifdef ANDROID
-                        const std::string androidDiagFilename
-                            = Misc::StringUtils::lowerCase(mFilename.filename().value());
-                        if (androidDiagFilename.starts_with("ex_gg_fence_"))
-                        {
-                            Log(Debug::Info) << "OpenMW 0.51 Ghostfence diag: alpha file=" << mFilename
-                                             << " node="" << node->getName() << """
-                                             << " blend=" << alphaprop->useAlphaBlending()
-                                             << " src=" << alphaprop->sourceBlendMode()
-                                             << " dst=" << alphaprop->destinationBlendMode()
-                                             << " sorter=" << (!alphaprop->noSorter())
-                                             << " alphaTest=" << alphaprop->useAlphaTesting()
-                                             << " threshold=" << alphaprop->mThreshold;
-                        }
-#endif
                         handleAlphaBlending(alphaprop->useAlphaBlending(), alphaprop->sourceBlendMode(),
                             alphaprop->destinationBlendMode(), !alphaprop->noSorter(), hasSortAlpha, *node);
                         handleAlphaTesting(alphaprop->useAlphaTesting(), getTestMode(alphaprop->alphaTestMode()),
