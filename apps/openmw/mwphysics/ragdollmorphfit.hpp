@@ -14,6 +14,8 @@
 
 namespace MWPhysics::MorphFit
 {
+    constexpr std::size_t MaxVertices = 8192;
+    constexpr std::size_t MaxTrainingVertices = 512;
     using Pose = std::vector<osg::Vec3f>;
     struct Rigid
     {
@@ -156,7 +158,7 @@ namespace MWPhysics::MorphFit
     inline Layout fit(const Pose& fullRest, const std::vector<Pose>& fullPoses, std::size_t count = 6)
     {
         Layout result;
-        if (fullRest.size() < 24 || fullRest.size() > 8192 || fullPoses.size() < 2 || count < 3 || count > 6)
+        if (fullRest.size() < 24 || fullRest.size() > MaxVertices || fullPoses.size() < 2 || count < 3 || count > 6)
             return result;
         for (const auto& q : fullPoses)
             if (q.size() != fullRest.size())
@@ -178,7 +180,7 @@ namespace MWPhysics::MorphFit
             return result;
         Pose p;
         std::vector<Pose> poses(std::min<std::size_t>(64, fullPoses.size()));
-        const std::size_t n = std::min<std::size_t>(512, fullRest.size());
+        const std::size_t n = std::min(MaxTrainingVertices, fullRest.size());
         std::vector<std::size_t> indices;
         for (std::size_t i = 0; i < n; ++i)
         {
