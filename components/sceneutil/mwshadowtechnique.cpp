@@ -1004,6 +1004,7 @@ void SceneUtil::MWShadowTechnique::copyShadowMap(osgUtil::CullVisitor& cv, ViewD
         lhs_sd->_textureUnit = rhs_sd->_textureUnit;
         lhs_sd->_texture = rhs_sd->_texture;
         lhs_sd->_sm_i = rhs_sd->_sm_i;
+        lhs_sd->_projection.copyMatrices(rhs_sd->_projection);
         sdl.push_back(lhs_sd);
     }
 
@@ -1022,12 +1023,9 @@ void SceneUtil::MWShadowTechnique::setCustomFrustumCallback(CustomFrustumCallbac
 
 void SceneUtil::MWShadowTechnique::copyShadowStateSettings(osgUtil::CullVisitor& cv, ViewDependentData* vdd)
 {
-    unsigned int slot = cv.getTraversalNumber() % 2;
+    const osg::Matrixd inverseView = osg::Matrixd::inverse(*cv.getModelViewMatrix());
     for (const auto& sd : vdd->getShadowDataList())
-    {
-        assignValidRegionSettings(cv, sd->_camera, sd->_sm_i, vdd->_uniforms[slot]);
-        assignShadowStateSettings(cv, sd->_camera, sd->_sm_i, vdd->_uniforms[slot]);
-    }
+        sd->_projection.updateUniforms(cv.getTraversalNumber(), sd->_sm_i, inverseView);
 }
 
 void MWShadowTechnique::update(osg::NodeVisitor& nv)
@@ -1083,7 +1081,6 @@ void MWShadowTechnique::cull(osgUtil::CullVisitor& cv)
         return;
     }
     
-    Uniforms& vddUniforms = vdd->_uniforms[cv.getTraversalNumber() % 2];
 
     ShadowSettings* settings = getShadowedScene()->getShadowSettings();
 
@@ -1130,16 +1127,8 @@ void MWShadowTechnique::cull(osgUtil::CullVisitor& cv)
 
     cv.popStateSet();
 
-    // Temporal reuse: skip shadow cascade cull on non-update frames.
-    // Reuse previous frame's shadow textures (FBO-persistent) + uniforms (already in correct slot).
-    // Per-VDD counter: each CullVisitor has its own VDD (two CVs alternate in DrawThreadPerContext),
-    // so we count per-VDD calls rather than using global frame numbers.
-    // Note: we do NOT recompute uniforms here. Each VDD always uses the same uniform slot
-    // (traversalNumber % 2), so the values from the previous UPDATE are still valid.
-    // Recomputing via copyShadowStateSettings would produce wrong validRegionMatrix values
-    // because shadow cameras have post-adjustment projection matrices, but assignValidRegionSettings
-    // needs pre-adjustment projections (the adjustment happens between the two assign calls
-    // in the UPDATE path).
+    // Cached textures retain both world-space projections. Reproject them for
+    // the current eye and traversal buffer, including the pre-LiSPSM region.
     // Staleness cap: force a shadow update if the shadow map is too old.
     // At low FPS the skip gap grows (e.g. 133ms at 15fps with interval=2),
     // making stale shadows noticeable. Cap at 40ms — this lets the skip
@@ -1156,19 +1145,11 @@ void MWShadowTechnique::cull(osgUtil::CullVisitor& cv)
     {
         ++vdd->_framesSinceLastShadowCull;
 
-        // Recompute only shadowSpaceMatrix (SSM) for current camera position.
-        // VRM (validRegionMatrix) stays from previous UPDATE — it was computed with
-        // pre-adjustment projection which we no longer have access to.
-        // SSM needs current inverse(ModelView) so fragments in current eye space
-        // map correctly to the stale shadow textures.
-        {
-            unsigned int slot = cv.getTraversalNumber() % 2;
-            for (const auto& sd : vdd->getShadowDataList())
-                assignShadowStateSettings(cv, sd->_camera, sd->_sm_i, vdd->_uniforms[slot]);
-        }
-
         if (vdd->numValidShadows() > 0)
+        {
+            copyShadowStateSettings(cv, vdd);
             prepareStateSetForRenderingShadow(*vdd, cv.getTraversalNumber());
+        }
 
         cv.setComputeNearFarMode(cachedNearFarMode);
         return;
@@ -1608,9 +1589,12 @@ void MWShadowTechnique::cull(osgUtil::CullVisitor& cv)
 
             cv.popStateSet();
 
-            if (!orthographicViewFrustum && settings->getShadowMapProjectionHint()==ShadowSettings::PERSPECTIVE_SHADOW_MAP)
+            const bool perspective = !orthographicViewFrustum
+                && settings->getShadowMapProjectionHint() == ShadowSettings::PERSPECTIVE_SHADOW_MAP;
+            const osg::Matrixd validRegionProjection = camera->getViewMatrix() * camera->getProjectionMatrix();
+            osg::Matrixd shadowProjection = validRegionProjection;
+            if (perspective)
             {
-                assignValidRegionSettings(cv, camera, sm_i, vddUniforms);
 
                 if (settings->getMultipleShadowMapHint() == ShadowSettings::CASCADED)
                     adjustPerspectiveShadowMapCameraSettings(vdsmCallback->getRenderStage(), frustum, pl, camera.get(), cascaseNear, cascadeFar);
@@ -1620,13 +1604,11 @@ void MWShadowTechnique::cull(osgUtil::CullVisitor& cv)
                 {
                     vdsmCallback->getProjectionMatrix()->set(camera->getProjectionMatrix());
                 }
+                shadowProjection = camera->getViewMatrix() * camera->getProjectionMatrix();
             }
  
-            // 4.4 compute main scene graph TexGen + uniform settings + setup state
-            //
-            {
-                assignShadowStateSettings(cv, camera, sm_i, vddUniforms);
-            }
+            // Cache the projections that match this texture before the camera is reused.
+            sd->_projection.setMatrices(validRegionProjection, shadowProjection, perspective);
 
             // mark the light as one that has active shadows and requires shaders
             pl.textureUnits.push_back(textureUnit);
@@ -1650,6 +1632,7 @@ void MWShadowTechnique::cull(osgUtil::CullVisitor& cv)
 
     if (numValidShadows>0)
     {
+        copyShadowStateSettings(cv, vdd);
         prepareStateSetForRenderingShadow(*vdd, cv.getTraversalNumber());
     }
 
@@ -3268,61 +3251,6 @@ bool MWShadowTechnique::adjustPerspectiveShadowMapCameraSettings(osgUtil::Render
     return true;
 }
 
-void MWShadowTechnique::assignShadowStateSettings(osgUtil::CullVisitor& cv, osg::Camera* camera, unsigned int sm_i, Uniforms& uniforms)
-{
-    osg::Matrix inverseViewMatrix = osg::Matrix::inverse(*cv.getModelViewMatrix());
-    osg::Matrix shadowSpaceMatrix = inverseViewMatrix *
-        camera->getViewMatrix() *
-        camera->getProjectionMatrix() *
-        osg::Matrix::translate(1.0,1.0,1.0) *
-        osg::Matrix::scale(0.5,0.5,0.5);
-
-    std::string shadowSpaceUniformName = "shadowSpaceMatrix" + std::to_string(sm_i);
-    osg::ref_ptr<osg::Uniform> shadowSpaceUniform;
-
-    for (const auto & uniform : uniforms)
-    {
-        if (uniform->getName() == shadowSpaceUniformName)
-        {
-            shadowSpaceUniform = uniform;
-            break;
-        }
-    }
-
-    if (!shadowSpaceUniform)
-    {
-        shadowSpaceUniform = new osg::Uniform(osg::Uniform::FLOAT_MAT4, shadowSpaceUniformName);
-        uniforms.push_back(shadowSpaceUniform);
-    }
-
-    shadowSpaceUniform->set(shadowSpaceMatrix);
-}
-
-void SceneUtil::MWShadowTechnique::assignValidRegionSettings(osgUtil::CullVisitor & cv, osg::Camera* camera, unsigned int sm_i, Uniforms & uniforms)
-{
-    osg::Matrix validRegionMatrix = osg::Matrix::inverse(*cv.getModelViewMatrix()) *  camera->getViewMatrix() * camera->getProjectionMatrix();
-
-    std::string validRegionUniformName = "validRegionMatrix" + std::to_string(sm_i);
-    osg::ref_ptr<osg::Uniform> validRegionUniform;
-
-    for (const auto & uniform : uniforms)
-    {
-        if (uniform->getName() == validRegionUniformName)
-        {
-            validRegionUniform = uniform;
-            break;
-        }
-    }
-
-    if (!validRegionUniform)
-    {
-        validRegionUniform = new osg::Uniform(osg::Uniform::FLOAT_MAT4, validRegionUniformName);
-        uniforms.push_back(validRegionUniform);
-    }
-
-    validRegionUniform->set(validRegionMatrix);
-}
-
 void MWShadowTechnique::cullShadowReceivingScene(osgUtil::CullVisitor* cv) const
 {
     OSG_INFO<<"cullShadowReceivingScene()"<<std::endl;
@@ -3371,11 +3299,8 @@ osg::StateSet* MWShadowTechnique::prepareStateSetForRenderingShadow(ViewDependen
         stateset->addUniform(uniform);
     }
 
-    for(const auto& uniform : vdd._uniforms[traversalNumber % 2])
-    {
-        OSG_INFO<<"addUniform("<<uniform->getName()<<")"<<std::endl;
-        stateset->addUniform(uniform);
-    }
+    for (const auto& sd : vdd.getShadowDataList())
+        sd->_projection.apply(*stateset, traversalNumber);
 
     if (_program.valid())
     {

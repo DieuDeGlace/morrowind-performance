@@ -34,6 +34,8 @@
 
 #include <components/shader/shadermanager.hpp>
 
+#include "shadowprojection.hpp"
+
 // NOLINTBEGIN(readability-identifier-naming)
 
 namespace SceneUtil {
@@ -198,6 +200,7 @@ namespace SceneUtil {
             unsigned int                        _sm_i;
             osg::ref_ptr<osg::Texture2D>        _texture;
             osg::ref_ptr<osg::Camera>           _camera;
+            ShadowProjection                    _projection;
         };
 
         typedef std::list< osg::ref_ptr<ShadowData> > ShadowDataList;
@@ -232,9 +235,8 @@ namespace SceneUtil {
 
             LightDataList               _lightDataList;
             ShadowDataList              _shadowDataList;
-            std::array<Uniforms, 2>     _uniforms;
 
-            unsigned int _numValidShadows;
+            unsigned int _numValidShadows = 0;
             unsigned int _framesSinceLastShadowCull = 0;
             double _lastShadowCullReferenceTime = 0.0;
         };
@@ -261,9 +263,9 @@ namespace SceneUtil {
 
         virtual bool adjustPerspectiveShadowMapCameraSettings(osgUtil::RenderStage* renderStage, Frustum& frustum, LightData& positionedLight, osg::Camera* camera, double viewNear, double viewFar);
         
-        virtual void assignShadowStateSettings(osgUtil::CullVisitor& cv, osg::Camera* camera, unsigned int sm_i, Uniforms& uniforms);
+
         
-        virtual void assignValidRegionSettings(osgUtil::CullVisitor& cv, osg::Camera* camera, unsigned int sm_i, Uniforms& uniforms);
+
 
         virtual void cullShadowReceivingScene(osgUtil::CullVisitor* cv) const;
 
