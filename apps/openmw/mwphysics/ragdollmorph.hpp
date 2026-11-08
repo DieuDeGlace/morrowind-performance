@@ -126,7 +126,6 @@ namespace MWPhysics
     public:
         explicit RagdollMorphRig(osg::MatrixTransform& frame)
             : mFrame(&frame)
-            , mSkeleton(new SceneUtil::Skeleton)
         {
             using namespace MorphRagdollDetail;
             Gather gathered;
@@ -143,8 +142,9 @@ namespace MWPhysics
             const float actorVolume = volume(actorBounds);
             std::stable_sort(gathered.mMeshes.begin(), gathered.mMeshes.end(),
                 [](const auto& a, const auto& b) { return volume(a.mBounds) > volume(b.mBounds); });
-            for (const auto& mesh : gathered.mMeshes)
+            for (const auto& originalMesh : gathered.mMeshes)
             {
+                auto mesh = originalMesh;
                 if (mBodies >= 16 || mesh.mShadow)
                     continue;
                 if ((mesh.mBounds._max - mesh.mBounds._min).length() < span * .42f
@@ -169,6 +169,23 @@ namespace MWPhysics
                         osg::Matrixf::rotate(transforms[b].mRotation) * osg::Matrixf::translate(pivot) * mesh.mMatrix);
                     nodes.emplace_back(new osg::MatrixTransform);
                 }
+                osg::ref_ptr<osg::Group> anchor = &frame;
+                osg::Matrixf anchorWorld;
+                osg::NodePath anchorPath;
+                for (auto* node : mesh.mPath)
+                {
+                    anchorPath.push_back(node);
+                    if (auto* transform = dynamic_cast<osg::MatrixTransform*>(node))
+                    {
+                        anchor = transform;
+                        anchorWorld = osg::computeLocalToWorld(anchorPath);
+                    }
+                }
+                const auto inverseAnchor = osg::Matrixf::inverse(anchorWorld);
+                mesh.mMatrix *= inverseAnchor;
+                for (auto& matrix : matrices)
+                    matrix *= inverseAnchor;
+                osg::ref_ptr<SceneUtil::Skeleton> skeleton = new SceneUtil::Skeleton;
                 const std::size_t root = (count - 1) / 2;
                 for (std::size_t b = 0; b < count; ++b)
                 {
@@ -178,7 +195,7 @@ namespace MWPhysics
                     nodes[b]->setMatrix(
                         b == root ? matrices[b] : matrices[b] * osg::Matrixf::inverse(matrices[parent]));
                     if (b == root)
-                        mSkeleton->addChild(nodes[b]);
+                        skeleton->addChild(nodes[b]);
                     else
                         nodes[parent]->addChild(nodes[b]);
                 }
@@ -208,14 +225,16 @@ namespace MWPhysics
                         bounds.set(osg::Vec3f(-.02f, -.02f, -.02f), osg::Vec3f(.02f, .02f, .02f));
                     info.push_back({ nodes[b]->getName(), osg::BoundingSpheref(bounds), inverse });
                 }
-                replace(mesh, fitted->mWeights, info);
-                for (const auto& shadow : gathered.mMeshes)
+                replace(*skeleton, mesh, fitted->mWeights, info);
+                for (const auto& originalShadow : gathered.mMeshes)
                 {
+                    auto shadow = originalShadow;
                     if (!shadow.mShadow || wasReplaced(*shadow.mMorph))
                         continue;
                     const float distance = (shadow.mBounds.center() - mesh.mBounds.center()).length();
                     if (distance > span * .12f)
                         continue;
+                    shadow.mMatrix *= inverseAnchor;
                     const auto& base = *shadow.mMorph->getMorphTargetList()[0].getOffsets();
                     MorphFit::Weights weights(base.size(), std::vector<float>(count));
                     for (std::size_t v = 0; v < base.size(); ++v)
@@ -245,14 +264,14 @@ namespace MWPhysics
                         for (auto& value : weights[v])
                             value /= sum;
                     }
-                    replace(shadow, weights, info);
+                    replace(*skeleton, shadow, weights, info);
                 }
+                anchor->addChild(skeleton);
+                mAttachments.emplace_back(anchor, skeleton);
                 mBodies += count + 2;
                 Log(Debug::Info) << "Ragdoll morph: " << mesh.mMorph->getName() << " fitted " << count
                                  << " skin regions from original animation (error " << fitted->mError << ")";
             }
-            if (converted())
-                frame.addChild(mSkeleton);
         }
         ~RagdollMorphRig() { restore(); }
         RagdollMorphRig(const RagdollMorphRig&) = delete;
@@ -263,7 +282,8 @@ namespace MWPhysics
         {
             if (!mFrame)
                 return;
-            mFrame->removeChild(mSkeleton);
+            for (const auto& [anchor, skeleton] : mAttachments)
+                anchor->removeChild(skeleton);
             for (const auto& entry : mOriginal)
                 entry.first->setNodeMask(entry.second);
             mFrame = nullptr;
@@ -274,8 +294,8 @@ namespace MWPhysics
         {
             return std::ranges::any_of(mOriginal, [&](const auto& entry) { return entry.first.get() == &morph; });
         }
-        void replace(const MorphRagdollDetail::Mesh& mesh, const MorphFit::Weights& weights,
-            const std::vector<SceneUtil::RigGeometry::BoneInfo>& info)
+        void replace(SceneUtil::Skeleton& skeleton, const MorphRagdollDetail::Mesh& mesh,
+            const MorphFit::Weights& weights, const std::vector<SceneUtil::RigGeometry::BoneInfo>& info)
         {
             const auto frozen = MorphRagdollDetail::pose(*mesh.mMorph);
             if (frozen.size() != weights.size())
@@ -326,12 +346,12 @@ namespace MWPhysics
                         influences[v].emplace_back(b, weights[v][b]);
             rig->setInfluences(influences);
             rig->setTransform(osg::Matrixf::identity());
-            mSkeleton->addChild(rig);
+            skeleton.addChild(rig);
             mOriginal.emplace_back(mesh.mMorph, mesh.mMorph->getNodeMask());
             mesh.mMorph->setNodeMask(0);
         }
         osg::ref_ptr<osg::MatrixTransform> mFrame;
-        osg::ref_ptr<SceneUtil::Skeleton> mSkeleton;
+        std::vector<std::pair<osg::ref_ptr<osg::Group>, osg::ref_ptr<SceneUtil::Skeleton>>> mAttachments;
         std::vector<std::pair<osg::ref_ptr<SceneUtil::MorphGeometry>, osg::Node::NodeMask>> mOriginal;
         std::vector<osg::ref_ptr<osg::Node>> mAnimatedNodes;
         std::size_t mBodies = 0;

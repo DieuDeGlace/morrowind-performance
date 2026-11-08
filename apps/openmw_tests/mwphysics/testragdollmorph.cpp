@@ -100,6 +100,8 @@ namespace
     TEST(RagdollMorph, SeparateActorsNeverShareGeneratedBonesOrVisibility)
     {
         Body a, b;
+        for (std::size_t i = 0; i < a.mMorph->getMorphTargetList().size(); ++i)
+            b.mMorph->getMorphTarget(i).setOffsets(a.mMorph->getMorphTarget(i).getOffsets());
         MWPhysics::RagdollMorphRig first(*a.mFrame);
         ASSERT_TRUE(first.converted());
         EXPECT_NE(b.mMorph->getNodeMask(), 0);
@@ -114,4 +116,34 @@ namespace
         EXPECT_NE(a.mMorph->getNodeMask(), 0);
         EXPECT_EQ(b.mMorph->getNodeMask(), 0);
     }
+    TEST(RagdollMorph, HybridBodyRigStaysBelowItsOriginalOwnerBone)
+    {
+        Body body;
+        osg::ref_ptr<osg::MatrixTransform> owner = new osg::MatrixTransform;
+        owner->setName("Original torso");
+        owner->setMatrix(osg::Matrixf::translate(20, 30, 40));
+        osg::ref_ptr<osg::Node> child = body.mFrame->getChild(0);
+        body.mFrame->removeChild(child);
+        owner->addChild(child);
+        body.mFrame->addChild(owner);
+        osg::ref_ptr<osg::Geometry> rigid = new osg::Geometry;
+        osg::ref_ptr<osg::Vec3Array> vertices = new osg::Vec3Array;
+        vertices->push_back(osg::Vec3f(-4, -5, -4));
+        vertices->push_back(osg::Vec3f(4, 5, 4));
+        rigid->setVertexArray(vertices);
+        rigid->addPrimitiveSet(new osg::DrawArrays(GL_LINES, 0, 2));
+        osg::ref_ptr<osg::Geode> geode = new osg::Geode;
+        geode->addDrawable(rigid);
+        owner->addChild(geode);
+        MWPhysics::RagdollMorphRig morph(*body.mFrame);
+        ASSERT_TRUE(morph.converted());
+        const auto rig = MWPhysics::makeAutoRagdoll(*body.mFrame, osg::Matrixf::identity());
+        ASSERT_GT(rig.mParts.size(), 5);
+        EXPECT_EQ(rig.mParts.front().mNode, owner);
+        EXPECT_NE(rig.mParts.front().mNode, body.mFrame);
+        morph.restore();
+        EXPECT_EQ(owner->getNumChildren(), 2);
+        EXPECT_NE(body.mMorph->getNodeMask(), 0);
+    }
+
 }
