@@ -4,7 +4,7 @@ This scene replays the original fall with the current native ragdoll
 implementation. The Bip01 hierarchy was adapted from
 [lihogloglo's experimental physics fork](https://github.com/lihogloglo/openmw-dev/tree/physics).
 
-Set OPENMW_RAGDOLLS=1. Use a disposable profile, register data/ from this
+Physics is enabled by default. Use a disposable profile, register data/ from this
 directory and load TarhielTest.omwscripts after the Morrowind masters.
 Start with --skip-menu --start "Seyda Neen". The scene moves the player
 near the vanilla reference to trigger his scripted fall.

@@ -41,7 +41,8 @@ build or its own compatible shader modification. Existing defaults remain.
 
 ## Physics preview 3: general actor and item physics
 
-With OPENMW_RAGDOLLS=1, deaths attempt physics for all NPC and creature model
+Actor and object physics are enabled by default. Deaths attempt physics for all
+NPC and creature model
 types, including custom skeletons and incomplete Bip01 variants. Existing tuned
 rigs remain preferred. Automatic discovery uses actual skin influences or
 geometry-bearing transforms and limits each generated rig to 24 bodies.
@@ -50,8 +51,11 @@ and dragging; independent limbs require usable joints. The existing awake and
 retained-rig limits still apply. Living actors keep their normal animation and movement.
 
 The complete Windows package includes openmw-launcher.exe and all other desktop
-applications. Start-Physics-Launcher.cmd enables physics for launcher-started
-games. See RAGDOLL-TEST.md for the opt-in comprehensive actor replay.
+applications. Launch openmw-launcher.exe or openmw.exe directly; no command
+script or environment flag is required. OPENMW_RAGDOLLS=0 disables the native
+physics backend, while OPENMW_ITEMS=0 disables only native items. The existing
+Start-Physics-Launcher.cmd remains an optional helper that explicitly enables
+physics. See RAGDOLL-TEST.md for the opt-in comprehensive actor replay.
 
 ## Native items
 

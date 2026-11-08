@@ -1,6 +1,9 @@
 # Native ragdoll experiment
 
-Set OPENMW_RAGDOLLS=1 for this OpenMW process. Actor animations hand off
+Actor and object physics are enabled by default, including when starting
+openmw-launcher.exe or openmw.exe directly. OPENMW_RAGDOLLS=0 disables the
+native physics backend; OPENMW_ITEMS=0 disables only native items.
+Actor animations hand off
 all NPC and creature models at death. The Bip01 and BBip01 maps cover humanoids
 and creatures with matching bones. Tuned maps also cover cliff racer wings and
 tail, shalk legs, and mudcrab claws and legs.

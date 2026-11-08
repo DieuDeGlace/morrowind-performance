@@ -10,8 +10,10 @@ New-Item -ItemType Directory -Path "$PackageDir/demo/scenario" -Force | Out-Null
 Copy-Item "$repoRoot/scripts/ragdoll-test/data/*" -Destination "$PackageDir/demo/scenario" -Recurse -Force
 Copy-Item "$repoRoot/scripts/ragdoll-test/README.md" "$PackageDir/RAGDOLL-TEST.md" -Force
 @"
-Use Start-Physics-Launcher.cmd to configure and launch OpenMW with ragdolls enabled.
-The package also includes the normal openmw-launcher.exe, installation wizard,
+Run openmw-launcher.exe directly to configure and launch OpenMW. Actor ragdolls
+and native object physics are enabled by default; no .cmd helper is required.
+OPENMW_RAGDOLLS=0 disables the backend; OPENMW_ITEMS=0 disables only native items.
+The package also includes the installation wizard,
 construction set, importers, and command-line tools.
 
 For an isolated direct game launch, run Setup-Game-Data.cmd once, then use

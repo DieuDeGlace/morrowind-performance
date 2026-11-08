@@ -673,7 +673,7 @@ namespace MWPhysics
     {
         static const bool enabled = [] {
             const char* value = std::getenv("OPENMW_RAGDOLLS");
-            return value && std::string_view(value) == "1";
+            return !value || std::string_view(value) != "0";
         }();
         return enabled;
     }
