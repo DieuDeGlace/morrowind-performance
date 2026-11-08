@@ -8,6 +8,8 @@ file(GLOB UNITTEST_SRC_FILES
 
     mwphysics/testragdollcontrollers.cpp
     mwphysics/testragdollautorig.cpp
+    mwphysics/testragdollmorphfit.cpp
+    mwphysics/testragdollmorph.cpp
     mwphysics/testitemphysicsrules.cpp
 
     mwworld/teststore.cpp

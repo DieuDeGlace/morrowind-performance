@@ -32,6 +32,7 @@
 #include "physicssystem.hpp"
 #include "ragdollautorig.hpp"
 #include "ragdollcontrollers.hpp"
+#include "ragdollmorph.hpp"
 #include "ragdollworld.hpp"
 
 namespace MWPhysics
@@ -281,6 +282,21 @@ namespace MWPhysics
                 }))
                 parts.clear();
 
+            // Generate skinning only for sizeable non-rigid body morphs. The
+            // original drawables and tracks remain the living representation.
+            if (const auto* model = animation.getObjectRoot())
+            {
+                mModelFrame = std::make_unique<RagdollModelFrame>(*const_cast<osg::Group*>(model));
+                if (auto* frame = mModelFrame->get())
+                {
+                    mMorphRig = std::make_unique<RagdollMorphRig>(*frame);
+                    if (mMorphRig->converted())
+                        parts.clear();
+                    else
+                        mMorphRig.reset();
+                }
+            }
+
             const auto appendPart = [&](osg::MatrixTransform* node, const osg::Vec3f* start, const osg::Vec3f* end) {
                 Part part;
                 part.mNode = node;
@@ -303,7 +319,8 @@ namespace MWPhysics
                 const auto* model = animation.getObjectRoot();
                 if (!model)
                     return false;
-                mModelFrame = std::make_unique<RagdollModelFrame>(*const_cast<osg::Group*>(model));
+                if (!mModelFrame)
+                    mModelFrame = std::make_unique<RagdollModelFrame>(*const_cast<osg::Group*>(model));
                 auto* frame = mModelFrame->get();
                 if (!frame)
                     return false;
@@ -316,7 +333,9 @@ namespace MWPhysics
                     Log(Debug::Warning) << "Ragdoll: " << mActorId << " has no usable model geometry";
                     return false;
                 }
-                profile = generated.mParts.size() > 1 ? "automatic skeleton" : "whole model (no usable joints)";
+                profile = mMorphRig               ? "animation-fitted body morphs"
+                    : generated.mParts.size() > 1 ? "automatic skeleton"
+                                                  : "whole model (no usable joints)";
                 for (const auto& part : generated.mParts)
                 {
                     if (!appendPart(part.mNode, &part.mStart, &part.mEnd))
@@ -324,6 +343,9 @@ namespace MWPhysics
                     parts.push_back({ "", "", part.mParent, part.mRadius, part.mMass, 1.1f, .85f, .45f });
                 }
                 mAnimatedNodes = std::move(generated.mAnimatedNodes);
+                if (mMorphRig)
+                    mAnimatedNodes.insert(
+                        mAnimatedNodes.end(), mMorphRig->animatedNodes().begin(), mMorphRig->animatedNodes().end());
             }
             else
             {
@@ -476,6 +498,8 @@ namespace MWPhysics
             mControllersSuspended = false;
             for (const Part& part : mParts)
                 part.mNode->setMatrix(part.mOriginalLocal);
+            if (mMorphRig)
+                mMorphRig->restore();
         }
 
         void push(
@@ -621,6 +645,7 @@ namespace MWPhysics
         ESM::RefId mActorId;
         osg::ref_ptr<SceneUtil::PositionAttitudeTransform> mRoot;
         std::unique_ptr<RagdollModelFrame> mModelFrame;
+        std::unique_ptr<RagdollMorphRig> mMorphRig;
         std::vector<Part> mParts;
         std::vector<osg::ref_ptr<osg::Node>> mAnimatedNodes;
         std::vector<std::size_t> mPoseOrder;
