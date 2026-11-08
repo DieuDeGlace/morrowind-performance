@@ -74,6 +74,9 @@ namespace MWPhysics
                 for (std::size_t v = 0; v < result.size(); ++v)
                     result[v] += (*offsets)[v] * w;
             }
+            for (const auto& point : result)
+                if (!MorphFit::finite(point))
+                    return {};
             return result;
         }
         inline std::shared_ptr<const MorphFit::Layout> layout(SceneUtil::MorphGeometry& morph)

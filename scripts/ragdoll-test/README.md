@@ -11,12 +11,22 @@ determine the bodies and joints. Incomplete custom Bip01 rigs also use this
 fallback. Generated rigs are capped at 24 bodies; the largest segments get
 priority over tiny facial/finger bones.
 
-Models without usable joints get one whole-model collision body. The vanilla
-kwama forager uses vertex morphs, not skinned limb bones, so it can fall, collide,
-be struck and dragged as a whole body; its limbs cannot articulate independently.
-Body morph animation is frozen during physics and restored with the transform
-controllers on resurrection. No model assets are replaced. Invalid/empty models
-and the existing simultaneous-rig limits can still use ordinary death handling.
+Large, genuinely deforming body morphs can now receive a death-only skin fitted
+to their own original morph animation. This includes the kwama forager and
+applicable body meshes on bonelords, netches and mixed skeleton/morph creatures.
+Normal living morph playback is unchanged. Conversion binds to the exact pose
+at death, shares fitted weights with matching shadow meshes, and restores the
+original drawables/controllers on resurrection. No replacement NIFs or game
+assets are bundled. This is articulated rigid-body physics, without elastic
+impact-driven squash/stretch.
+
+The fitter samples up to 64 authored poses and 512 training vertices, learns
+up to six body regions, and blends up to three influences per vertex. Layouts
+are cached for at most 64 mesh templates. At most 16 generated parts (including
+endpoint helpers) fit inside the existing 24-body automatic-rig limit. Small
+face/effect morphs, rigid-only morph motion, unsupported controllers, very large
+meshes and malformed data retain their existing handling. Models still lacking
+usable joints use a whole-model body; the simultaneous-rig limits still apply.
 
 The rig parts use the original skeleton and a shared Bullet solver. They
 collide with terrain, doors and world geometry. Player melee can wake a
