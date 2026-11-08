@@ -482,6 +482,7 @@ namespace MWPhysics
             MWWorld::Ptr mPtr;
         };
         std::vector<ActorState> actors;
+        actors.reserve(mPhysics.getActors().size());
         for (const auto& [_, actor] : mPhysics.getActors())
             actors.push_back({ actor->getCollisionObject(),
                 actor->getPtr().getClass().getCreatureStats(actor->getPtr()).isDead(), actor->getPtr() });
