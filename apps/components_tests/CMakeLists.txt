@@ -92,6 +92,7 @@ file(GLOB UNITTEST_SRC_FILES
 
     sceneutil/occlusionculling.cpp
     sceneutil/osgacontroller.cpp
+    sceneutil/shadowprojection.cpp
     sceneutil/userdata.cpp
 
     bsa/testbsafile.cpp
