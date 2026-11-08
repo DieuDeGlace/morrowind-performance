@@ -7,6 +7,18 @@ function Assert-NativeExit([string]$Step) {
 }
 function Download-File([string]$Uri, [string]$Destination) {
     & curl.exe --fail --location --retry 3 --silent --show-error --output $Destination $Uri
+    if ($LASTEXITCODE -eq 0) { return }
+
+    # GitHub's browser download can retain an expired asset redirect. The API
+    # route downloads the same release asset; archive checksums still apply below.
+    if ($Uri -match '^https://github.com/([^/]+/[^/]+)/releases/download/([^/]+)/([^/]+)$' -and
+        (Get-Command gh.exe -ErrorAction SilentlyContinue)) {
+        $releaseRepo, $releaseTag, $assetName = $matches[1], $matches[2], $matches[3]
+        Write-Host "Retrying $assetName through the GitHub release API."
+        & gh.exe release download $releaseTag --repo $releaseRepo --pattern $assetName --output $Destination --clobber
+        Assert-NativeExit "Download $assetName through release API"
+        return
+    }
     Assert-NativeExit "Download $Uri"
 }
 
