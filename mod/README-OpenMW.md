@@ -86,8 +86,8 @@ outside standard OpenMW's API.
 Separate gameplay scenarios run in the actual unmodified Physics Preview 10
 Windows executable. They validate ESP accuracy on a player, NPC and creature,
 cleanup, physical hit/miss behavior, fist supplements, Lua shield guard and
-wear, rear attacks, and the one-use bow bonus. See the accompanying validation
-report for exact completed results.
+wear, rear attacks, and the one-use bow bonus. Both API suites passed 46 test groups. Detailed results are in the
+[source validation report](https://github.com/DieuDeGlace/morrowind-performance/blob/codex/ngc-openmw-port/development/VALIDATION.md).
 
 This is not a blanket 1:1 certification. The accuracy ability raises the existing
 hit formula rather than replacing it. Hamstring changes Speed, and backward bow
