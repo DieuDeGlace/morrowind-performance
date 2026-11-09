@@ -1,5 +1,7 @@
 #include "riggeometry.hpp"
 
+#include <iterator>
+
 #include <osg/MatrixTransform>
 
 #include <osgUtil/CullVisitor>
@@ -299,11 +301,15 @@ namespace SceneUtil
                 [&](const osg::Node* node) { return Misc::StringUtils::ciEqual(node->getName(), mData->mRootBone); });
         if (skinRoot == nodePath.end())
         {
-            // Failed to find skin root, cancel out everything up till the trishape.
-            // Our parent node is the trishape's transform
-            skinRoot = nodePath.end() - 2;
-            if ((*skinRoot)->getName() != getName()) // but maybe it can get optimized out
-                skinRoot++;
+            // Cancel transforms before the trishape, if its transform survives optimization.
+            // A rig attached directly to its skeleton has no intervening transform.
+            skinRoot = std::prev(nodePath.end());
+            if (skinRoot != skeletonRoot)
+            {
+                const auto parent = std::prev(skinRoot);
+                if ((*parent)->getName() == getName())
+                    skinRoot = parent;
+            }
         }
         else
             skinRoot++;

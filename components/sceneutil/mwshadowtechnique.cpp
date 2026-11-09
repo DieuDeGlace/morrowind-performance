@@ -987,11 +987,11 @@ MWShadowTechnique::ViewDependentData* MWShadowTechnique::createViewDependentData
 MWShadowTechnique::ViewDependentData* MWShadowTechnique::getViewDependentData(osgUtil::CullVisitor* cv)
 {
     std::lock_guard<std::mutex> lock(_viewDependentDataMapMutex);
-    ViewDependentDataMap::iterator itr = _viewDependentDataMap.find(cv);
+    ViewDependentDataMap::iterator itr = _viewDependentDataMap.find(cv->getIdentifier());
     if (itr!=_viewDependentDataMap.end()) return itr->second.get();
 
     osg::ref_ptr<ViewDependentData> vdd = createViewDependentData(cv);
-    _viewDependentDataMap[cv] = vdd;
+    _viewDependentDataMap[cv->getIdentifier()] = vdd;
     return vdd.release();
 }
 
@@ -1158,10 +1158,8 @@ void MWShadowTechnique::cull(osgUtil::CullVisitor& cv)
 
     // Cached textures retain both world-space projections. Reproject them for
     // the current eye and traversal buffer, including the pre-LiSPSM region.
-    // Staleness cap: force a shadow update if the shadow map is too old.
-    // At low FPS the skip gap grows (e.g. 133ms at 15fps with interval=2),
-    // making stale shadows noticeable. Cap at 40ms — this lets the skip
-    // work at 30+ fps where it helps, and backs off when FPS is already low.
+    // Limit reuse in wall time as well as frames, so low FPS cannot leave
+    // shadows frozen for long periods.
     constexpr double maxShadowStaleness = 0.040;
     double currentTime = cv.getFrameStamp()->getReferenceTime();
     bool tooStale = (vdd->_lastShadowCullReferenceTime > 0.0)
@@ -1170,7 +1168,9 @@ void MWShadowTechnique::cull(osgUtil::CullVisitor& cv)
     if (_shadowUpdateInterval > 1
         && vdd->_framesSinceLastShadowCull > 0
         && vdd->_framesSinceLastShadowCull < _shadowUpdateInterval
-        && !tooStale)
+        && !tooStale
+        // FOV, aspect and clip changes invalidate the cached coverage.
+        && vdd->_lastShadowCullProjection == viewProjectionMatrix)
     {
         ++vdd->_framesSinceLastShadowCull;
 
@@ -1185,6 +1185,7 @@ void MWShadowTechnique::cull(osgUtil::CullVisitor& cv)
     }
     vdd->_framesSinceLastShadowCull = 1;
     vdd->_lastShadowCullReferenceTime = currentTime;
+    vdd->_lastShadowCullProjection = viewProjectionMatrix;
 
     if (cv.getComputeNearFarMode()!=osg::CullSettings::DO_NOT_COMPUTE_NEAR_FAR)
     {
@@ -1215,7 +1216,7 @@ void MWShadowTechnique::cull(osgUtil::CullVisitor& cv)
         {
             // user hinted another view shares its frustum
             std::lock_guard<std::mutex> lock(_viewDependentDataMapMutex);
-            auto itr = _viewDependentDataMap.find(sharedFrustumHint);
+            auto itr = _viewDependentDataMap.find(sharedFrustumHint->getIdentifier());
             if (itr != _viewDependentDataMap.end())
             {
                 OSG_INFO << "User provided a valid shared frustum hint, re-using previously generated shadow map" << std::endl;

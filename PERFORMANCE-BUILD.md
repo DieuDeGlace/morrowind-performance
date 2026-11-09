@@ -114,3 +114,19 @@ perspective projections. The release workflow runs it with headless Mesa before
 building the complete desktop package. To run locally, install `moderngl==5.12.0`
 and `numpy==2.2.6`, then run `python CI/test-shadow-filter-gpu.py`.
 GPU fixtures do not establish that every game scene or driver is flicker-free.
+
+
+## Chronological shadow reuse and unnamed morph rigs
+
+The alternating render buffers of one view now share a shadow-map history,
+using OpenSceneGraph's view identifier. Cached frames use the latest map instead
+of switching between independently fitted older maps. Projection uniforms remain
+double buffered, and different view identifiers retain independent histories.
+Interval 2 still skips every other shadow update while walking at 60 FPS;
+projection changes and the existing 40 ms age limit force a refresh.
+
+Morph-generated rigs can attach an unnamed mesh directly to an unnamed skeleton.
+The skin transform fallback now stays within that node path, preventing the
+out-of-bounds traversal seen immediately after kwama forager ragdoll activation.
+Four skinning tests and eight real shadow-cull tests cover these changes.
+The Windows release continues to include the launcher and all desktop tools.
