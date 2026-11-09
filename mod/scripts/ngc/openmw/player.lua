@@ -8,12 +8,12 @@ local types = require('openmw.types')
 local ui = require('openmw.ui')
 local util = require('openmw.util')
 local config = require('scripts.ngc.openmw.config')
-local mechanics = require('scripts.ngc.openmw.mechanics')
+local requirements = require('scripts.ngc.openmw.requirements')
 local rules = require('scripts.ngc.openmw.rules')
 local settings = require('scripts.ngc.openmw.settings')
 
 -- A failed LOAD hook must not become an error on every active actor update.
-if not mechanics.ready then return {} end
+if not requirements.ready then return {} end
 
 local Actor, NPC, Armor, Weapon = types.Actor, types.NPC, types.Armor, types.Weapon
 local guarding, guardExhausted = false, false
@@ -28,7 +28,7 @@ for name, code in pairs(input.KEY) do keyCodes[name:upper()] = code end
 
 I.Settings.registerPage({
     key = settings.page, l10n = 'NGC', name = 'Next Generation Combat',
-    description = mechanics.native and 'Page description native' or 'Page description compatibility',
+    description = 'Page description',
 })
 
 local oneHanded = {
@@ -64,7 +64,6 @@ end
 local function setGuard(enabled)
     if guarding == enabled then return end
     guarding = enabled
-    mechanics.setGuard(enabled)
     guardTick = 0
     if enabled then
         guardIcon = ui.create({ type = ui.TYPE.Image, layer = 'HUD', props = {
@@ -85,7 +84,6 @@ local function clearZoom()
 end
 
 local function stopDraw()
-    mechanics.setBowSlow(1)
     fullDraw = false
     drawTick = 0
     clearZoom()
@@ -98,7 +96,14 @@ local function controlsAllowed()
         and Actor.canMove(self) and not NPC.isWerewolf(self)
 end
 
+-- A standard OpenMW action also lets controllers and other Lua mods bind guard.
+input.registerAction {
+    key = 'NGCGuard', type = input.ACTION_TYPE.Boolean, defaultValue = false,
+    l10n = 'NGC', name = 'Guard action name', description = 'Guard action description',
+}
+
 local function blockPressed(cfg)
+    if input.getBooleanActionValue('NGCGuard') then return true end
     if cfg.toggleActiveBlockingMouse2 then return input.isMouseButtonPressed(3) end
     local key = keyCodes[cfg.activeBlockKey:upper()]
     return key ~= nil and input.isKeyPressed(key)
@@ -166,9 +171,7 @@ local function updateBow(dt, cfg)
         drainFatigue(cfg.fullDrawFatigueDrainPercent)
     end
     local backward = self.controls.movement < 0
-    if mechanics.native then
-        mechanics.setBowSlow(backward and rules.clamp(cfg.fullDrawBackSpeedModifier, 0, 1) or 1)
-    elseif backward then
+    if backward then
         self.controls.movement = self.controls.movement * rules.clamp(cfg.fullDrawBackSpeedModifier, 0, 1)
     end
     if self.controls.sneak and cfg.bowZoomLevel > 0 then
@@ -181,7 +184,6 @@ local function updateBow(dt, cfg)
 end
 
 local function tryBlock(attack)
-    if mechanics.native then return false end -- The native block path owns wear, fatigue and reactions.
     local cfg = config.get()
     if not guarding or not cfg.toggleActiveBlocking or not controlsAllowed()
         or attack.sourceType ~= I.Combat.ATTACK_SOURCE_TYPES.Melee

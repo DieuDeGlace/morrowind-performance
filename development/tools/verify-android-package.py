@@ -11,6 +11,8 @@ parser.add_argument('--app',required=True)
 parser.add_argument('--engine',required=True)
 parser.add_argument('--archive',required=True)
 parser.add_argument('--report',default='ANDROID-VALIDATION.json')
+parser.add_argument('--version-code',type=int,required=True)
+parser.add_argument('--version-name',required=True)
 args=parser.parse_args()
 folder=args.folder
 apk=folder/'OpenMW-Android-0.51.0-ragdoll-preview-arm64.apk'
@@ -18,7 +20,7 @@ digest=hashlib.sha256(apk.read_bytes()).hexdigest()
 assert digest==(folder/(apk.name+'.sha256')).read_text(encoding='utf-8-sig').split()[0]
 info=(folder/'APK-INFO.txt').read_text(encoding='utf-8-sig')
 assert "name='com.dieudeglace.openmw.ragdolltest'" in info
-assert "versionCode='5130'" in info and 'ragdoll-preview.11' in info
+assert f"versionCode='{args.version_code}'" in info and f"versionName='{args.version_name}'" in info
 certificate='67405aa299809d192cf174807b364c853b1c6357860a025b9d465648475baf62'
 signature=(folder/'SIGNATURE.txt').read_text(encoding='utf-8-sig').lower()
 assert certificate in signature and 'verified using v2 scheme (apk signature scheme v2): true' in signature
@@ -64,8 +66,8 @@ with ZipFile(apk) as zipped:
     assert definition['binding']==1 and definition['visibility']==0 and definition['section']>0,definition
     assert 'libGL.so' in needed,needed
 report={'result':'passed','apk':apk.name,'sha256':digest,'application_id':'com.dieudeglace.openmw.ragdolltest',
-    'version_code':5130,'version_name':info.split("versionName='")[1].split("'")[0],
-    'certificate_sha256':certificate,'same_signing_key_as_preview10':True,'app_commit':args.app,
+    'version_code':args.version_code,'version_name':info.split("versionName='")[1].split("'")[0],
+    'certificate_sha256':certificate,'same_signing_key_as_physics_previews':True,'app_commit':args.app,
     'engine_commit':args.engine,'engine_archive_sha256':args.archive,'native_sha256':hashlib.sha256(native).hexdigest(),
     'backend_sha256':hashlib.sha256(backend).hexdigest(),'accurate_depth_copy_query':{'engine_reference':reference,'backend_definition':definition,'explicit_backend_dependency':True},
     'native_debug_sections':False,'abi':'arm64-v8a','device_gameplay_tested':False}

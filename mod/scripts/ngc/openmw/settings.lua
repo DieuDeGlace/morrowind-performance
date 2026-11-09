@@ -5,6 +5,11 @@ local M = {
     section = 'SettingsNGC',
     accuracySpell = 'ngc_omw_accuracy',
     accuracyBonus = 10000,
+    requiredContent = {
+        'Next Generation Combat.esp',
+        'Next Generation Combat - Hand To Hand Fixes.esp',
+        'Next Generation Combat - OpenMW.esp',
+    },
 }
 
 local labels = {

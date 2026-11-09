@@ -1,3 +1,4 @@
+LOAD: scripts/ngc_test/load.lua
 GLOBAL: scripts/ngc_test/global.lua
 PLAYER: scripts/ngc_test/player.lua
 NPC: scripts/ngc_test/target.lua

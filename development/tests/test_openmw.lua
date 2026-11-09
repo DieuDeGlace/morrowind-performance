@@ -137,7 +137,6 @@ local function game(options)
     end
     g.types = types
     local core = {
-        COMBAT_API_VERSION = nativeHookVersion,
         API_REVISION = options and options.apiRevision or testAPIRevision or 129, getSimulationTime = function() return g.now end,
         isWorldPaused = function() return g.paused or false end, getGameDifficulty = function() return g.difficulty or 0 end,
         contentFiles = { has = function(name) return g.content[name] or false end },
@@ -197,7 +196,9 @@ local function game(options)
         modules['openmw.input'] = { KEY = { Z = 44, Space = 32 },
             isKeyPressed = function(code) return g.keys[code] or false end,
             isMouseButtonPressed = function(code) return g.mouse == code end,
-            getBooleanActionValue = function() return g.use end,
+            ACTION_TYPE = { Boolean = 'boolean' },
+            registerAction = function() end,
+            getBooleanActionValue = function(key) return key == 'NGCGuard' and g.guard or key == 'Use' and g.use or false end,
         }
         modules['openmw.ui'] = { showMessage = function(message) g.messages[#g.messages + 1] = message end,
             TYPE = { Image = 'Image' }, texture = function(options) return options end,
@@ -261,6 +262,17 @@ local function game(options)
             skills = {}, effects = {}, activeSpells = {}, equipment = {}, inventory = {},
             stance = Actor.STANCE.Weapon, position = vector(0, 100, 0), controls = { movement = 0, sideMovement = 0 },
             ATTACK_TYPE = enum('NoAttack Any') }
+        local allowedControls = {movement=true, sideMovement=true, sneak=true, run=true,
+            jump=true, use=true, pitchChange=true, yawChange=true}
+        setmetatable(a.controls, {
+            __index = function(_, key)
+                assert(allowedControls[key], 'Unsupported stock control read: ' .. tostring(key))
+            end,
+            __newindex = function(controls, key, value)
+                assert(allowedControls[key], 'Unsupported stock control write: ' .. tostring(key))
+                rawset(controls, key, value)
+            end,
+        })
         a.object = a
         a.rotation = setmetatable({}, { __mul = function(_, v) return v end })
         function a:isValid() return not self.invalid end
@@ -331,10 +343,6 @@ local function game(options)
                 end
             end
         end
-        if nativeHookVersion and b.controls.unarmedAttackEvents and not attack.weapon
-            and attack.sourceType == 'melee' and not a.creature and not a.werewolf then
-            b.ctx:event('UnarmedAttack', {attacker = a, strength = attack.strength, type = 0})
-        end
         b.ctx.I.Combat.onHit(attack)
         self:flush()
         return attack
@@ -372,7 +380,7 @@ test('tier boundaries and zero fatigue denominator', function()
     equal(rules.tier(defaults, 100).criticalStrikeChance, 50)
     near(rules.knockdownChance(defaults, defaults.weaponTier4, 150), 20)
 end)
-test('load creates helper spells and applies GMSTs', function()
+test('companion ESP supplies the accuracy ability and LOAD applies GMSTs', function()
     local g = game()
     equal(g.gmst.fProjectileThrownStoreChance, 0)
     equal(g.gmst.fNGCProjectileStoreChance, 25)
@@ -382,7 +390,7 @@ test('load creates helper spells and applies GMSTs', function()
     equal(g.spells.mic_adrenaline_rush.effects[1].magnitudeMin, 50)
     equal(g.spells.ngc_omw_rush, nil)
 end)
-test('both unchanged original ESP files are required', function()
+test('both original ESPs and the OpenMW companion are required', function()
     for name in pairs(espContentNames) do
         local ok, message = pcall(game, { missingESP = name })
         equal(ok, false)
@@ -457,13 +465,13 @@ test('hamstring preserves other speed modifiers and survives save/load', functio
     local g = game(); g:set('hamstringChance', 100, 4)
     local a, b = g:actor('a'), g:actor('b')
     g:weapon(a, 'MarksmanBow', 'marksman'); b.attributes.speed.base = 100
-    g:hit(a, b, 10, 0, 'ranged'); near(b.attributes.speed.modified * (b.controls.movementSpeedMultiplier or 1), 50)
+    g:hit(a, b, 10, 0, 'ranged'); near(b.attributes.speed.modified, 50)
     local saved = b.ctx.actorScript.engineHandlers.onSave()
     b.ctx.actorScript.engineHandlers.onLoad(saved); g:advance(0.25)
-    near(b.attributes.speed.modified * (b.controls.movementSpeedMultiplier or 1), 50)
+    near(b.attributes.speed.modified, 50)
     b.attributes.speed.modifier = b.attributes.speed.modifier + 20
-    g:advance(0.25); near(b.attributes.speed.modified * (b.controls.movementSpeedMultiplier or 1), 60)
-    g:advance(3); near(b.attributes.speed.modified * (b.controls.movementSpeedMultiplier or 1), 120)
+    g:advance(0.25); near(b.attributes.speed.modified, 60)
+    g:advance(3); near(b.attributes.speed.modified, 120)
 end)
 test('unarmed damage adds health damage while preserving fatigue damage', function()
     local g = game(); g:set('handToHandKnockdownChance', 100, 4)
@@ -498,7 +506,7 @@ test('full draw uses the original three-second timer and one-shot cache', functi
 end)
 test('inactive bow animations do not advance full draw and can resume', function()
     for _, missing in ipairs({false, true}) do
-        local g = game(); local a = g:actor('a', {player = true})
+        local g = game(); local a = g:actor('a', true)
         g:weapon(a, 'MarksmanBow', 'marksman'); g.use = true
         a.ctx:animation('bowandarrow', {stopKey = 'shoot max attack'})
         g.animationMissing = missing; g.animationTime = -1
@@ -563,7 +571,6 @@ if referenceRoot or engineSourceRoot then
         near(b.dynamic.health.current, 998.8)
     end)
 end
-if not nativeHookVersion then
 test('guard blocks frontal melee, but allows rear and ranged damage', function()
     local g = game(); local a, b = g:actor('a'), g:actor('b', true)
     g:weapon(a, 'LongBladeOneHand', 'longblade'); g:weapon(b, 'LongBladeOneHand', 'longblade')
@@ -573,7 +580,15 @@ test('guard blocks frontal melee, but allows rear and ranged damage', function()
     a.position = vector(0, -100, 0); g:hit(a, b, 10); near(b.dynamic.health.current, 988)
     a.position = vector(0, 100, 0); g:hit(a, b, 10, 0, 'ranged'); near(b.dynamic.health.current, 976)
 end)
-end
+test('standard input action activates shield guard without raw keyboard input', function()
+    local g = game(); local a,b = g:actor('a'),g:actor('b',true)
+    g:weapon(a,'LongBladeOneHand','longblade')
+    b.equipment.CarriedLeft={kind='armor',record={type='Shield',baseArmor=0,weight=0,health=100},data={condition=100}}
+    b.position=vector(0,0,0);g.guard=true;b.ctx:engine('onFrame',0.1)
+    g:hit(a,b,10);near(b.dynamic.health.current,1000)
+    g.guard=false;b.ctx:engine('onFrame',0.1)
+    g:hit(a,b,10);near(b.dynamic.health.current,988)
+end)
 test('guard fatigue and menu cleanup', function()
     local g = game(); local a, b = g:actor('a'), g:actor('b', true)
     g:weapon(a, 'LongBladeOneHand', 'longblade')
@@ -592,7 +607,7 @@ test('bow zoom uses radians and restores the prior FOV', function()
     a.ctx:engine('onFrame', 3)
     near(a.dynamic.fatigue.current, 100)
     a.controls.movement = -1; a.ctx:engine('onFrame', 1)
-    near(g.fov, math.rad(35)); near(a.dynamic.fatigue.current, 95); near(nativeHookVersion and a.controls.movementSpeedMultiplier or -a.controls.movement, 0.3)
+    near(g.fov, math.rad(35)); near(a.dynamic.fatigue.current, 95); near(-a.controls.movement, 0.3)
     g.use = false; a.ctx:engine('onFrame', 0.1); near(g.fov, math.rad(70))
 end)
 test('exhausted bow draw sheathes the weapon', function()
@@ -735,12 +750,11 @@ test('creature, werewolf and Blind damage follow the original MWSE callbacks', f
         end
     end
 end)
-test('a missed native fist attack still has the separate original health hit', function()
+test('a missed fist attack retains the separate original health hit', function()
     local g = game(); local a, b = g:actor('a', true), g:actor('b')
     g:set('handToHandBaseDamageMax', 2)
     local oracle = original(a.ctx.env.require('scripts.ngc.openmw.config').get(), a, b, g)
     oracle.attack()
-    if nativeHookVersion then b.ctx:event('UnarmedAttack', { attacker = a }) end
     b.ctx.I.Combat.onHit({ attacker = a, successful = false, damage = {}, sourceType = 'melee' })
     g:flush()
     near(b.dynamic.health.current, oracle.target.health.current)
@@ -872,37 +886,4 @@ test('an encounter that ends before an AI report still cleans combo state', func
     g:advance(0.25); g:advance(0.75)
     equal(a.ctx.actorScript.engineHandlers.onSave().strikes,nil)
 end)
-if nativeHookVersion then
-    test('native Always Hit avoids the Fortify Attack helper and releases cleanly', function()
-        local g = game(); local a = g:actor('a')
-        g:set('toggleAlwaysHit', true); g:advance(0.25)
-        equal(a.controls.hitChanceOverride, 100)
-        equal(a.spells.ngc_omw_accuracy, nil)
-        a.ctx:engine('onInactive')
-        equal(a.controls.hitChanceOverride, nil)
-        equal(a.controls.unarmedAttackEvents, false)
-        near(a.controls.movementSpeedMultiplier, 1)
-    end)
-    test('native hamstring migrates an older save without retaining the Speed penalty', function()
-        local g = game(); local a = g:actor('a')
-        a.attributes.speed.base = 100
-        a.attributes.speed.modifier = -30 -- Previous NGC -50, another mod +20.
-        a.ctx.actorScript.engineHandlers.onLoad({hamstringDelta = -50, hamstringUntil = 3})
-        g:advance(0.25)
-        near(a.attributes.speed.modified, 120)
-        near(a.controls.movementSpeedMultiplier, 0.5)
-        g:advance(3)
-        near(a.attributes.speed.modified, 120)
-        near(a.controls.movementSpeedMultiplier, 1)
-    end)
-    test('native fist commitment supplies one health hit independently of a blocked fatigue hit', function()
-        local g = game(); local a, b = g:actor('a', true), g:actor('b')
-        g:set('handToHandBaseDamageMin', 2); g:set('handToHandBaseDamageMax', 2)
-        local before = #a.ctx.usedSkills
-        g:hit(a, b, 0, 0)
-        near(b.dynamic.health.current, 996)
-        near(b.dynamic.fatigue.current, 100)
-        equal(#a.ctx.usedSkills - before, 1)
-    end)
-end
 print(string.format('%d tests passed (%s combat handler).', passed, engineSourceRoot and ('real engine API ' .. testAPIRevision) or (referenceRoot and 'OpenMW 0.51 upstream' or 'mock')))

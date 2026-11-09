@@ -44,7 +44,6 @@
 "Multistrike Damage Multiplier": "Multistrike Damage Multiplier"
 "Multistrike Strikes Needed": "Multistrike Strikes Needed"
 "Next Generation Combat": "Next Generation Combat"
-"Page description": "Combat perks, active blocking, and skill progression for OpenMW. Settings are stored in each save."
 "Repeater Chance": "Repeater Chance"
 "Repeater Speed Multiplier": "Repeater Speed Multiplier"
 "Riposte Chance": "Riposte Chance"
@@ -68,5 +67,6 @@
 "Weapon tier 3": "Weapon tier 3"
 "Weapon tier 4": "Weapon tier 4"
 
-"Page description native": "Native combat hooks active. Combat perks, held guard and skill progression; settings are stored in each save."
-"Page description compatibility": "Lua compatibility mode. Use Physics Preview 11 or a compatible engine for native combat parity hooks. Settings are stored in each save."
+"Page description": "Combat perks, held guard and skill progression using ESPs and standard OpenMW Lua. Settings are stored in each save."
+"Guard action name": "NGC guard"
+"Guard action description": "Hold to guard with a readied, usable shield."

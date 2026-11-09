@@ -29,7 +29,7 @@ $cfg = @(
     'fallback-archive=Morrowind.bsa', 'fallback-archive=Tribunal.bsa', 'fallback-archive=Bloodmoon.bsa'
 )
 if ($Physical) { $cfg += 'content=ShadowRegression.esp' }
-$cfg += @('content=Next Generation Combat.esp','content=Next Generation Combat - Hand To Hand Fixes.esp','content=Next Generation Combat.omwscripts','content=NGCParityTest.omwscripts')
+$cfg += @('content=Next Generation Combat.esp','content=Next Generation Combat - Hand To Hand Fixes.esp','content=Next Generation Combat - OpenMW.esp','content=Next Generation Combat.omwscripts','content=NGCParityTest.omwscripts')
 $utf8 = New-Object System.Text.UTF8Encoding($false)
 [IO.File]::WriteAllText("$profile/openmw.cfg", ($cfg -join "`n") + "`n", $utf8)
 & (Join-Path $package 'openmw-iniimporter.exe') --ini $ini --cfg "$profile/openmw.cfg" --no-archives --encoding win1252 *> "$profile/ini-import.log"
@@ -43,7 +43,7 @@ $timer = [Diagnostics.Stopwatch]::StartNew()
 while (-not $process.HasExited) {
     Start-Sleep -Milliseconds 300
     $process.Refresh()
-    if ($timer.Elapsed.TotalSeconds -gt 100) {
+    if ($timer.Elapsed.TotalSeconds -gt 110) {
         if ($process.Path -eq $exe) { Stop-Process -Id $process.Id }
         throw 'Owned integration-test process timed out'
     }
@@ -56,6 +56,6 @@ if ($process.ExitCode -ne 0 -or $stdout -notmatch 'NGC_RUNTIME_PASS' -or ($stdou
     Get-Content -LiteralPath "$profile/stderr.log" -Tail 12
     throw 'Packaged combat gameplay test failed'
 }
-$report = @{result='passed';label=$Label;scope=$(if ($Physical) {'Native physical attacks, misses, fist commitment, shield arc and full draw'} else {'Content startup and native bindings'});package=$package;exit_code=$process.ExitCode;seconds=$timer.Elapsed.TotalSeconds;native_bindings=($stdout -match 'NGC_NATIVE_BINDINGS_PASS');phone_tested=$false}
+$report = @{result='passed';label=$Label;scope=$(if ($Physical) {'ESP accuracy, fist hits/misses, Lua shield guard and full draw'} else {'ESP accuracy and cleanup on player, NPC and creature'});package=$package;exit_code=$process.ExitCode;seconds=$timer.Elapsed.TotalSeconds;esp_accuracy=($stdout -match 'NGC_ESP_ACCURACY_PASS');phone_tested=$false}
 [IO.File]::WriteAllText("$profile/RESULT.json", ($report | ConvertTo-Json) + "`n", $utf8)
 Write-Output "Packaged combat gameplay test passed: $Label"

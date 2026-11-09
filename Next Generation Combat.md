@@ -1,18 +1,15 @@
 # Next Generation Combat OpenMW
 
-Native parity work is kept in Documents/morrowind-mods/next-generation-combat-openmw.
+Current work is kept in Documents/morrowind-mods/next-generation-combat-openmw.
 
-- `mod/`: runtime Lua scripts, original unchanged ESPs and icon, installation notes.
-- `development/MWSE/`: unchanged original implementation used as the comparison oracle.
-- `development/tests/`: behavior harness using each engine's actual Combat scripts.
-- `development/results/`: local build provenance, logs and validation reports.
-- `development/integration/`: reproducible isolated gameplay scenarios.
-- `development/runtime/`: local earlier profiles; not shipped in the mod ZIP.
+The current runtime uses ESPs plus standard OpenMW Lua. It does not read or set
+custom combat controls or subscribe to custom native combat events. Original
+MWSE sources and ESPs are preserved; the added companion ESP contains only the
+OpenMW accuracy ability.
 
-The matching native engines are the `codex/ngc-parity` and
-`codex/ngc-parity-android` branches in morrowind-performance; the Android wrapper
-uses `codex/ngc-parity-app`. Native hooks are opt-in and do not enable NGC by
-themselves. The published shadow fix remains part of both engine branches.
+Both engine branches restore the exact shadow-fixed Physics Preview 10 trees.
+Android rerelease metadata uses a higher package version to permit updating
+over Preview 11 while retaining the same application ID and signing key.
 
-See mod/README-OpenMW.md for supported behavior, adaptations, credits and setup.
-See development/VALIDATION.md and development/results for validation scope.
+See README.md, mod/README-OpenMW.md and development/VALIDATION.md.
+Earlier native-preview reports are historical evidence, not current validation.

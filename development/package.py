@@ -4,18 +4,20 @@ from zipfile import ZipFile, ZIP_DEFLATED
 import hashlib
 
 ESP_HASHES = {
+    "Next Generation Combat - OpenMW.esp": "6ae4b30de084fba6ed73815cd495be16503baf7c1b02c11d00d49914d53f2540",
     "Next Generation Combat.esp": "1bcf14e93a88362fb7407de1b9893a9a908aff2a729c75d8b5c63cbaeab6a32d",
     "Next Generation Combat - Hand To Hand Fixes.esp": "55406d5239babe07ed4a8821d09e61bceb45b8b897c2f8ae17fcf2e5ab8748ba",
 }
 ALLOWED = (
     "Next Generation Combat.esp",
+    "Next Generation Combat - OpenMW.esp",
     "Next Generation Combat - Hand To Hand Fixes.esp",
     "Next Generation Combat.omwscripts",
     "README-OpenMW.md",
     "icons/ngc/active_block.tga",
     "l10n/NGC/en.yaml",
 ) + tuple("scripts/ngc/openmw/" + name + ".lua" for name in (
-    "actor", "config", "defaults", "global", "load", "mechanics", "player", "rules", "settings"
+    "actor", "config", "defaults", "global", "load", "requirements", "player", "rules", "settings"
 ))
 
 
@@ -27,7 +29,7 @@ def main():
         raise RuntimeError(f"Runtime file list differs: {actual.symmetric_difference(ALLOWED)}")
     for name, expected in ESP_HASHES.items():
         assert hashlib.sha256((mod / name).read_bytes()).hexdigest() == expected, name
-    output = root / "Next Generation Combat - OpenMW Parity Preview 1.zip"
+    output = root / "Next-Generation-Combat-OpenMW-ESP-Lua-Preview-2.zip"
     with ZipFile(output, "w", compression=ZIP_DEFLATED, compresslevel=9) as archive:
         for name in ALLOWED:
             archive.write(mod / name, name)

@@ -4,11 +4,11 @@ local I = require('openmw.interfaces')
 local self = require('openmw.self')
 local types = require('openmw.types')
 local config = require('scripts.ngc.openmw.config')
-local mechanics = require('scripts.ngc.openmw.mechanics')
+local requirements = require('scripts.ngc.openmw.requirements')
 local rules = require('scripts.ngc.openmw.rules')
 local settings = require('scripts.ngc.openmw.settings')
 -- A failed LOAD hook must not become an error on every active actor update.
-if not mechanics.ready then return {} end
+if not requirements.ready then return {} end
 
 local baseCombat = I.Combat
 
@@ -89,7 +89,6 @@ local function scriptedHealthDamage(damage, attacker)
 end
 
 local function removeHamstring()
-    mechanics.setHamstring(1)
     if state.hamstringDelta ~= 0 then
         local speed = Actor.stats.attributes.speed(self)
         speed.modifier = speed.modifier - state.hamstringDelta
@@ -103,16 +102,6 @@ local function updateHamstring(now, cfg)
         removeHamstring()
         return
     end
-    if mechanics.native then
-        -- Migrate any Speed delta persisted by the previous portable port.
-        if state.hamstringDelta ~= 0 then
-            local speed = Actor.stats.attributes.speed(self)
-            speed.modifier = speed.modifier - state.hamstringDelta
-            state.hamstringDelta = 0
-        end
-        mechanics.setHamstring(rules.clamp(cfg.hamstringModifier, 0, 1))
-        return
-    end
     local speed = Actor.stats.attributes.speed(self)
     local unaffected = math.max(0, speed.modified - state.hamstringDelta)
     local delta = unaffected * (rules.clamp(cfg.hamstringModifier, 0, 1) - 1)
@@ -124,10 +113,7 @@ local function synchronizeAccuracy(enabled)
     if accuracyEnabled == enabled then return end
     local spells = Actor.spells(self)
     if isPlayer and spells.ngc_ready_to_strike then spells:remove('ngc_ready_to_strike') end
-    mechanics.setAccuracy(enabled)
-    if mechanics.native then
-        if spells[settings.accuracySpell] then spells:remove(settings.accuracySpell) end
-    elseif enabled and not spells[settings.accuracySpell] then
+    if enabled and not spells[settings.accuracySpell] then
         spells:add(settings.accuracySpell)
     elseif not enabled and spells[settings.accuracySpell] then
         spells:remove(settings.accuracySpell)
@@ -207,7 +193,7 @@ local function onHit(attack)
     end
     trackCombat(attacker, self.object)
     local cfg = config.get()
-    local handToHand = not mechanics.native and cfg.toggleWeaponPerks and cfg.toggleHandToHandPerks
+    local handToHand = cfg.toggleWeaponPerks and cfg.toggleHandToHandPerks
         and attack.sourceType == I.Combat.ATTACK_SOURCE_TYPES.Melee and not attack.weapon
         and NPC.objectIsInstance(attacker) and not NPC.isWerewolf(attacker)
     if not attack.successful and not handToHand then return end
@@ -215,9 +201,6 @@ local function onHit(attack)
     attack.damage = damage
     damage.health = damage.health or 0
     damage.fatigue = damage.fatigue or 0
-    if mechanics.native and damage.health <= 0 and damage.fatigue > 0 then
-        return -- The separate native UnarmedAttack event owns the fist health supplement.
-    end
     -- Zero damage includes native shield blocks, immunities, and god mode.
     if damage.health <= 0 and damage.fatigue <= 0 and not handToHand then
         if attack.sourceType == I.Combat.ATTACK_SOURCE_TYPES.Ranged and attack.ammo then
@@ -401,23 +384,6 @@ local function applyAttack(data)
     baseCombat.onHit(attack)
 end
 
--- The native event precedes Hit, so fists retain their independent health hit
--- on a miss or block without delaying the normal fatigue hit through another actor.
-local function unarmedAttack(data)
-    if not mechanics.native or Actor.isDead(self) then return end
-    local cfg = config.get()
-    local attacker = data.attacker
-    if not cfg.toggleWeaponPerks or not cfg.toggleHandToHandPerks or not attacker
-        or not attacker:isValid() or not NPC.objectIsInstance(attacker) or NPC.isWerewolf(attacker)
-        or (isPlayer and require('openmw.debug').isGodMode()) then return end
-    local now = core.getSimulationTime()
-    trackCombat(attacker, self.object)
-    local health, knockdown = handDamage(attacker, self.object, totalBaseArmor(), state.knockdownUntil > now, cfg)
-    if knockdown then knockDown(attacker, now) end
-    scriptedHealthDamage(health, attacker)
-    if types.Player.objectIsInstance(attacker) then attacker:sendEvent('NGCHandSkillUsed', {}) end
-end
-
 local function onUpdate(dt)
     if dt <= 0 then return end
     updateElapsed = updateElapsed + dt
@@ -432,7 +398,6 @@ local function onUpdate(dt)
     if poll then
         updateElapsed = updateElapsed % 0.25
         synchronizeAccuracy(cfg.toggleAlwaysHit and not Actor.isDead(self))
-        mechanics.setUnarmedEvents(cfg.toggleWeaponPerks and cfg.toggleHandToHandPerks and not Actor.isDead(self))
         if trackingCombat and not isPlayer and I.AI then
             local player
             if not Actor.isDead(self) then
@@ -522,7 +487,6 @@ return {
             if #state.rushExpiries > 0 then Actor.spells(self):remove('mic_adrenaline_rush'); state.rushExpiries = {} end
             removeHamstring()
             synchronizeAccuracy(false)
-            mechanics.reset()
             state.bleed = nil
             state.armorCache = {}
             state.strikes = nil
@@ -533,15 +497,10 @@ return {
             accuracyEnabled = nil
             local cfg = config.get()
             synchronizeAccuracy(cfg.toggleAlwaysHit and not Actor.isDead(self))
-            mechanics.setUnarmedEvents(cfg.toggleWeaponPerks and cfg.toggleHandToHandPerks and not Actor.isDead(self))
             if state.hamstringUntil > 0 then updateHamstring(core.getSimulationTime(), cfg) end
         end,
     },
     eventHandlers = {
-        UnarmedAttack = unarmedAttack,
-        NGCHandSkillUsed = function()
-            if isPlayer then I.SkillProgression.skillUsed('handtohand', { skillGain = 1 }) end
-        end,
         NGCResolveAttack = resolveAttack,
         NGCApplyAttack = applyAttack,
         NGCRecoverAttack = function(data) recoverAttack(data.attack, data.target) end,
