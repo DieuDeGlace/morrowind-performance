@@ -63,6 +63,7 @@ namespace SceneUtil
                 GLint previousRead = 0;
                 glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING_EXT, &previousRead);
                 mFramebuffer->apply(state, osg::FrameBufferObject::READ_FRAMEBUFFER);
+                glReadBuffer(GL_NONE);
                 const int width = mDepth->getTextureWidth();
                 const int height = mDepth->getTextureHeight();
                 extensions->glBlitFramebuffer(
