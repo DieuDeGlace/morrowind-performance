@@ -55,3 +55,25 @@
 -- @param #boolean v
 
 return nil
+
+--- Native hit chance override for attacks made by this actor. Nil restores the
+-- native formula. Finite values from 0 to 100; native range and other eligibility
+-- checks still apply. Requires core.COMBAT_API_VERSION >= 1.
+-- @field [parent=#ActorControls] #number hitChanceOverride
+
+--- Native melee shield block chance override. Nil restores the native formula.
+-- Requires a usable shield, a ready actor, and an attacker inside the normal
+-- blocking arc. Finite values from 0 to 100. Does not change global GMSTs.
+-- @field [parent=#ActorControls] #number blockChanceOverride
+
+--- Multiplier applied once to the final native NPC/creature movement speed,
+-- including swimming and levitation. Default 1; finite values from 0 to 1000.
+-- Does not modify Speed, skills, movement input or AI ownership.
+-- @field [parent=#ActorControls] #number movementSpeedMultiplier
+
+--- Subscribe this actor to UnarmedAttack local events. Default false. An event
+-- contains attacker, strength and type for a non-werewolf NPC's unarmed attack
+-- with an identified living target, before the ordinary Hit event, independently
+-- of the native hit roll or shield block. Delivery remains asynchronous.
+-- Values reset with script-container creation; set/clear on activation/deactivation.
+-- @field [parent=#ActorControls] #boolean unarmedAttackEvents

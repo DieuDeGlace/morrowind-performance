@@ -1502,3 +1502,8 @@
 -- @field openmw.util#Color night
 
 return nil
+
+--- Optional native combat hooks provided by this engine fork. Version 1 adds
+-- hitChanceOverride, blockChanceOverride, movementSpeedMultiplier and
+-- unarmedAttackEvents to openmw.self.controls. Missing on stock OpenMW.
+-- @field [parent=#core] #number COMBAT_API_VERSION
