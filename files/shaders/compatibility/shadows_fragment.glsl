@@ -153,7 +153,17 @@ float unshadowedLightRatio(float distance)
 #if @perspectiveShadowMaps
             vec3 shadowRegionXYZ = shadowRegionCoords@shadow_texture_unit_index.xyz / shadowRegionCoords@shadow_texture_unit_index.w;
 #endif
-            if (all(lessThan(shadowXYZ.xy, vec2(1.0, 1.0))) && all(greaterThan(shadowXYZ.xy, vec2(0.0, 0.0))))
+            // Reused maps can contain the pixel in XY but exclude its depth
+            // or cascade region. Such maps must not darken a valid later map.
+            bool validShadow = shadowSpaceCoords@shadow_texture_unit_index.w > 0.0
+                && all(lessThan(shadowXYZ, vec3(1.0)))
+                && all(greaterThan(shadowXYZ, vec3(0.0)));
+#if @perspectiveShadowMaps
+            validShadow = validShadow
+                && all(lessThan(shadowRegionXYZ, vec3(1.0)))
+                && all(greaterThan(shadowRegionXYZ.xy, vec2(-1.0, -1.0)));
+#endif
+            if (validShadow)
             {
 #if @softShadows
                 shadowing = min(getFilteredShadowing(

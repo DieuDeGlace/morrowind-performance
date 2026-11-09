@@ -114,10 +114,104 @@ void main() {
     program.release()
 
 
+def shadow_volume_error(ctx, source, map_count, perspective, soft):
+    """An invalid near cascade must never shadow a valid, lit far cascade."""
+    source = re.sub(
+        r"@foreach shadow_texture_unit_index @shadow_texture_unit_list\s*(.*?)@endforeach",
+        lambda match: "\n".join(match[1].replace("@shadow_texture_unit_index", str(i))
+                                for i in range(map_count)), source, flags=re.S,
+    )
+    for key, value in {
+        "shadows_enabled": 1, "softShadows": int(soft), "shadowMapResolution": 4096,
+        "softShadowRadius": 1.5, "perspectiveShadowMaps": int(perspective),
+        "limitShadowMapDistance": 0, "useShadowDebugOverlay": 0,
+    }.items():
+        source = source.replace("@" + key, str(value))
+    assert "@" not in source, "Unexpanded shader template"
+    source = source.replace("varying ", "in ").replace("gl_NormalMatrix", "normalMatrix")
+    source = source.replace("gl_FragData[0]", "result")
+    fragment = """#version 330
+#define PER_PIXEL_LIGHTING 1
+#define shadow2DProj(s, c) vec4(textureProj(s, c))
+uniform mat3 normalMatrix;
+uniform vec3 passNormal;
+out vec4 result;
+""" + source + "\nvoid main(){result=vec4(vec3(unshadowedLightRatio(0.0)),1.0);}\n"
+    vertex = "#version 330\nin vec2 position;\n"
+    for i in range(map_count):
+        vertex += f"""uniform vec4 coordinates{i};
+uniform vec4 region{i};
+out vec4 shadowSpaceCoords{i};
+out vec4 shadowRegionCoords{i};
+"""
+    vertex += "void main(){gl_Position=vec4(position,0.0,1.0);\n"
+    for i in range(map_count):
+        vertex += f"shadowSpaceCoords{i}=coordinates{i};shadowRegionCoords{i}=region{i};\n"
+    vertex += "}\n"
+    with ExitStack() as resources:
+        program = ctx.program(vertex_shader=vertex, fragment_shader=fragment)
+        resources.callback(program.release)
+        vbo = ctx.buffer(np.array([-1, -1, 3, -1, -1, 3], dtype="f4").tobytes())
+        resources.callback(vbo.release)
+        vao = ctx.vertex_array(program, [(vbo, "2f", "position")])
+        resources.callback(vao.release)
+        if "normalMatrix" in program:
+            program["normalMatrix"].write(np.eye(3, dtype="f4").tobytes())
+        if "passNormal" in program:
+            program["passNormal"].value = (0, 0, 1)
+        for i in range(map_count):
+            # Invalid near maps contain an occluder. The far map is clear.
+            depth = .25 if i + 1 < map_count else 1.0
+            texture = ctx.depth_texture((4, 4), np.full((4, 4), depth, dtype="f4").tobytes())
+            resources.callback(texture.release)
+            texture.compare_func = "<="
+            texture.filter = (moderngl.NEAREST, moderngl.NEAREST)
+            texture.use(i)
+            program[f"shadowTexture{i}"].value = i
+            name = f"shadowSpaceMatrix{i}"
+            if name in program:
+                program[name].write(np.eye(4, dtype="f4").tobytes())
+
+        cases = {
+            "beyond_depth": ((.5, .5, 1.2, 1), (0, 0, .5, 1)),
+            "before_depth": ((.5, .5, -.2, 1), (0, 0, .5, 1)),
+            "behind_projection": ((-.5, -.5, -.5, -1), (0, 0, .5, 1)),
+            "outside_uv": ((1.2, .5, .5, 1), (0, 0, .5, 1)),
+        }
+        if perspective:
+            cases["outside_region"] = ((.5, .5, .5, 1), (1.2, 0, .5, 1))
+            cases["beyond_region_depth"] = ((.5, .5, .5, 1), (0, 0, 1.2, 1))
+        errors = {}
+        for name, (coordinates, region) in cases.items():
+            for i in range(map_count):
+                last_valid = i + 1 == map_count and map_count > 1
+                program[f"coordinates{i}"].value = (.5, .5, .5, 1) if last_valid else coordinates
+                key = f"region{i}"
+                if key in program:
+                    program[key].value = (0, 0, .5, 1) if last_valid else region
+            vao.render(moderngl.TRIANGLES)
+            actual = float(np.frombuffer(ctx.fbo.read(components=1, dtype="f4"), dtype="f4")[0])
+            errors[name] = abs(actual - 1.0)
+
+        # A valid occluder in a near map must still win over the clear far map.
+        if map_count > 1:
+            program["coordinates0"].value = (.5, .5, .5, 1)
+            if "region0" in program:
+                program["region0"].value = (0, 0, .5, 1)
+            vao.render(moderngl.TRIANGLES)
+            errors["valid_near_shadow"] = abs(float(np.frombuffer(
+                ctx.fbo.read(components=1, dtype="f4"), dtype="f4")[0]))
+    assert ctx.error == "GL_NO_ERROR"
+    return {"maps": map_count, "perspective": perspective, "soft": soft,
+            "cases": len(errors), "max_visibility_error": max(errors.values()),
+            "failures": [name for name, error in errors.items() if error > 1e-5]}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--shader", type=Path, default=Path(__file__).resolve().parents[1] / "files/shaders/compatibility/shadows_fragment.glsl")
     parser.add_argument("--baseline", type=Path)
+    parser.add_argument("--volume-baseline", type=Path, help="Old shader used as an invalid-cascade negative control")
     parser.add_argument("--report", type=Path)
     args = parser.parse_args()
     ctx = moderngl.create_standalone_context(require=330, **({"backend": "egl"} if sys.platform.startswith("linux") else {}))
@@ -130,10 +224,19 @@ def main():
     for per_pixel in (False, True):
         for soft in (False, True):
             compile_filter(ctx, source, per_pixel, soft)
+    volume = [shadow_volume_error(ctx, source, maps, perspective, soft)
+              for maps in (1, 2, 4) for perspective in (False, True) for soft in (False, True)]
+    assert all(result["max_visibility_error"] < 1e-5 for result in volume), volume
+    if args.volume_baseline:
+        baseline = args.volume_baseline.read_text(encoding="utf-8")
+        baseline_volume = shadow_volume_error(ctx, baseline, 4, True, False)
+        assert baseline_volume["max_visibility_error"] > .5, "Baseline no longer exercises invalid cascades"
+        results["baseline_volume"] = baseline_volume
     if args.baseline:
         results["baseline_perspective"] = plane_error(ctx, args.baseline.read_text(encoding="utf-8"), True)
         assert results["baseline_perspective"]["max_normalized_plane_error"] > .01, "Baseline no longer exercises the regression"
-    report = {"result": "passed", "renderer": ctx.info["GL_RENDERER"], "plane_oracle": results, "shader_variants_compiled": 4}
+    report = {"result": "passed", "renderer": ctx.info["GL_RENDERER"], "plane_oracle": results, "shader_variants_compiled": 4,
+              "shadow_volume_variants_rendered": len(volume), "shadow_volume": volume}
     rendered = json.dumps(report, indent=2) + "\n"
     print(rendered, end="")
     if args.report:
