@@ -707,7 +707,7 @@ namespace MWLua
         mEngineEvents.addToQueue(EngineEvents::OnJailTimeServed{ getId(actor), days });
     }
 
-    void LuaManager::onUnarmedAttack(const MWWorld::Ptr& attacker, const MWWorld::Ptr& victim, float strength, int type)
+    void LuaManager::onUnarmedAttack(const MWWorld::Ptr& attacker, const MWWorld::Ptr& victim)
     {
         const ActorControls* controls = getActorControls(victim);
         if (!controls || !controls->mUnarmedAttackEvents)
@@ -716,8 +716,6 @@ namespace MWLua
         mLua.protectedCall([&](LuaUtil::LuaView& view) {
             sol::table data = view.newTable();
             data["attacker"] = LObject(attacker);
-            data["strength"] = strength;
-            data["type"] = type;
             sendLocalEvent(victim, "UnarmedAttack", data);
         });
     }
