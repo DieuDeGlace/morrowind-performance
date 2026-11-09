@@ -686,6 +686,8 @@ void MWShadowTechnique::ShadowData::updateTextureSize()
         _staticTexture->dirtyTextureObject();
         _staticCamera->dirtyAttachmentMap();
         _staticCamera->setViewport(0, 0, textureSize.x(), textureSize.y());
+        // Its read framebuffer must attach the newly allocated texture object.
+        _depthRestore = new ShadowDepthRestore(_staticTexture);
     }
 }
 
