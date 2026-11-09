@@ -18,6 +18,7 @@
 */
 
 #include "mwshadowtechnique.hpp"
+#include "shadowdepthrestore.hpp"
 
 #include <osgShadow/ShadowedScene>
 #include <osg/CullFace>
@@ -231,6 +232,8 @@ public:
 
     inline void handle(const osgUtil::RenderLeaf* renderLeaf)
     {
+        if (renderLeaf->_drawable->getNodeMask() == 0)
+            return;
         this->operator()(renderLeaf);
     }
 };
@@ -243,7 +246,7 @@ class VDSMCameraCullCallback : public osg::NodeCallback
 {
     public:
 
-        VDSMCameraCullCallback(MWShadowTechnique* vdsm, osg::Polytope& polytope);
+        VDSMCameraCullCallback(MWShadowTechnique* vdsm, osg::Polytope& polytope, osg::Drawable* restore = nullptr);
 
         void operator()(osg::Node*, osg::NodeVisitor* nv) override;
 
@@ -256,11 +259,13 @@ class VDSMCameraCullCallback : public osg::NodeCallback
         osg::ref_ptr<osg::RefMatrix>            _projectionMatrix;
         osg::ref_ptr<osgUtil::RenderStage>      _renderStage;
         osg::Polytope                           _polytope;
+        osg::ref_ptr<osg::Drawable> mRestore;
 };
 
-VDSMCameraCullCallback::VDSMCameraCullCallback(MWShadowTechnique* vdsm, osg::Polytope& polytope):
+VDSMCameraCullCallback::VDSMCameraCullCallback(MWShadowTechnique* vdsm, osg::Polytope& polytope, osg::Drawable* restore):
     _vdsm(vdsm),
-    _polytope(polytope)
+    _polytope(polytope),
+    mRestore(restore)
 {
 }
 
@@ -287,6 +292,12 @@ void VDSMCameraCullCallback::operator()(osg::Node* node, osg::NodeVisitor* nv)
     if (_vdsm->getShadowedScene())
     {
         _vdsm->getShadowedScene()->osg::Group::traverse(*nv);
+    }
+    if (mRestore)
+    {
+        cv->pushStateSet(mRestore->getStateSet());
+        cv->addDrawableAndDepth(mRestore, cv->getModelViewMatrix(), 0.0f);
+        cv->popStateSet();
     }
     cv->popStateSet();
 #if 1
@@ -628,6 +639,32 @@ void MWShadowTechnique::ShadowData::releaseGLObjects(osg::State* state) const
     OSG_INFO<<"MWShadowTechnique::ShadowData::releaseGLObjects"<<std::endl;
     _texture->releaseGLObjects(state);
     _camera->releaseGLObjects(state);
+    if (_staticCamera) _staticCamera->releaseGLObjects(state);
+    if (_staticTexture) _staticTexture->releaseGLObjects(state);
+    if (_depthRestore) _depthRestore->releaseGLObjects(state);
+}
+
+void MWShadowTechnique::ShadowData::setStaticCacheEnabled(bool enabled)
+{
+    if (enabled && !_staticCamera)
+    {
+        _staticTexture = new osg::Texture2D(*_texture, osg::CopyOp::SHALLOW_COPY);
+        _staticTexture->setShadowComparison(false);
+        _staticTexture->setFilter(osg::Texture::MIN_FILTER, osg::Texture::NEAREST);
+        _staticTexture->setFilter(osg::Texture::MAG_FILTER, osg::Texture::NEAREST);
+        _staticCamera = new osg::Camera(*_camera, osg::CopyOp::SHALLOW_COPY);
+        _staticCamera->setName("StaticShadowCamera");
+        _staticCamera->detach(osg::Camera::DEPTH_BUFFER);
+        _staticCamera->attach(osg::Camera::DEPTH_BUFFER, _staticTexture);
+        _staticCamera->setRenderOrder(osg::Camera::PRE_RENDER, -1);
+        _depthRestore = new ShadowDepthRestore(_staticTexture);
+    }
+    else if (!enabled)
+    {
+        _staticCamera = nullptr;
+        _staticTexture = nullptr;
+        _depthRestore = nullptr;
+    }
 }
 
 void MWShadowTechnique::ShadowData::updateTextureSize()
@@ -635,7 +672,7 @@ void MWShadowTechnique::ShadowData::updateTextureSize()
     const ShadowSettings* settings = _viewDependentData->getViewDependentShadowMap()->getShadowedScene()->getShadowSettings();
 
     const osg::Vec2s textureSize = settings->getDebugDraw() ? osg::Vec2s(512, 512) : settings->getTextureSize();
-    if (_texture->getTextureWidth() == textureSize.x() || _texture->getTextureHeight() == textureSize.y())
+    if (_texture->getTextureWidth() == textureSize.x() && _texture->getTextureHeight() == textureSize.y())
         return;
 
     _texture->setTextureSize(textureSize.x(), textureSize.y());
@@ -643,6 +680,13 @@ void MWShadowTechnique::ShadowData::updateTextureSize()
     _camera->dirtyAttachmentMap();
 
     _camera->setViewport(0, 0, textureSize.x(), textureSize.y());
+    if (_staticTexture)
+    {
+        _staticTexture->setTextureSize(textureSize.x(), textureSize.y());
+        _staticTexture->dirtyTextureObject();
+        _staticCamera->dirtyAttachmentMap();
+        _staticCamera->setViewport(0, 0, textureSize.x(), textureSize.y());
+    }
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////
@@ -842,6 +886,12 @@ MWShadowTechnique::MWShadowTechnique(const MWShadowTechnique& vdsm, const osg::C
     _shadowRecievingPlaceholderStateSet = new osg::StateSet;
     _enableShadows = vdsm._enableShadows;
     mSetDummyStateWhenDisabled = vdsm.mSetDummyStateWhenDisabled;
+    _worldMask = vdsm._worldMask;
+    _shadowUpdateInterval = vdsm._shadowUpdateInterval;
+    _frustumExpansionBase = vdsm._frustumExpansionBase;
+    _frustumExpansionPerSkip = vdsm._frustumExpansionPerSkip;
+    _dynamicCasterMask = vdsm._dynamicCasterMask;
+    _depthRestoreSupported = vdsm._depthRestoreSupported;
 }
 
 MWShadowTechnique::~MWShadowTechnique()
@@ -1034,6 +1084,9 @@ void SceneUtil::MWShadowTechnique::copyShadowMap(osgUtil::CullVisitor& cv, ViewD
         lhs_sd->_texture = rhs_sd->_texture;
         lhs_sd->_sm_i = rhs_sd->_sm_i;
         lhs_sd->_projection.copyMatrices(rhs_sd->_projection);
+        lhs_sd->_staticCamera = rhs_sd->_staticCamera;
+        lhs_sd->_staticTexture = rhs_sd->_staticTexture;
+        lhs_sd->_depthRestore = rhs_sd->_depthRestore;
         sdl.push_back(lhs_sd);
     }
 
@@ -1112,6 +1165,13 @@ void MWShadowTechnique::cull(osgUtil::CullVisitor& cv)
     
 
     ShadowSettings* settings = getShadowedScene()->getShadowSettings();
+    const unsigned int castingMask = settings->getCastsShadowTraversalMask();
+    const bool movingCasters = (castingMask & _dynamicCasterMask) != 0;
+    const bool staticCasters = (castingMask & _worldMask & ~_dynamicCasterMask) != 0;
+    // A moving receiver must not sample its caster's previous pose. Cache only
+    // scenery depth, then restore it before drawing current moving casters.
+    const bool splitCasters = _shadowUpdateInterval > 1 && _depthRestoreSupported
+        && movingCasters && staticCasters && !settings->getDebugDraw();
 
     OSG_INFO<<"cv->getProjectionMatrix()="<<*cv.getProjectionMatrix()<<std::endl;
 
@@ -1166,16 +1226,19 @@ void MWShadowTechnique::cull(osgUtil::CullVisitor& cv)
         && (currentTime - vdd->_lastShadowCullReferenceTime) > maxShadowStaleness;
 
     if (_shadowUpdateInterval > 1
+        && (!movingCasters || splitCasters)
         && vdd->_framesSinceLastShadowCull > 0
         && vdd->_framesSinceLastShadowCull < _shadowUpdateInterval
         && !tooStale
         // FOV, aspect and clip changes invalidate the cached coverage.
-        && vdd->_lastShadowCullProjection == viewProjectionMatrix)
+        && vdd->_lastShadowCullProjection == viewProjectionMatrix
+        && vdd->_lastShadowCastingMask == castingMask)
     {
         ++vdd->_framesSinceLastShadowCull;
 
         if (vdd->numValidShadows() > 0)
         {
+            cullDynamicShadows(cv, *vdd);
             copyShadowStateSettings(cv, vdd);
             prepareStateSetForRenderingShadow(*vdd, cv.getTraversalNumber());
         }
@@ -1186,6 +1249,7 @@ void MWShadowTechnique::cull(osgUtil::CullVisitor& cv)
     vdd->_framesSinceLastShadowCull = 1;
     vdd->_lastShadowCullReferenceTime = currentTime;
     vdd->_lastShadowCullProjection = viewProjectionMatrix;
+    vdd->_lastShadowCastingMask = castingMask;
 
     if (cv.getComputeNearFarMode()!=osg::CullSettings::DO_NOT_COMPUTE_NEAR_FAR)
     {
@@ -1441,6 +1505,7 @@ void MWShadowTechnique::cull(osgUtil::CullVisitor& cv)
                     sd->updateTextureSize();
             }
 
+            sd->setStaticCacheEnabled(splitCasters);
             osg::ref_ptr<osg::Camera> camera = sd->_camera;
 
             camera->setProjectionMatrix(projectionMatrix);
@@ -1584,7 +1649,19 @@ void MWShadowTechnique::cull(osgUtil::CullVisitor& cv)
             else
                 cropShadowCameraToMainFrustum(frustum, camera, reducedNear, reducedFar, extraPlanes);
 
-            osg::ref_ptr<VDSMCameraCullCallback> vdsmCallback = new VDSMCameraCullCallback(this, local_polytope);
+            osg::ref_ptr<VDSMCameraCullCallback> staticCallback;
+            if (splitCasters)
+            {
+                sd->_staticCamera->setViewMatrix(camera->getViewMatrix());
+                sd->_staticCamera->setProjectionMatrix(camera->getProjectionMatrix());
+                staticCallback = new VDSMCameraCullCallback(this, local_polytope);
+                sd->_staticCamera->setCullCallback(staticCallback);
+            }
+            osg::Polytope dynamicPolytope;
+            dynamicPolytope.setToUnitFrustum();
+            dynamicPolytope.transformProvidingInverse(camera->getProjectionMatrix());
+            osg::ref_ptr<VDSMCameraCullCallback> vdsmCallback = new VDSMCameraCullCallback(this,
+                splitCasters ? dynamicPolytope : local_polytope, sd->_depthRestore);
             camera->setCullCallback(vdsmCallback.get());
 
             // 4.3 traverse RTT camera
@@ -1592,21 +1669,29 @@ void MWShadowTechnique::cull(osgUtil::CullVisitor& cv)
 
             cv.pushStateSet(_shadowCastingStateSet.get());
 
-            cullShadowCastingScene(&cv, camera.get());
+            if (splitCasters)
+            {
+                cullShadowCastingScene(&cv, sd->_staticCamera, castingMask & ~_dynamicCasterMask);
+                const unsigned int sharedMask = castingMask & ~(_worldMask | _dynamicCasterMask);
+                cullShadowCastingScene(&cv, camera, sharedMask | (castingMask & _dynamicCasterMask));
+            }
+            else
+                cullShadowCastingScene(&cv, camera.get());
 
             cv.popStateSet();
 
             const bool perspective = !orthographicViewFrustum
                 && settings->getShadowMapProjectionHint() == ShadowSettings::PERSPECTIVE_SHADOW_MAP;
+            osgUtil::RenderStage* staticStage = staticCallback ? staticCallback->getRenderStage() : nullptr;
             const osg::Matrixd validRegionProjection = camera->getViewMatrix() * camera->getProjectionMatrix();
             osg::Matrixd shadowProjection = validRegionProjection;
             if (perspective)
             {
 
                 if (settings->getMultipleShadowMapHint() == ShadowSettings::CASCADED)
-                    adjustPerspectiveShadowMapCameraSettings(vdsmCallback->getRenderStage(), frustum, pl, camera.get(), cascaseNear, cascadeFar);
+                    adjustPerspectiveShadowMapCameraSettings(vdsmCallback->getRenderStage(), frustum, pl, camera.get(), cascaseNear, cascadeFar, staticStage);
                 else
-                    adjustPerspectiveShadowMapCameraSettings(vdsmCallback->getRenderStage(), frustum, pl, camera.get(), reducedNear, reducedFar);
+                    adjustPerspectiveShadowMapCameraSettings(vdsmCallback->getRenderStage(), frustum, pl, camera.get(), reducedNear, reducedFar, staticStage);
                 if (vdsmCallback->getProjectionMatrix())
                 {
                     vdsmCallback->getProjectionMatrix()->set(camera->getProjectionMatrix());
@@ -1614,6 +1699,11 @@ void MWShadowTechnique::cull(osgUtil::CullVisitor& cv)
                 shadowProjection = camera->getViewMatrix() * camera->getProjectionMatrix();
             }
  
+            if (staticCallback)
+            {
+                sd->_staticCamera->setProjectionMatrix(camera->getProjectionMatrix());
+                staticCallback->getProjectionMatrix()->set(camera->getProjectionMatrix());
+            }
             // Cache the projections that match this texture before the camera is reused.
             sd->_projection.setMatrices(validRegionProjection, shadowProjection, perspective);
 
@@ -2808,7 +2898,7 @@ bool MWShadowTechnique::cropShadowCameraToMainFrustum(Frustum& frustum, osg::Cam
     return true;
 }
 
-bool MWShadowTechnique::adjustPerspectiveShadowMapCameraSettings(osgUtil::RenderStage* renderStage, Frustum& frustum, LightData& /*positionedLight*/, osg::Camera* camera, double viewNear, double viewFar)
+bool MWShadowTechnique::adjustPerspectiveShadowMapCameraSettings(osgUtil::RenderStage* renderStage, Frustum& frustum, LightData& /*positionedLight*/, osg::Camera* camera, double viewNear, double viewFar, osgUtil::RenderStage* additionalStage)
 {
     const ShadowSettings* settings = getShadowedScene()->getShadowSettings();
 
@@ -2897,6 +2987,7 @@ bool MWShadowTechnique::adjustPerspectiveShadowMapCameraSettings(osgUtil::Render
         RenderLeafTraverser<RenderLeafBounds> rli;
         rli.set(light_p);
         rli.traverse(renderStage);
+        if (additionalStage) rli.traverse(additionalStage);
 
         if (rli.numRenderLeaf==0)
         {
@@ -3119,6 +3210,7 @@ bool MWShadowTechnique::adjustPerspectiveShadowMapCameraSettings(osgUtil::Render
         RenderLeafTraverser<RenderLeafBounds> rli;
         rli.set(light_p, virtual_eye, n);
         rli.traverse(renderStage);
+        if (additionalStage) rli.traverse(additionalStage);
 
         if (rli.numRenderLeaf==0)
         {
@@ -3217,18 +3309,32 @@ void MWShadowTechnique::cullShadowReceivingScene(osgUtil::CullVisitor* cv) const
 
 void MWShadowTechnique::cullShadowCastingScene(osgUtil::CullVisitor* cv, osg::Camera* camera) const
 {
-    OSG_INFO<<"cullShadowCastingScene()"<<std::endl;
+    cullShadowCastingScene(cv, camera, _shadowedScene->getShadowSettings()->getCastsShadowTraversalMask());
+}
 
+void MWShadowTechnique::cullShadowCastingScene(osgUtil::CullVisitor* cv, osg::Camera* camera, unsigned int mask) const
+{
     // record the traversal mask on entry so we can reapply it later.
     unsigned int traversalMask = cv->getTraversalMask();
 
-    cv->setTraversalMask( traversalMask & _shadowedScene->getShadowSettings()->getCastsShadowTraversalMask() );
+    cv->setTraversalMask(traversalMask & mask);
 
         if (camera) camera->accept(*cv);
 
     cv->setTraversalMask( traversalMask );
 
     return;
+}
+
+void MWShadowTechnique::cullDynamicShadows(osgUtil::CullVisitor& cv, ViewDependentData& data) const
+{
+    const unsigned int castingMask = _shadowedScene->getShadowSettings()->getCastsShadowTraversalMask();
+    const unsigned int sharedMask = castingMask & ~(_worldMask | _dynamicCasterMask);
+    cv.pushStateSet(_shadowCastingStateSet);
+    for (const auto& shadow : data.getShadowDataList())
+        if (shadow->_staticCamera)
+            cullShadowCastingScene(&cv, shadow->_camera, sharedMask | (castingMask & _dynamicCasterMask));
+    cv.popStateSet();
 }
 
 osg::StateSet* MWShadowTechnique::prepareStateSetForRenderingShadow(ViewDependentData& vdd, unsigned int traversalNumber) const

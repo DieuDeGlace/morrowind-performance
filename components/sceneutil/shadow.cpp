@@ -130,7 +130,7 @@ namespace SceneUtil
 
     ShadowManager::ShadowManager(osg::ref_ptr<osg::Group> sceneRoot, osg::ref_ptr<osg::Group> rootNode,
         unsigned int outdoorShadowCastingMask, unsigned int indoorShadowCastingMask, unsigned int worldMask,
-        const Settings::ShadowsCategory& settings, Shader::ShaderManager& shaderManager)
+        const Settings::ShadowsCategory& settings, Shader::ShaderManager& shaderManager, unsigned int dynamicCasterMask)
         : mShadowedScene(new osgShadow::ShadowedScene)
         , mShadowTechnique(new MWShadowTechnique)
         , mOutdoorShadowCastingMask(outdoorShadowCastingMask)
@@ -152,6 +152,7 @@ namespace SceneUtil
         setupShadowSettings(settings, shaderManager);
 
         mShadowTechnique->setWorldMask(worldMask);
+        mShadowTechnique->setDynamicCasterMask(dynamicCasterMask);
 
         enableOutdoorMode();
 

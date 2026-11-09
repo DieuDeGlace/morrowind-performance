@@ -200,6 +200,7 @@ namespace SceneUtil {
             virtual void releaseGLObjects(osg::State* = 0) const;
 
             void updateTextureSize();
+            void setStaticCacheEnabled(bool enabled);
 
             ViewDependentData*                  _viewDependentData;
 
@@ -208,6 +209,9 @@ namespace SceneUtil {
             osg::ref_ptr<osg::Texture2D>        _texture;
             osg::ref_ptr<osg::Camera>           _camera;
             ShadowProjection                    _projection;
+            osg::ref_ptr<osg::Texture2D> _staticTexture;
+            osg::ref_ptr<osg::Camera> _staticCamera;
+            osg::ref_ptr<osg::Drawable> _depthRestore;
         };
 
         typedef std::list< osg::ref_ptr<ShadowData> > ShadowDataList;
@@ -247,6 +251,7 @@ namespace SceneUtil {
             unsigned int _framesSinceLastShadowCull = 0;
             double _lastShadowCullReferenceTime = 0.0;
             osg::Matrixd _lastShadowCullProjection;
+            unsigned int _lastShadowCastingMask = 0;
         };
 
         virtual ViewDependentData* createViewDependentData(osgUtil::CullVisitor* cv);
@@ -269,7 +274,7 @@ namespace SceneUtil {
 
         virtual bool cropShadowCameraToMainFrustum(Frustum& frustum, osg::Camera* camera, double viewNear, double viewFar, std::vector<osg::Plane>& planeList);
 
-        virtual bool adjustPerspectiveShadowMapCameraSettings(osgUtil::RenderStage* renderStage, Frustum& frustum, LightData& positionedLight, osg::Camera* camera, double viewNear, double viewFar);
+        virtual bool adjustPerspectiveShadowMapCameraSettings(osgUtil::RenderStage* renderStage, Frustum& frustum, LightData& positionedLight, osg::Camera* camera, double viewNear, double viewFar, osgUtil::RenderStage* additionalStage = nullptr);
         
 
         
@@ -282,6 +287,13 @@ namespace SceneUtil {
         virtual osg::StateSet* prepareStateSetForRenderingShadow(ViewDependentData& vdd, unsigned int traversalNumber) const;
 
         void setWorldMask(unsigned int worldMask) { _worldMask = worldMask; }
+        void setDynamicCasterMask(unsigned int mask, bool depthRestoreSupported = true)
+        {
+            _dynamicCasterMask = mask;
+            _depthRestoreSupported = depthRestoreSupported;
+        }
+        void cullShadowCastingScene(osgUtil::CullVisitor* cv, osg::Camera* camera, unsigned int mask) const;
+        void cullDynamicShadows(osgUtil::CullVisitor& cv, ViewDependentData& data) const;
 
         void setShadowUpdateInterval(unsigned int interval) { _shadowUpdateInterval = interval; }
 
@@ -326,6 +338,8 @@ namespace SceneUtil {
         float                                   _shadowFadeStart = 0.0f;
 
         unsigned int                            _worldMask = ~0u;
+        unsigned int _dynamicCasterMask = 0;
+        bool _depthRestoreSupported = true;
 
         unsigned int                            _shadowUpdateInterval = 1;
 
