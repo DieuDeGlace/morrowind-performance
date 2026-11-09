@@ -48,7 +48,6 @@ file(GLOB UNITTEST_SRC_FILES
     settings/parser.cpp
     settings/shadermanager.cpp
     settings/testvalues.cpp
-    settings/testshadowsettings.cpp
 
     shader/parsedefines.cpp
     shader/parsefors.cpp
