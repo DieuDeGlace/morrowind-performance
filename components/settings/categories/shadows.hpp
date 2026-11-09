@@ -19,8 +19,15 @@ namespace Settings
         using WithIndex::WithIndex;
 
         SettingValue<bool> mEnableShadows{ mIndex, "Shadows", "enable shadows" };
+#ifdef ANDROID
+        // GL4ES uses one orthographic map. Enforce the same limit as the launcher
+        // when desktop configurations or runtime settings request cascades.
+        SettingValue<int> mNumberOfShadowMaps{ mIndex, "Shadows", "number of shadow maps",
+            makeClampSanitizerInt(1, 1) };
+#else
         SettingValue<int> mNumberOfShadowMaps{ mIndex, "Shadows", "number of shadow maps",
             makeClampSanitizerInt(1, 8) };
+#endif
         SettingValue<float> mMaximumShadowMapDistance{ mIndex, "Shadows", "maximum shadow map distance" };
         SettingValue<float> mShadowFadeStart{ mIndex, "Shadows", "shadow fade start", makeClampSanitizerFloat(0, 1) };
         SettingValue<float> mSplitPointUniformLogarithmicRatio{ mIndex, "Shadows",

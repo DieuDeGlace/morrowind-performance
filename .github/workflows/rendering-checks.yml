@@ -6,6 +6,8 @@ on:
     paths:
       - '.github/workflows/rendering-checks.yml'
       - 'components/sceneutil/shadowprojection.hpp'
+      - 'components/settings/categories/shadows.hpp'
+      - 'apps/components_tests/settings/testshadowsettings.cpp'
       - 'components/sceneutil/mwshadowtechnique.*'
       - 'apps/components_tests/sceneutil/shadowprojection.cpp'
       - 'apps/openmw/mwrender/occlusionculling.*'
@@ -21,7 +23,7 @@ jobs:
       - name: Install focused test dependencies
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends g++ libopenscenegraph-dev libgtest-dev libboost-dev
+          sudo apt-get install -y --no-install-recommends g++ libopenscenegraph-dev libgtest-dev libboost-dev libmygui-dev
       - name: Test cached shadow projections and traversal buffers
         run: |
           g++ -std=c++20 -O2 -I. apps/components_tests/sceneutil/shadowprojection.cpp -lgtest_main -lgtest -losg -lOpenThreads -pthread -o /tmp/shadow-projection-tests
@@ -35,3 +37,15 @@ jobs:
         run: g++ -std=c++20 -fsyntax-only -I. components/sceneutil/mwshadowtechnique.cpp apps/openmw/mwrender/occlusionculling.cpp
       - name: Check Android shadow path compiles
         run: g++ -DANDROID -std=c++20 -fsyntax-only -I. components/sceneutil/mwshadowtechnique.cpp
+      - name: Test imported desktop shadows on both backends
+        run: |
+          for platform in desktop android; do
+            platform_flags=""
+            if [ "$platform" = android ]; then platform_flags="-DANDROID"; fi
+            g++ $platform_flags -std=c++20 -O2 -ffunction-sections -fdata-sections -I. -Iextern/Base64 -I/usr/include/MYGUI \
+              apps/components_tests/settings/testshadowsettings.cpp components/settings/settings.cpp \
+              components/settings/parser.cpp components/settings/sanitizerimpl.cpp components/debug/debuglog.cpp \
+              components/files/conversion.cpp -Wl,--gc-sections -lgtest_main -lgtest -losg -lOpenThreads -lMyGUIEngine -pthread \
+              -o /tmp/shadow-settings-$platform
+            /tmp/shadow-settings-$platform
+          done

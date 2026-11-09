@@ -117,7 +117,15 @@ float unshadowedLightRatio(float distance)
 #if @perspectiveShadowMaps
             vec3 shadowRegionXYZ = shadowRegionCoords@shadow_texture_unit_index.xyz / shadowRegionCoords@shadow_texture_unit_index.w;
 #endif
-            if (all(lessThan(shadowXYZ.xy, vec2(1.0, 1.0))) && all(greaterThan(shadowXYZ.xy, vec2(0.0, 0.0))))
+            // Reject invalid cascades before they contribute to the minimum.
+            // The orthographic Android path compiles this region check away.
+            bool validRegion = true;
+#if @perspectiveShadowMaps
+            validRegion = all(lessThan(shadowRegionXYZ, vec3(1.0)))
+                && all(greaterThan(shadowRegionXYZ.xy, vec2(-1.0, -1.0)));
+#endif
+            if (validRegion && all(lessThan(shadowXYZ.xy, vec2(1.0, 1.0)))
+                && all(greaterThan(shadowXYZ.xy, vec2(0.0, 0.0))))
             {
                 // OPENMW_ANDROID_051_GLES2_SHADOW_COORD_BOUNDS
                 // Raw GLES2 depth sampling must never compare receivers outside
