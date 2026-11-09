@@ -72,8 +72,8 @@ return nil
 -- @field [parent=#ActorControls] #number movementSpeedMultiplier
 
 --- Subscribe this actor to UnarmedAttack local events. Default false. An event
--- contains attacker, strength and type for a non-werewolf NPC's unarmed attack
--- with an identified living target, before the ordinary Hit event, independently
+-- contains attacker for a non-werewolf NPC's unarmed attack with an identified
+-- living target at release/commitment, before the ordinary Hit event, independently
 -- of the native hit roll or shield block. Delivery remains asynchronous.
 -- Values reset with script-container creation; set/clear on activation/deactivation.
 -- @field [parent=#ActorControls] #boolean unarmedAttackEvents

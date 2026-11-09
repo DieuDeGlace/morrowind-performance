@@ -594,6 +594,9 @@ namespace MWClass
         victim = result.first;
         hitPosition = result.second;
 
+        if (weapon.isEmpty() && !getNpcStats(ptr).isWerewolf() && !victim.getClass().getCreatureStats(victim).isDead())
+            MWBase::Environment::get().getLuaManager()->onUnarmedAttack(ptr, victim);
+
         ESM::RefId weapskill = ESM::Skill::HandToHand;
         if (!weapon.isEmpty())
             weapskill = weapon.getClass().getEquipmentSkill(weapon);
@@ -620,9 +623,6 @@ namespace MWClass
                 MWPhysics::Ragdoll::hit(ptr, MWMechanics::getMeleeWeaponReach(ptr, weapon), attackStrength);
             return;
         }
-
-        if (weapon.isEmpty() && !getNpcStats(ptr).isWerewolf())
-            MWBase::Environment::get().getLuaManager()->onUnarmedAttack(ptr, victim, attackStrength, type);
 
         const MWWorld::Class& othercls = victim.getClass();
 
