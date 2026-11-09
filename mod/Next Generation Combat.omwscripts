@@ -1,0 +1,5 @@
+# OpenMW 0.51.0 (Lua API 129). Load after other mods that change combat.
+LOAD: scripts/ngc/openmw/load.lua
+GLOBAL: scripts/ngc/openmw/global.lua
+PLAYER, NPC, CREATURE: scripts/ngc/openmw/actor.lua
+PLAYER: scripts/ngc/openmw/player.lua
