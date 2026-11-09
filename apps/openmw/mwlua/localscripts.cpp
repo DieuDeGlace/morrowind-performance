@@ -1,5 +1,7 @@
 #include "localscripts.hpp"
 
+#include <cmath>
+
 #include "../mwbase/environment.hpp"
 #include "../mwbase/mechanicsmanager.hpp"
 #include "../mwmechanics/aicombat.hpp"
@@ -68,6 +70,26 @@ namespace MWLua
         controls["jump"] = CONTROL(bool, mJump);
         controls["use"] = CONTROL(MWMechanics::AttackType, mUse);
 #undef CONTROL
+
+        // These values do not change movement input or mark AI controls as overridden.
+        const auto chanceProperty = [](std::optional<float> ActorControls::*member) {
+            return sol::property([member](const ActorControls& c) { return c.*member; },
+                [member](ActorControls& c, sol::optional<float> value) {
+                    if (value && (!std::isfinite(*value) || *value < 0.f || *value > 100.f))
+                        throw std::runtime_error("Combat chance override must be nil or a finite value from 0 to 100");
+                    c.*member = value ? std::optional<float>(*value) : std::nullopt;
+                });
+        };
+        controls["hitChanceOverride"] = chanceProperty(&ActorControls::mHitChanceOverride);
+        controls["blockChanceOverride"] = chanceProperty(&ActorControls::mBlockChanceOverride);
+        controls["movementSpeedMultiplier"]
+            = sol::property([](const ActorControls& c) { return c.mMovementSpeedMultiplier; },
+                [](ActorControls& c, float value) {
+                    if (!std::isfinite(value) || value < 0.f || value > 1000.f)
+                        throw std::runtime_error("Movement speed multiplier must be finite and between 0 and 1000");
+                    c.mMovementSpeedMultiplier = value;
+                });
+        controls["unarmedAttackEvents"] = &ActorControls::mUnarmedAttackEvents;
 
         sol::usertype<SelfObject> selfAPI
             = lua.new_usertype<SelfObject>("SelfObject", sol::base_classes, sol::bases<LObject, Object>());

@@ -589,6 +589,9 @@ namespace MWClass
             return;
         }
 
+        if (weapon.isEmpty() && !getNpcStats(ptr).isWerewolf())
+            MWBase::Environment::get().getLuaManager()->onUnarmedAttack(ptr, victim, attackStrength, type);
+
         const MWWorld::Class& othercls = victim.getClass();
         MWMechanics::CreatureStats& otherstats = othercls.getCreatureStats(victim);
 
@@ -904,7 +907,8 @@ namespace MWClass
         if (stats.isWerewolf() && running && stats.getDrawState() == MWMechanics::DrawState::Nothing)
             moveSpeed *= gmst.fWereWolfRunMult->mValue.getFloat();
 
-        return moveSpeed;
+        const auto* controls = MWBase::Environment::get().getLuaManager()->getActorControls(ptr);
+        return controls ? moveSpeed * controls->mMovementSpeedMultiplier : moveSpeed;
     }
 
     float Npc::getJump(const MWWorld::Ptr& ptr) const

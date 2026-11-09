@@ -3,6 +3,7 @@
 
 #include <filesystem>
 #include <map>
+#include <optional>
 #include <string>
 #include <variant>
 #include <vector>
@@ -96,6 +97,9 @@ namespace MWBase
         virtual void jailTimeServed(const MWWorld::Ptr& actor, int days) = 0;
         virtual void skillLevelUp(const MWWorld::Ptr& actor, ESM::RefId skillId, std::string_view source) = 0;
         virtual void skillUse(const MWWorld::Ptr& actor, ESM::RefId skillId, int useType, float scale) = 0;
+        // Queued before the normal unarmed hit/miss, including a native shield block.
+        virtual void onUnarmedAttack(const MWWorld::Ptr& attacker, const MWWorld::Ptr& victim, float strength, int type)
+            = 0;
         virtual void onHit(const MWWorld::Ptr& attacker, const MWWorld::Ptr& victim, const MWWorld::Ptr& weapon,
             const MWWorld::Ptr& ammo, int attackType, float attackStrength, float attackWindUp, float damage,
             bool isHealth, const osg::Vec3f& hitPos, bool successful, MWMechanics::DamageSourceType)
@@ -150,6 +154,12 @@ namespace MWBase
 
         struct ActorControls
         {
+            // Optional combat hooks. Defaults preserve the original native mechanics.
+            std::optional<float> mHitChanceOverride;
+            std::optional<float> mBlockChanceOverride;
+            float mMovementSpeedMultiplier = 1.f;
+            bool mUnarmedAttackEvents = false;
+
             bool mDisableAI = false;
             bool mChanged = false;
 
