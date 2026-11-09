@@ -32,7 +32,7 @@ namespace SceneUtil
 
         explicit ShadowManager(osg::ref_ptr<osg::Group> sceneRoot, osg::ref_ptr<osg::Group> rootNode,
             unsigned int outdoorShadowCastingMask, unsigned int indoorShadowCastingMask, unsigned int worldMask,
-            const Settings::ShadowsCategory& settings, Shader::ShaderManager& shaderManager);
+            const Settings::ShadowsCategory& settings, Shader::ShaderManager& shaderManager, unsigned int dynamicCasterMask);
         ~ShadowManager();
 
         void setupShadowSettings(const Settings::ShadowsCategory& settings, Shader::ShaderManager& shaderManager);

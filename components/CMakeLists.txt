@@ -139,7 +139,7 @@ add_component_dir (shader
 add_component_dir (sceneutil
     clone attach visitor util statesetupdater stateupdater controller skeleton riggeometry morphgeometry lightcontroller
     lightmanager lightutil positionattitudetransform workqueue pathgridutil waterutil writescene serialize optimizer
-    detourdebugdraw navmesh agentpath animblendrules shadow shadowprojection mwshadowtechnique recastmesh shadowsbin osgacontroller rtt
+    detourdebugdraw navmesh agentpath animblendrules shadow shadowprojection shadowdepthrestore mwshadowtechnique recastmesh shadowsbin osgacontroller rtt
     screencapture depth color riggeometryosgaextension extradata unrefqueue lightcommon lightingmethod clearcolor
     cullsafeboundsvisitor keyframe nodecallback textkeymap glextensions occlusionculling
     )

@@ -9,6 +9,10 @@
 
 #include "mwshadowtechnique.hpp"
 
+#ifdef ANDROID
+extern "C" int gl4es_getDepthCopySupport() __attribute__((weak));
+#endif
+
 namespace SceneUtil
 {
     using namespace osgShadow;
@@ -135,7 +139,7 @@ namespace SceneUtil
 
     ShadowManager::ShadowManager(osg::ref_ptr<osg::Group> sceneRoot, osg::ref_ptr<osg::Group> rootNode,
         unsigned int outdoorShadowCastingMask, unsigned int indoorShadowCastingMask, unsigned int worldMask,
-        const Settings::ShadowsCategory& settings, Shader::ShaderManager& shaderManager)
+        const Settings::ShadowsCategory& settings, Shader::ShaderManager& shaderManager, unsigned int dynamicCasterMask)
         : mShadowedScene(new osgShadow::ShadowedScene)
         , mShadowTechnique(new MWShadowTechnique)
         , mOutdoorShadowCastingMask(outdoorShadowCastingMask)
@@ -158,6 +162,12 @@ namespace SceneUtil
 
         mShadowTechnique->setupCastingShader(shaderManager);
         mShadowTechnique->setWorldMask(worldMask);
+#ifdef ANDROID
+        const bool depthRestoreSupported = gl4es_getDepthCopySupport && gl4es_getDepthCopySupport();
+        mShadowTechnique->setDynamicCasterMask(dynamicCasterMask, depthRestoreSupported);
+#else
+        mShadowTechnique->setDynamicCasterMask(dynamicCasterMask);
+#endif
 
         enableOutdoorMode();
 

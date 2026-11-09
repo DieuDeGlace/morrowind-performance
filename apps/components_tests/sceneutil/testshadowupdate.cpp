@@ -4,6 +4,7 @@
 #include <osg/Geode>
 #include <osg/Geometry>
 #include <osgShadow/ShadowedScene>
+#include <osgUtil/RenderStage>
 #include <osgUtil/SceneView>
 
 namespace
@@ -53,15 +54,16 @@ namespace
     class Scene
     {
     public:
-        explicit Scene(unsigned int interval)
-            : shadows(new TestShadows)
+        explicit Scene(unsigned int interval, unsigned int maps = 2)
+            : mapCount(maps)
+            , shadows(new TestShadows)
             , root(new osgShadow::ShadowedScene)
         {
             shadows->setShadowUpdateInterval(interval);
             root->setShadowTechnique(shadows);
             auto* settings = root->getShadowSettings();
             settings->setShaderHint(osgShadow::ShadowSettings::NO_SHADERS);
-            settings->setNumShadowMapsPerLight(2);
+            settings->setNumShadowMapsPerLight(maps);
             settings->setTextureSize(osg::Vec2s(4096, 4096));
             settings->setMaximumShadowMapDistance(8192);
             settings->setMultipleShadowMapHint(osgShadow::ShadowSettings::CASCADED);
@@ -83,6 +85,7 @@ namespace
                 // visitors of a view, and a different identifier to each eye.
                 view->getCullVisitor()->setIdentifier(identifier);
             }
+            views[1]->setCamera(views[0]->getCamera(), false);
             shadows->init();
         }
 
@@ -99,9 +102,10 @@ namespace
             view->setProjectionMatrixAsPerspective(fov, 1, .1, 100000);
             view->setViewMatrix(eye);
             view->cull();
-            ASSERT_EQ(shadows->getViewDependentData(view->getCullVisitor())->numValidShadows(), 2);
+            ASSERT_EQ(shadows->getViewDependentData(view->getCullVisitor())->numValidShadows(), mapCount);
         }
 
+        unsigned int mapCount;
         osg::ref_ptr<TestShadows> shadows;
         osg::ref_ptr<osgShadow::ShadowedScene> root;
         std::array<osg::ref_ptr<osgUtil::SceneView>, 2> views;
@@ -222,5 +226,136 @@ namespace
         osg::Matrixf after;
         ASSERT_TRUE(previous->get(after));
         EXPECT_EQ(before, after);
+    }
+}
+
+namespace
+{
+    constexpr unsigned int movingMask = 1u << 4;
+    constexpr unsigned int sceneryMask = 1u << 11;
+
+    struct ShadowVisits final : osg::NodeCallback
+    {
+        unsigned int scenery = 0;
+        unsigned int moving = 0;
+
+        void operator()(osg::Node* node, osg::NodeVisitor* visitor) override
+        {
+            auto* cv = visitor->asCullVisitor();
+            auto* camera = cv->getCurrentRenderBin()->getStage()->getCamera();
+            if (camera && camera->getName() == "StaticShadowCamera")
+                ++scenery;
+            else if (camera && camera->getName() == "ShadowCamera")
+                ++moving;
+            traverse(node, visitor);
+        }
+    };
+
+    void addCaster(Scene& scene, unsigned int mask, float distance, ShadowVisits* visits)
+    {
+        auto caster = triangle(distance);
+        caster->setNodeMask(mask);
+        caster->setCullingActive(false);
+        caster->setCullCallback(visits);
+        scene.root->addChild(caster);
+    }
+
+    TEST(ShadowUpdateTest, moving_casters_are_culled_every_frame_while_scenery_is_reused)
+    {
+        Scene scene(2, 1);
+        scene.shadows->setDynamicCasterMask(movingMask);
+        scene.root->removeChildren(0, scene.root->getNumChildren());
+        osg::ref_ptr<ShadowVisits> scenery = new ShadowVisits;
+        osg::ref_ptr<ShadowVisits> moving = new ShadowVisits;
+        addCaster(scene, sceneryMask, 1000, scenery);
+        addCaster(scene, movingMask, 10, moving);
+        for (unsigned int frame = 0; frame < 48; ++frame)
+            scene.cull(frame, 1 + frame / 60., osg::Matrixd::translate(-double(frame), 0, 0), 60, frame % 2);
+        EXPECT_EQ(scene.shadows->mapUpdates, 24);
+        EXPECT_EQ(scenery->scenery, 24);
+        EXPECT_EQ(scenery->moving, 0);
+        EXPECT_EQ(moving->scenery, 0);
+        EXPECT_EQ(moving->moving, 48);
+    }
+
+    TEST(ShadowUpdateTest, interval_one_uses_the_existing_complete_map_path)
+    {
+        Scene scene(1, 1);
+        scene.shadows->setDynamicCasterMask(movingMask);
+        for (unsigned int frame = 0; frame < 4; ++frame)
+            scene.cull(frame, 1 + frame / 60.);
+        auto* data = scene.shadows->getViewDependentData(scene.views[0]->getCullVisitor());
+        EXPECT_EQ(scene.shadows->mapUpdates, 4);
+        EXPECT_FALSE(data->getShadowDataList().front()->_staticTexture);
+    }
+
+    TEST(ShadowUpdateTest, unsupported_depth_restore_keeps_moving_shadows_fresh)
+    {
+        Scene scene(2, 1);
+        scene.shadows->setDynamicCasterMask(movingMask, false);
+        for (unsigned int frame = 0; frame < 4; ++frame)
+            scene.cull(frame, 1 + frame / 60.);
+        auto* data = scene.shadows->getViewDependentData(scene.views[0]->getCullVisitor());
+        EXPECT_EQ(scene.shadows->mapUpdates, 4);
+        EXPECT_FALSE(data->getShadowDataList().front()->_staticTexture);
+    }
+
+    TEST(ShadowUpdateTest, cached_depth_resizes_when_only_one_texture_dimension_changes)
+    {
+        Scene scene(2, 1);
+        scene.shadows->setDynamicCasterMask(movingMask);
+        scene.cull(0, 1);
+        scene.cull(1, 1 + 1 / 60.);
+        scene.root->getShadowSettings()->setTextureSize(osg::Vec2s(4096, 2048));
+        scene.cull(2, 1 + 2 / 60.);
+        auto* data = scene.shadows->getViewDependentData(scene.views[0]->getCullVisitor());
+        const auto& shadow = data->getShadowDataList().front();
+        ASSERT_TRUE(shadow->_staticTexture);
+        EXPECT_EQ(shadow->_texture->getTextureHeight(), 2048);
+        EXPECT_EQ(shadow->_staticTexture->getTextureHeight(), 2048);
+        EXPECT_EQ(shadow->_camera->getViewport()->height(), 2048);
+        EXPECT_EQ(shadow->_staticCamera->getViewport()->height(), 2048);
+    }
+
+    TEST(ShadowUpdateTest, disabling_reuse_releases_the_extra_cached_depth_map)
+    {
+        Scene scene(2, 1);
+        scene.shadows->setDynamicCasterMask(movingMask);
+        scene.cull(0, 1);
+        auto* data = scene.shadows->getViewDependentData(scene.views[0]->getCullVisitor());
+        ASSERT_TRUE(data->getShadowDataList().front()->_staticTexture);
+        scene.shadows->setShadowUpdateInterval(1);
+        scene.cull(1, 1 + 1 / 60.);
+        EXPECT_FALSE(data->getShadowDataList().front()->_staticTexture);
+        EXPECT_FALSE(data->getShadowDataList().front()->_depthRestore);
+    }
+}
+
+namespace
+{
+    TEST(ShadowUpdateTest, moving_only_shadow_pass_does_not_allocate_a_static_depth_cache)
+    {
+        Scene scene(2, 1);
+        scene.shadows->setDynamicCasterMask(movingMask);
+        scene.shadows->setWorldMask(sceneryMask);
+        scene.root->getShadowSettings()->setCastsShadowTraversalMask(movingMask);
+        for (unsigned int frame = 0; frame < 4; ++frame)
+            scene.cull(frame, 1 + frame / 60.);
+        auto* data = scene.shadows->getViewDependentData(scene.views[0]->getCullVisitor());
+        EXPECT_EQ(scene.shadows->mapUpdates, 4);
+        EXPECT_FALSE(data->getShadowDataList().front()->_staticTexture);
+    }
+
+    TEST(ShadowUpdateTest, changing_caster_mask_invalidates_the_cached_depth_pass)
+    {
+        Scene scene(2, 1);
+        scene.shadows->setDynamicCasterMask(movingMask);
+        scene.cull(0, 1);
+        auto* data = scene.shadows->getViewDependentData(scene.views[0]->getCullVisitor());
+        ASSERT_TRUE(data->getShadowDataList().front()->_staticTexture);
+        scene.root->getShadowSettings()->setCastsShadowTraversalMask(sceneryMask);
+        scene.cull(1, 1 + 1 / 60.);
+        EXPECT_EQ(scene.shadows->mapUpdates, 2);
+        EXPECT_FALSE(data->getShadowDataList().front()->_staticTexture);
     }
 }
