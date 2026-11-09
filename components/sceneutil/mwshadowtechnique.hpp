@@ -31,6 +31,7 @@
 #include <osg/PolygonOffset>
 
 #include <osgShadow/ShadowTechnique>
+#include <osgUtil/CullVisitor>
 
 #include <components/shader/shadermanager.hpp>
 
@@ -239,6 +240,7 @@ namespace SceneUtil {
             unsigned int _numValidShadows = 0;
             unsigned int _framesSinceLastShadowCull = 0;
             double _lastShadowCullReferenceTime = 0.0;
+            osg::Matrixd _lastShadowCullProjection;
         };
 
         virtual ViewDependentData* createViewDependentData(osgUtil::CullVisitor* cv);
@@ -286,7 +288,9 @@ namespace SceneUtil {
 
         osg::ref_ptr<ComputeLightSpaceBounds>   _clsb;
 
-        typedef std::map< osgUtil::CullVisitor*, osg::ref_ptr<ViewDependentData> >  ViewDependentDataMap;
+        // Both render buffers of one view share an identifier. Sharing their
+        // map history avoids alternating between newer and older shadow maps.
+        typedef std::map<osg::ref_ptr<osgUtil::CullVisitor::Identifier>, osg::ref_ptr<ViewDependentData>> ViewDependentDataMap;
         mutable std::mutex                      _viewDependentDataMapMutex;
         ViewDependentDataMap                    _viewDependentDataMap;
         osg::ref_ptr<CustomFrustumCallback>     _customFrustumCallback;

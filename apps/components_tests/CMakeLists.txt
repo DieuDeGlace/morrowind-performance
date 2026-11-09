@@ -90,6 +90,8 @@ file(GLOB UNITTEST_SRC_FILES
 
     sceneutil/osgacontroller.cpp
     sceneutil/shadowprojection.cpp
+    sceneutil/testshadowupdate.cpp
+    sceneutil/testriggeometry.cpp
 
     bsa/testbsafile.cpp
     bsa/testcompressedbsafile.cpp
