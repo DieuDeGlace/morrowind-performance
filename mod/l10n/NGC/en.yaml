@@ -67,3 +67,6 @@
 "Weapon tier 2": "Weapon tier 2"
 "Weapon tier 3": "Weapon tier 3"
 "Weapon tier 4": "Weapon tier 4"
+
+"Page description native": "Native combat hooks active. Combat perks, held guard and skill progression; settings are stored in each save."
+"Page description compatibility": "Lua compatibility mode. Use Physics Preview 11 or a compatible engine for native combat parity hooks. Settings are stored in each save."

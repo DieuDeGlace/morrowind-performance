@@ -1,0 +1,2 @@
+GLOBAL: scripts/ngc_test/global.lua
+PLAYER: scripts/ngc_test/player.lua

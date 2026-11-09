@@ -18,7 +18,7 @@ local function spell(id, name, effects, ability)
 end
 
 local function onContentFilesLoaded()
-    assert(core.API_REVISION == 129, 'This Next Generation Combat port targets OpenMW 0.51.0 (Lua API 129)')
+    assert(core.API_REVISION >= 129, 'Next Generation Combat requires OpenMW Lua API 129 or newer')
     for _, filename in ipairs({ 'Next Generation Combat.esp', 'Next Generation Combat - Hand To Hand Fixes.esp' }) do
         assert(core.contentFiles.has(filename), 'Next Generation Combat requires the original ' .. filename .. ' enabled')
     end

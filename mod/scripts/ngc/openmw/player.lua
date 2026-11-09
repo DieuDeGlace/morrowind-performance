@@ -8,8 +8,12 @@ local types = require('openmw.types')
 local ui = require('openmw.ui')
 local util = require('openmw.util')
 local config = require('scripts.ngc.openmw.config')
+local mechanics = require('scripts.ngc.openmw.mechanics')
 local rules = require('scripts.ngc.openmw.rules')
 local settings = require('scripts.ngc.openmw.settings')
+
+-- A failed LOAD hook must not become an error on every active actor update.
+if not mechanics.ready then return {} end
 
 local Actor, NPC, Armor, Weapon = types.Actor, types.NPC, types.Armor, types.Weapon
 local guarding, guardExhausted = false, false
@@ -22,7 +26,10 @@ local guardTick, drawTick = 0, 0
 local keyCodes = {}
 for name, code in pairs(input.KEY) do keyCodes[name:upper()] = code end
 
-I.Settings.registerPage({ key = settings.page, l10n = 'NGC', name = 'Next Generation Combat', description = 'Page description' })
+I.Settings.registerPage({
+    key = settings.page, l10n = 'NGC', name = 'Next Generation Combat',
+    description = mechanics.native and 'Page description native' or 'Page description compatibility',
+})
 
 local oneHanded = {
     [Weapon.TYPE.ShortBladeOneHand] = true, [Weapon.TYPE.LongBladeOneHand] = true,
@@ -45,18 +52,19 @@ end
 
 local function fatigueAvailable(minimum)
     local fatigue = Actor.stats.dynamic.fatigue(self)
-    local maximum = math.max(0, fatigue.base + fatigue.modifier)
+    local maximum = math.max(0, fatigue.base)
     return maximum > 0 and fatigue.current >= maximum * minimum
 end
 
 local function drainFatigue(fraction)
     local fatigue = Actor.stats.dynamic.fatigue(self)
-    fatigue.current = fatigue.current - math.max(0, fatigue.base + fatigue.modifier) * fraction
+    fatigue.current = fatigue.current - math.max(0, fatigue.base) * fraction
 end
 
 local function setGuard(enabled)
     if guarding == enabled then return end
     guarding = enabled
+    mechanics.setGuard(enabled)
     guardTick = 0
     if enabled then
         guardIcon = ui.create({ type = ui.TYPE.Image, layer = 'HUD', props = {
@@ -72,11 +80,12 @@ local function setGuard(enabled)
 end
 
 local function clearZoom()
-    if previousFov and camera.getFieldOfView() == appliedFov then camera.setFieldOfView(previousFov) end
+    if previousFov and math.abs(camera.getFieldOfView() - appliedFov) < 0.00001 then camera.setFieldOfView(previousFov) end
     previousFov, appliedFov = nil, nil
 end
 
 local function stopDraw()
+    mechanics.setBowSlow(1)
     fullDraw = false
     drawTick = 0
     clearZoom()
@@ -123,7 +132,8 @@ local function updateBow(dt, cfg)
         and Actor.getStance(self) == Actor.STANCE.Weapon and use and not bowExhausted and not guarding
     if not drawing then
         if wasDrawing then
-            bowBonus = fullDraw and rules.tier(cfg, NPC.stats.skills.marksman(self).modified).bowFullDrawMultiplier or nil
+            bowBonus = cfg.toggleWeaponPerks and weapon and weapon.type == Weapon.TYPE.MarksmanBow
+                and not use and fullDraw and rules.tier(cfg, NPC.stats.skills.marksman(self).modified).bowFullDrawMultiplier or nil
         end
         wasDrawing = false
         drawElapsed = 0
@@ -131,7 +141,8 @@ local function updateBow(dt, cfg)
         return
     end
     wasDrawing = true
-    if not drawGroup or animation.getCurrentTime(self, drawGroup) < 0 then return end
+    local animationTime = drawGroup and animation.getCurrentTime(self, drawGroup)
+    if not animationTime or animationTime < 0 then return end
     drawElapsed = drawElapsed + dt
     if drawElapsed < 3 then return end
     if not fullDraw then
@@ -154,7 +165,10 @@ local function updateBow(dt, cfg)
         end
         drainFatigue(cfg.fullDrawFatigueDrainPercent)
     end
-    if self.controls.movement < 0 then
+    local backward = self.controls.movement < 0
+    if mechanics.native then
+        mechanics.setBowSlow(backward and rules.clamp(cfg.fullDrawBackSpeedModifier, 0, 1) or 1)
+    elseif backward then
         self.controls.movement = self.controls.movement * rules.clamp(cfg.fullDrawBackSpeedModifier, 0, 1)
     end
     if self.controls.sneak and cfg.bowZoomLevel > 0 then
@@ -167,6 +181,7 @@ local function updateBow(dt, cfg)
 end
 
 local function tryBlock(attack)
+    if mechanics.native then return false end -- The native block path owns wear, fatigue and reactions.
     local cfg = config.get()
     if not guarding or not cfg.toggleActiveBlocking or not controlsAllowed()
         or attack.sourceType ~= I.Combat.ATTACK_SOURCE_TYPES.Melee

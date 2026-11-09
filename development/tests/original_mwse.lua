@@ -60,7 +60,7 @@ return function(config, source, target, engine)
             blind = actor.effects.blind or 0, sanctuary = actor.effects.sanctuary or 0,
             attackBonus = actor.effects.fortifyattack or 0, paralyze = actor.effects.paralyze or 0, skills = {},
             health = { current = actor.dynamic.health.current, base = actor.dynamic.health.base },
-            fatigue = { current = actor.dynamic.fatigue.current, base = actor.dynamic.fatigue.base },
+            fatigue = { current = math.max(0, actor.dynamic.fatigue.current), base = actor.dynamic.fatigue.base },
         }
         ref.mobile = result
         for id, stat in pairs(actor.attributes) do result[id] = { current = stat.modified, base = stat.base } end
@@ -70,6 +70,8 @@ return function(config, source, target, engine)
         end
         result.handToHand, result.longBlade = result.handtohand, result.longblade
         result.shortBlade, result.bluntWeapon = result.shortblade, result.bluntweapon
+        if actor.equipment.CarriedLeft then result.readiedShield = {} end
+        result.actionData = { attackSwing = 1 }
         local weapon = actor.equipment.CarriedRight
         if weapon then result.readiedWeapon = { object = { type = types[weapon.record.type] } } end
         function result:exerciseSkill(skillId, progress)
@@ -113,6 +115,8 @@ return function(config, source, target, engine)
     return {
         source = attacker, target = defender, spells = spells,
         experience = function() return experience end,
+        guard = function() modules['ngc.block'].keyPressed({keyCode=44}) end,
+        bowStart = function() modules['ngc.perks.bow'].attackPressed({}) end,
         attack = function()
             emit('attack', { reference = sourceRef, mobile = attacker, targetReference = targetRef, targetMobile = defender })
         end,

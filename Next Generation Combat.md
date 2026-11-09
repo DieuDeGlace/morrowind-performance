@@ -1,11 +1,18 @@
 # Next Generation Combat OpenMW
 
-All files for this port are kept here, separate from the physics mod.
+Native parity work is kept in Documents/morrowind-mods/next-generation-combat-openmw.
 
-- `mod/` - clean runtime files, including both original ESPs.
-- `Next Generation Combat - OpenMW 0.51.0.zip` - upload this package; development files are excluded.
-- `development/` - regression tests, original MWSE source used as a comparison, and validation notes.
+- `mod/`: runtime Lua scripts, original unchanged ESPs and icon, installation notes.
+- `development/MWSE/`: unchanged original implementation used as the comparison oracle.
+- `development/tests/`: behavior harness using each engine's actual Combat scripts.
+- `development/results/`: local build provenance, logs and validation reports.
+- `development/integration/`: reproducible isolated gameplay scenarios.
+- `development/runtime/`: local earlier profiles; not shipped in the mod ZIP.
 
-The port now restores separate physical fist health damage, post-armor weapon bonuses, the ESP's Adrenaline Rush ability, three-second bow draw, original skill selection, and legacy multistrike behavior. It is a close Lua port with documented engine limits; it has not been tested inside a running OpenMW game.
+The matching native engines are the `codex/ngc-parity` and
+`codex/ngc-parity-android` branches in morrowind-performance; the Android wrapper
+uses `codex/ngc-parity-app`. Native hooks are opt-in and do not enable NGC by
+themselves. The published shadow fix remains part of both engine branches.
 
-See `mod/README-OpenMW.md` for installation and remaining differences, and `development/VALIDATION.md` for test evidence. This folder is under Documents/Morrowind Mods/next generation combat openmw. Codex's old Downloads project binding must be changed by opening this folder as the project.
+See mod/README-OpenMW.md for supported behavior, adaptations, credits and setup.
+See development/VALIDATION.md and development/results for validation scope.

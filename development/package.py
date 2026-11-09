@@ -15,7 +15,7 @@ ALLOWED = (
     "icons/ngc/active_block.tga",
     "l10n/NGC/en.yaml",
 ) + tuple("scripts/ngc/openmw/" + name + ".lua" for name in (
-    "actor", "config", "defaults", "global", "load", "player", "rules", "settings"
+    "actor", "config", "defaults", "global", "load", "mechanics", "player", "rules", "settings"
 ))
 
 
@@ -27,7 +27,7 @@ def main():
         raise RuntimeError(f"Runtime file list differs: {actual.symmetric_difference(ALLOWED)}")
     for name, expected in ESP_HASHES.items():
         assert hashlib.sha256((mod / name).read_bytes()).hexdigest() == expected, name
-    output = root / "Next Generation Combat - OpenMW 0.51.0.zip"
+    output = root / "Next Generation Combat - OpenMW Parity Preview 1.zip"
     with ZipFile(output, "w", compression=ZIP_DEFLATED, compresslevel=9) as archive:
         for name in ALLOWED:
             archive.write(mod / name, name)
@@ -36,6 +36,9 @@ def main():
         assert archive.testzip() is None
         for name in ALLOWED:
             assert archive.read(name) == (mod / name).read_bytes(), name
+    digest = hashlib.sha256(output.read_bytes()).hexdigest()
+    output.with_suffix(output.suffix + ".sha256").write_text(
+        f"{digest}  {output.name}\n", encoding="utf-8", newline="\n")
     print(f"Verified upload package: {output}")
     print(f"{len(ALLOWED)} runtime files, {output.stat().st_size} bytes; no development files or caches.")
 

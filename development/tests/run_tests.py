@@ -51,15 +51,29 @@ def read_original_spells(root):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--openmw-reference", type=Path)
+    parser.add_argument("--engine-source", type=Path,
+                        help="Exercise the real Combat scripts from this OpenMW checkout")
+    parser.add_argument("--native-hooks", action="store_true")
+    parser.add_argument("--quick", action="store_true", help="Skip the large formula matrices")
     args = parser.parse_args()
     development = Path(__file__).resolve().parent.parent
     root = development.parent / "mod"
     lua = LuaRuntime(unpack_returned_tuples=True)
+    lua.globals().quickTests = args.quick
+    lua.globals().nativeHookVersion = 1 if args.native_hooks else None
     lua.globals().projectRoot = root.as_posix()
     lua.globals().developmentRoot = development.as_posix()
     lua.globals().espSpellRecords = lua.table_from(read_original_spells(root), recursive=True)
     lua.globals().espContentNames = lua.table_from({name: True for name in ESP_HASHES})
     lua.globals().referenceRoot = args.openmw_reference.resolve().as_posix() if args.openmw_reference else None
+    lua.globals().engineSourceRoot = args.engine_source.resolve().as_posix() if args.engine_source else None
+    if args.engine_source:
+        import re
+        cmake = (args.engine_source / "CMakeLists.txt").read_text(encoding="utf-8")
+        revision = int(re.search(r"set\(OPENMW_LUA_API_REVISION (\d+)\)", cmake)[1])
+        lua.globals().testAPIRevision = revision
+        lua.globals().modernCombat = revision >= 166
+        print(f"Testing real engine Combat scripts, API {revision}", flush=True)
     compile_lua = lua.eval("function(source, name) local fn, err = loadstring(source, name); assert(fn, err) end")
     for path in sorted((root / "scripts/ngc/openmw").glob("*.lua")):
         compile_lua(path.read_text(encoding="utf-8"), str(path))

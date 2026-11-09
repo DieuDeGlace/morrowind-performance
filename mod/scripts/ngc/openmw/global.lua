@@ -31,6 +31,7 @@ local combat = { participants = {}, enemies = {}, observed = false }
 local elapsed = 0
 
 local function trackCombat(data)
+    combat.observed = true -- A one-hit kill can end before an AI Combat package is observed.
     for _, actor in ipairs({ data.attacker, data.target }) do
         if actor and actor:isValid() then combat.participants[actor.id] = actor end
     end

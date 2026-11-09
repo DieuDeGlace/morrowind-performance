@@ -1,28 +1,114 @@
-# Development validation
+# Native parity preview 1 validation
 
-The last completed run passed 33 test groups under Lua 5.1 using Lupa and the real OpenMW 0.51 Combat interface and Morrowind combat handler. A final run is performed after packaging changes. The original MWSE main/perk files execute in a second engine double to supply comparison values.
+Validated on 2026-11-09. These results establish the listed mechanics and tested
+inputs; they do not certify identical behavior for every MWSE interaction.
 
-The comparison covers 30 separate fist-health cases (five skill tiers, three armor totals, Always hit on/off) and 64 weapon-hit comparisons across short blade, long blade, blunt, spear, axe, bow, crossbow, and thrown. Further cases cover timers, ESP dependencies, original ESP hashes, skill gains, combat cleanup, native misses, armor order, and player fatigue restoration. These checks do not constitute an in-game or complete 1:1 parity certification.
+## Source and build provenance
 
-Both original ESPs are checked by SHA-256 in `tests/run_tests.py`. `MWSE/` is preserved unchanged as a regression oracle and is not shipped in the upload ZIP.
+| Component | Commit | Successful GitHub build |
+| --- | --- | --- |
+| Windows engine | `2ec1f4284a3cdd8d4f11591d349b2d575b947e36` | [42605842132](https://github.com/DieuDeGlace/morrowind-performance/actions/runs/42605842132) |
+| Android engine | `624b0bc81fbab02d046c1772c1d889f6b7f78547` | Compiled by the wrapper build below |
+| Android wrapper | `25ea9b78d07a392553bf47ef2c289e57db99cfe5` | [42613626712](https://github.com/DieuDeGlace/morrowind-performance-android/actions/runs/42613626712) |
 
-Run with Python 3.12 and Lupa:
+Windows passes **2,400 C++ tests** (1,666 + 580 + 154). The full Release/LTO
+package contains all 11 executable tools, including `openmw-launcher.exe`,
+`openmw.exe` and `openmw-cs.exe`. The packaged Qt launcher starts successfully
+with an isolated profile; its temporary package config change is restored and
+hash-checked. All 626 extracted files match the archive.
+
+Android's signed ARM64 Release build passes the Gradle unit-test task, 11 engine
+cache tests, five APK metadata tests and four base-config checks. Its engine pin
+and archive digest agree across the wrapper's build files. APK version 5130,
+application ID and signing certificate match the Physics Preview update path.
+Both CI pipelines pass the GPU shadow-filter check. Native shadow changes from
+Physics Preview 10 remain present; this change does not modify shadow rendering.
+
+## Lua comparison matrix
+
+The harness executes the actual Windows/API 166 and Android/API 129 Combat
+scripts, each in portable and native-hook modes. Every run performs **10,858
+direct numerical comparisons** against the preserved original MWSE scripts:
+
+- 540 fist cases across skill, armor, strength, fatigue and Always Hit.
+- 10,240 weapon-family, tier, toggle, fatigue and distance combinations.
+- Eight creature, werewolf and Blind cases.
+- 64 fortified/drained-stat and negative-fatigue weapon cases.
+- Four fortified/exhausted fist cases and two guard/bow fatigue cases.
+
+All four runs pass: **47 groups per native run; 45 per compatibility run**.
+Further cases exercise timed effects, skill scaling, armor order, event chaining,
+inactive/save cleanup, malformed/missing content, native flags, FOV restoration,
+and both nil and negative inactive-animation timestamps.
+
+The harness represents native control fields; it does not execute C++ hooks.
+Real native coverage comes from the separate packaged-engine gameplay checks.
+The original `development/MWSE` files and both runtime ESPs are unchanged.
+
+## Packaged Windows gameplay
+
+The isolated startup scenario verifies optional chance overrides (nil, zero,
+100 and rejected invalid values), native Always Hit without its old spell,
+and a 0.5 movement multiplier actually halving a moving player's native speed.
+
+The isolated physical scenario uses ordinary native attacks and projectile
+collisions, with a generated floor fixture and assets from the user's Morrowind
+installation. Its final run has no Lua errors and confirms:
+
+- Four successful fist attacks at chance 100; four misses at chance zero.
+- One independent health supplement per committed fist attack in both phases.
+- Four frontal shield blocks with zero weapon health damage.
+- Four damaging rear attacks despite the same shield override.
+- A normal bow hit consuming no bonus and a full draw consuming exactly 1.0
+  once, with the expected greater projectile damage.
+
+Reproducible scenarios are in `development/integration`; they never edit the
+user's saves or active settings. Generated test geometry is included in source,
+not in the runtime mod ZIP. No proprietary game assets are redistributed.
+
+The initial live run found an inactive bow timestamp returning nil. The production
+guard now accepts both API representations, with a regression and a clean live
+retest. Test-only settings writes were also corrected to address registered tier
+options only. Earlier failed fixture runs are retained locally and not counted
+as passes.
+
+## Reproduce
+
+With Python 3.12 and Lupa 2.6 (`python -m pip install lupa==2.6`):
 
 ```text
-python -m pip install lupa
-python development/tests/run_tests.py
+python development/tests/run_tests.py --engine-source PATH_TO_ENGINE
+python development/tests/run_tests.py --engine-source PATH_TO_ENGINE --native-hooks
+python development/package.py
 ```
 
-For the upstream handler checks, download the following two files from the official `openmw-0.51.0` source tag into an external reference directory, using the flattened filenames below, and add `--openmw-reference DIRECTORY` to the test command:
+Repeat the first two commands with each engine checkout. `--quick` skips the
+two large numerical loops; it is not a substitute for the full matrix.
+For the real Windows executable:
 
-- `files/data/scripts/omw/combat/interface.lua` -> `files_data_scripts_omw_combat_interface.lua`
-- `files/data-mw/scripts/omw/combat/local.lua` -> `files_data-mw_scripts_omw_combat_local.lua`
+```powershell
+./development/integration/run-gameplay.ps1 -PackageDir PATH_TO_BUILD -GameData PATH_TO_DATA_FILES -Label native-startup
+./development/integration/run-gameplay.ps1 -PackageDir PATH_TO_BUILD -GameData PATH_TO_DATA_FILES -Label native-attacks -Physical
+```
 
-Reference-file SHA-256 values from the validation run:
+Labels create new private profiles under `development/results/integration`.
+A nonzero exit, timeout, missing pass marker or any Lua error fails the run.
 
-- `files_data_scripts_omw_combat_interface.lua`: `d834f3a4849c48ab7b81c0def690f5d1e42fce7f8400d32a98e9062e6bb7ac0a`
-- `files_data-mw_scripts_omw_combat_local.lua`: `b47e2cde36a6d514cbdc8147937ba83c0c272b75e18d370c20e4d1454d30e8a0`
+## Limits
 
-Build the clean upload package with `python development/package.py`. It uses a fixed 14-file allowlist, verifies both original ESP hashes, checks ZIP contents and CRCs, and includes no development files. Temporary downloaded source caches and the local test interpreter are removed after final validation.
+Actual Pixel 10 Pro gameplay, controller/Android guard mappings and device timing
+remain unverified. Android compilation and its real API 129 Lua scripts pass;
+the native Android executable has not been exercised on a phone in this session.
+No combat or shadow frame-time claim is inferred from these correctness tests.
 
-Final post-relocation validation passed: 33 groups with the upstream OpenMW handlers and 32 standalone groups. The clean archive contains 14 runtime files, both ESP hashes match, and temporary caches were deleted after the successful runs.
+Ordinary weapon bonuses still use OpenMW's asynchronous event round trip.
+Repeater adjusts actor animation speed, exhausted bows sheath, and recovery
+rolls are per hit. The settings UI differs from MWSE. See the runtime README for
+all adaptations, dependencies, installation and cleanup instructions.
+
+## Package checks
+
+`development/package.py` enforces a 15-file runtime allowlist, verifies both
+original ESP hashes, checks every archived file against source and checks ZIP
+CRCs. It emits a SHA-256 companion. Development scripts, original MWSE scripts,
+test geometry and results are excluded from the runtime ZIP.

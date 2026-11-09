@@ -4,8 +4,12 @@ local I = require('openmw.interfaces')
 local self = require('openmw.self')
 local types = require('openmw.types')
 local config = require('scripts.ngc.openmw.config')
+local mechanics = require('scripts.ngc.openmw.mechanics')
 local rules = require('scripts.ngc.openmw.rules')
 local settings = require('scripts.ngc.openmw.settings')
+-- A failed LOAD hook must not become an error on every active actor update.
+if not mechanics.ready then return {} end
+
 local baseCombat = I.Combat
 
 local Actor, NPC, Creature, Weapon = types.Actor, types.NPC, types.Creature, types.Weapon
@@ -41,7 +45,7 @@ end
 
 local function fatigueRatio(actor)
     local fatigue = Actor.stats.dynamic.fatigue(actor)
-    return rules.ratio(fatigue.current, fatigue.base + fatigue.modifier)
+    return rules.ratio(math.max(0, fatigue.current), fatigue.base)
 end
 
 local function effect(actor, id)
@@ -85,6 +89,7 @@ local function scriptedHealthDamage(damage, attacker)
 end
 
 local function removeHamstring()
+    mechanics.setHamstring(1)
     if state.hamstringDelta ~= 0 then
         local speed = Actor.stats.attributes.speed(self)
         speed.modifier = speed.modifier - state.hamstringDelta
@@ -98,6 +103,16 @@ local function updateHamstring(now, cfg)
         removeHamstring()
         return
     end
+    if mechanics.native then
+        -- Migrate any Speed delta persisted by the previous portable port.
+        if state.hamstringDelta ~= 0 then
+            local speed = Actor.stats.attributes.speed(self)
+            speed.modifier = speed.modifier - state.hamstringDelta
+            state.hamstringDelta = 0
+        end
+        mechanics.setHamstring(rules.clamp(cfg.hamstringModifier, 0, 1))
+        return
+    end
     local speed = Actor.stats.attributes.speed(self)
     local unaffected = math.max(0, speed.modified - state.hamstringDelta)
     local delta = unaffected * (rules.clamp(cfg.hamstringModifier, 0, 1) - 1)
@@ -109,7 +124,10 @@ local function synchronizeAccuracy(enabled)
     if accuracyEnabled == enabled then return end
     local spells = Actor.spells(self)
     if isPlayer and spells.ngc_ready_to_strike then spells:remove('ngc_ready_to_strike') end
-    if enabled and not spells[settings.accuracySpell] then
+    mechanics.setAccuracy(enabled)
+    if mechanics.native then
+        if spells[settings.accuracySpell] then spells:remove(settings.accuracySpell) end
+    elseif enabled and not spells[settings.accuracySpell] then
         spells:add(settings.accuracySpell)
     elseif not enabled and spells[settings.accuracySpell] then
         spells:remove(settings.accuracySpell)
@@ -140,6 +158,45 @@ local function trackCombat(attacker, target)
     end
 end
 
+local function handDamage(attacker, target, armor, knockedDown, cfg)
+    local level = skill(attacker, 'handtohand')
+    local tier = rules.tier(cfg, level)
+    local knockdown = rules.roll(rules.knockdownChance(cfg, tier, attribute(target, 'agility')))
+    local health = rules.unarmedDamage(cfg, tier, attribute(attacker, 'strength'))
+    if knockedDown or knockdown then
+        health = health * (1 + (tier.handToHandKnockdownDamageMultiplier or 0))
+    end
+    health = rules.handArmorDamage(health, armor, core.getGMST('fCombatArmorMinMult'))
+    if not (cfg.toggleAlwaysHit and rules.roll(effect(attacker, 'blind'))) then
+        if cfg.toggleAlwaysHit then
+            health = rules.reduceDamage(cfg, health, fatigueRatio(attacker), effect(target, 'sanctuary'),
+                attribute(target, 'agility'), attribute(target, 'luck'))
+        end
+        local attackBonus = effect(attacker, 'fortifyattack')
+        if Actor.spells(attacker)[settings.accuracySpell] then attackBonus = attackBonus - settings.accuracyBonus end
+        health = health + rules.coreBonus(cfg, health, level, math.max(0, attackBonus))
+    else
+        notify(attacker, 'Missed!')
+    end
+    return health, knockdown
+end
+
+local function knockDown(attacker, now)
+    if isPlayer then
+        if state.playerFatigueSnapshot == nil then
+            state.playerFatigueSnapshot = Actor.stats.dynamic.fatigue(self).current
+            state.knockdownUntil = now + 2
+        end
+        Actor.stats.dynamic.fatigue(self).current = -100
+    else
+        state.knockdownUntil = now + 3
+        if animation.hasGroup(self, 'knockdown') then
+            I.AnimationController.playBlendedAnimation('knockdown', { priority = animation.PRIORITY.Knockdown })
+        end
+    end
+    notify(attacker, 'Knockdown!')
+end
+
 local function onHit(attack)
     local physical = attack.sourceType == I.Combat.ATTACK_SOURCE_TYPES.Melee
         or attack.sourceType == I.Combat.ATTACK_SOURCE_TYPES.Ranged
@@ -150,7 +207,7 @@ local function onHit(attack)
     end
     trackCombat(attacker, self.object)
     local cfg = config.get()
-    local handToHand = cfg.toggleWeaponPerks and cfg.toggleHandToHandPerks
+    local handToHand = not mechanics.native and cfg.toggleWeaponPerks and cfg.toggleHandToHandPerks
         and attack.sourceType == I.Combat.ATTACK_SOURCE_TYPES.Melee and not attack.weapon
         and NPC.objectIsInstance(attacker) and not NPC.isWerewolf(attacker)
     if not attack.successful and not handToHand then return end
@@ -158,6 +215,9 @@ local function onHit(attack)
     attack.damage = damage
     damage.health = damage.health or 0
     damage.fatigue = damage.fatigue or 0
+    if mechanics.native and damage.health <= 0 and damage.fatigue > 0 then
+        return -- The separate native UnarmedAttack event owns the fist health supplement.
+    end
     -- Zero damage includes native shield blocks, immunities, and god mode.
     if damage.health <= 0 and damage.fatigue <= 0 and not handToHand then
         if attack.sourceType == I.Combat.ATTACK_SOURCE_TYPES.Ranged and attack.ammo then
@@ -175,7 +235,7 @@ local function onHit(attack)
     -- MWSE's damage hook is after armor, before applyHealthDamage's difficulty
     -- scaling. Apply native armor now, then suppress only the duplicate pass.
     if attack.successful then
-        baseCombat.applyArmor(attack)
+        if not attack.ignoreArmor then baseCombat.applyArmor(attack) end
         attack._ngcArmorApplied = true
     end
     local health = Actor.stats.dynamic.health(self)
@@ -183,7 +243,7 @@ local function onHit(attack)
         target = self.object, attack = attack,
         armor = totalBaseArmor(),
         handToHand = handToHand,
-        healthRatio = rules.ratio(health.current, health.base + health.modifier),
+        healthRatio = rules.ratio(health.current, health.base),
         knockedDown = state.knockdownUntil > core.getSimulationTime(),
     })
     -- The attacker owns combo/riposte state. Resume the normal Combat chain after
@@ -199,8 +259,8 @@ local function resolveAttack(data)
     trackCombat(self.object, target)
     local cfg = config.get()
     local now = core.getSimulationTime()
-    local equipped = Actor.getEquipment(self, Actor.EQUIPMENT_SLOT.CarriedRight)
-    local record = equipped and Weapon.objectIsInstance(equipped) and Weapon.record(equipped) or nil
+    -- Projectile impacts retain their original weapon even after an equipment change.
+    local record = weaponRecord(attack)
     local weaponType = record and record.type
     local skillId = record and skillByType[weaponType] or 'handtohand'
     local level = skill(self, skillId or 'handtohand')
@@ -216,28 +276,8 @@ local function resolveAttack(data)
 
     local handHealth
     if data.handToHand then
-        local handLevel = skill(self, 'handtohand')
-        local handTier = rules.tier(cfg, handLevel)
-        perks.knockdown = rules.roll(rules.knockdownChance(cfg, handTier, attribute(target, 'agility')))
-        handHealth = rules.unarmedDamage(cfg, handTier, attribute(self, 'strength'))
-        if data.knockedDown or perks.knockdown then
-            handHealth = handHealth * (1 + (handTier.handToHandKnockdownDamageMultiplier or 0))
-        end
-        handHealth = rules.handArmorDamage(handHealth, data.armor, core.getGMST('fCombatArmorMinMult'))
-        -- In the original this health hit is independent of the normal fist hit.
-        -- Blind returns from onDamage without changing its incoming damage.
-        if not (cfg.toggleAlwaysHit and rules.roll(effect(self, 'blind'))) then
-            if cfg.toggleAlwaysHit then
-                handHealth = rules.reduceDamage(cfg, handHealth, fatigueRatio(self), effect(target, 'sanctuary'),
-                    attribute(target, 'agility'), attribute(target, 'luck'))
-            end
-            handHealth = handHealth + rules.coreBonus(cfg, handHealth, handLevel, attackBonus)
-        else
-            notify(self.object, 'Missed!')
-        end
-        if isPlayer then
-            I.SkillProgression.skillUsed('handtohand', { skillGain = 1 })
-        end
+        handHealth, perks.knockdown = handDamage(self, target, data.armor, data.knockedDown, cfg)
+        if isPlayer then I.SkillProgression.skillUsed('handtohand', { skillGain = 1 }) end
     end
     local blind = cfg.toggleAlwaysHit and damage > 0 and rules.roll(effect(self, 'blind'))
     if blind then notify(self.object, 'Missed!') end
@@ -342,27 +382,14 @@ local function applyAttack(data)
             updateHamstring(now, cfg)
             notify(attacker, 'Hamstrung!')
         end
-        if perks.knockdown and cfg.toggleHandToHandPerks then
-            if isPlayer then
-                if state.playerFatigueSnapshot == nil then
-                    state.playerFatigueSnapshot = Actor.stats.dynamic.fatigue(self).current
-                    state.knockdownUntil = now + 2
-                end
-                Actor.stats.dynamic.fatigue(self).current = -100
-            else
-                state.knockdownUntil = now + 3
-            end
-            if not isPlayer and animation.hasGroup(self, 'knockdown') then
-                I.AnimationController.playBlendedAnimation('knockdown', { priority = animation.PRIORITY.Knockdown })
-            end
-            notify(attacker, 'Knockdown!')
-        end
-        local equipped = Actor.getEquipment(self, Actor.EQUIPMENT_SLOT.CarriedRight)
-        if equipped and Weapon.objectIsInstance(equipped) and skillByType[Weapon.record(equipped).type] == 'longblade'
-            and rules.roll(rules.tier(cfg, skill(self, 'longblade')).riposteChance) then
-            state.riposteUntil = now + cfg.riposteDuration
-            notify(self.object, 'Riposte!')
-        end
+        if perks.knockdown and cfg.toggleHandToHandPerks then knockDown(attacker, now) end
+    end
+    -- The original defender roll is outside the outgoing Weapon perks switch.
+    local equipped = Actor.getEquipment(self, Actor.EQUIPMENT_SLOT.CarriedRight)
+    if equipped and Weapon.objectIsInstance(equipped) and skillByType[Weapon.record(equipped).type] == 'longblade'
+        and rules.roll(rules.tier(cfg, skill(self, 'longblade')).riposteChance) then
+        state.riposteUntil = now + cfg.riposteDuration
+        notify(self.object, 'Riposte!')
     end
     if data.handHealth ~= nil then
         scriptedHealthDamage(data.handHealth, attack.attacker)
@@ -374,24 +401,49 @@ local function applyAttack(data)
     baseCombat.onHit(attack)
 end
 
+-- The native event precedes Hit, so fists retain their independent health hit
+-- on a miss or block without delaying the normal fatigue hit through another actor.
+local function unarmedAttack(data)
+    if not mechanics.native or Actor.isDead(self) then return end
+    local cfg = config.get()
+    local attacker = data.attacker
+    if not cfg.toggleWeaponPerks or not cfg.toggleHandToHandPerks or not attacker
+        or not attacker:isValid() or not NPC.objectIsInstance(attacker) or NPC.isWerewolf(attacker)
+        or (isPlayer and require('openmw.debug').isGodMode()) then return end
+    local now = core.getSimulationTime()
+    trackCombat(attacker, self.object)
+    local health, knockdown = handDamage(attacker, self.object, totalBaseArmor(), state.knockdownUntil > now, cfg)
+    if knockdown then knockDown(attacker, now) end
+    scriptedHealthDamage(health, attacker)
+    if types.Player.objectIsInstance(attacker) then attacker:sendEvent('NGCHandSkillUsed', {}) end
+end
+
 local function onUpdate(dt)
     if dt <= 0 then return end
     updateElapsed = updateElapsed + dt
-    if updateElapsed < 0.25 then return end
-    updateElapsed = 0
+    local poll = updateElapsed >= 0.25
+    local timed = state.stunUntil > 0 or state.knockdownUntil > 0 or state.hamstringUntil > 0
+        or #state.rushExpiries > 0 or state.bleed ~= nil
+    if not poll and not timed then return end
     local cfg = config.get()
     local now = core.getSimulationTime()
-    synchronizeAccuracy(cfg.toggleAlwaysHit and not Actor.isDead(self))
-    if trackingCombat and not isPlayer and I.AI then
-        local player
-        if not Actor.isDead(self) then
-            for _, target in ipairs(I.AI.getTargets('Combat')) do
-                if target:isValid() and types.Player.objectIsInstance(target) then player = target; break end
+    -- Control/AI polling stays infrequent; active effects expire on their first
+    -- eligible frame, without delaying a one-second effect by another quarter second.
+    if poll then
+        updateElapsed = updateElapsed % 0.25
+        synchronizeAccuracy(cfg.toggleAlwaysHit and not Actor.isDead(self))
+        mechanics.setUnarmedEvents(cfg.toggleWeaponPerks and cfg.toggleHandToHandPerks and not Actor.isDead(self))
+        if trackingCombat and not isPlayer and I.AI then
+            local player
+            if not Actor.isDead(self) then
+                for _, target in ipairs(I.AI.getTargets('Combat')) do
+                    if target:isValid() and types.Player.objectIsInstance(target) then player = target; break end
+                end
             end
-        end
-        if reportedInCombat ~= (player ~= nil) then
-            reportedInCombat = player ~= nil
-            core.sendGlobalEvent('NGCCombatState', { actor = self.object, player = player })
+            if reportedInCombat ~= (player ~= nil) then
+                reportedInCombat = player ~= nil
+                core.sendGlobalEvent('NGCCombatState', { actor = self.object, player = player })
+            end
         end
     end
     if state.stunUntil > 0 and now >= state.stunUntil then
@@ -413,7 +465,7 @@ local function onUpdate(dt)
             table.remove(state.rushExpiries, index)
         end
     end
-    if state.hamstringDelta ~= 0 or state.hamstringUntil > now then updateHamstring(now, cfg) end
+    if state.hamstringDelta ~= 0 or state.hamstringUntil > 0 then updateHamstring(now, cfg) end
     local bleed = state.bleed
     if not bleed then return end
     if not cfg.toggleWeaponPerks or Actor.isDead(self) then state.bleed = nil; return end
@@ -470,13 +522,26 @@ return {
             if #state.rushExpiries > 0 then Actor.spells(self):remove('mic_adrenaline_rush'); state.rushExpiries = {} end
             removeHamstring()
             synchronizeAccuracy(false)
+            mechanics.reset()
             state.bleed = nil
+            state.armorCache = {}
             state.strikes = nil
             state.riposteUntil = 0
         end,
-        onActive = function() updateElapsed = 0.25; accuracyEnabled = nil end,
+        onActive = function()
+            updateElapsed = 0.25
+            accuracyEnabled = nil
+            local cfg = config.get()
+            synchronizeAccuracy(cfg.toggleAlwaysHit and not Actor.isDead(self))
+            mechanics.setUnarmedEvents(cfg.toggleWeaponPerks and cfg.toggleHandToHandPerks and not Actor.isDead(self))
+            if state.hamstringUntil > 0 then updateHamstring(core.getSimulationTime(), cfg) end
+        end,
     },
     eventHandlers = {
+        UnarmedAttack = unarmedAttack,
+        NGCHandSkillUsed = function()
+            if isPlayer then I.SkillProgression.skillUsed('handtohand', { skillGain = 1 }) end
+        end,
         NGCResolveAttack = resolveAttack,
         NGCApplyAttack = applyAttack,
         NGCRecoverAttack = function(data) recoverAttack(data.attack, data.target) end,
