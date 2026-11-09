@@ -562,9 +562,6 @@ namespace MWClass
         victim = result.first;
         hitPosition = result.second;
 
-        if (weapon.isEmpty() && !getNpcStats(ptr).isWerewolf() && !victim.getClass().getCreatureStats(victim).isDead())
-            MWBase::Environment::get().getLuaManager()->onUnarmedAttack(ptr, victim);
-
         ESM::RefId weapskill = ESM::Skill::HandToHand;
         if (!weapon.isEmpty())
             weapskill = weapon.getClass().getEquipmentSkill(weapon);
@@ -907,8 +904,7 @@ namespace MWClass
         if (stats.isWerewolf() && running && stats.getDrawState() == MWMechanics::DrawState::Nothing)
             moveSpeed *= gmst.fWereWolfRunMult->mValue.getFloat();
 
-        const auto* controls = MWBase::Environment::get().getLuaManager()->getActorControls(ptr);
-        return controls ? moveSpeed * controls->mMovementSpeedMultiplier : moveSpeed;
+        return moveSpeed;
     }
 
     float Npc::getJump(const MWWorld::Ptr& ptr) const

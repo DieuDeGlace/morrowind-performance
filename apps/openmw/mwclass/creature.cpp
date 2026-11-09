@@ -524,8 +524,7 @@ namespace MWClass
         else
             moveSpeed = getWalkSpeed(ptr);
 
-        const auto* controls = MWBase::Environment::get().getLuaManager()->getActorControls(ptr);
-        return controls ? moveSpeed * controls->mMovementSpeedMultiplier : moveSpeed;
+        return moveSpeed;
     }
 
     MWMechanics::Movement& Creature::getMovementSettings(const MWWorld::Ptr& ptr) const

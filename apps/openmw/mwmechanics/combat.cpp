@@ -133,10 +133,7 @@ namespace MWMechanics
 
         static const int iBlockMaxChance = gmst.find("iBlockMaxChance")->mValue.getInteger();
         static const int iBlockMinChance = gmst.find("iBlockMinChance")->mValue.getInteger();
-        float x = std::clamp(static_cast<int>(blockerTerm - attackerTerm), iBlockMinChance, iBlockMaxChance);
-        const auto* controls = MWBase::Environment::get().getLuaManager()->getActorControls(blocker);
-        if (controls && controls->mBlockChanceOverride)
-            x = *controls->mBlockChanceOverride;
+        int x = std::clamp(static_cast<int>(blockerTerm - attackerTerm), iBlockMinChance, iBlockMaxChance);
 
         auto& prng = MWBase::Environment::get().getWorld()->getPrng();
         if (Misc::Rng::roll0to99(prng) < x)
@@ -318,10 +315,6 @@ namespace MWMechanics
 
     float getHitChance(const MWWorld::Ptr& attacker, const MWWorld::Ptr& victim, int skillValue)
     {
-        const auto* controls = MWBase::Environment::get().getLuaManager()->getActorControls(attacker);
-        if (controls && controls->mHitChanceOverride)
-            return *controls->mHitChanceOverride;
-
         MWMechanics::CreatureStats& stats = attacker.getClass().getCreatureStats(attacker);
         const MWMechanics::MagicEffects& mageffects = stats.getMagicEffects();
 
