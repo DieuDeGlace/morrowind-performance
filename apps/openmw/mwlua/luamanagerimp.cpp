@@ -582,19 +582,6 @@ namespace MWLua
         mEngineEvents.addToQueue(EngineEvents::OnJailTimeServed{ getId(actor), days });
     }
 
-    void LuaManager::onUnarmedAttack(const MWWorld::Ptr& attacker, const MWWorld::Ptr& victim)
-    {
-        const ActorControls* controls = getActorControls(victim);
-        if (!controls || !controls->mUnarmedAttackEvents)
-            return;
-
-        mLua.protectedCall([&](LuaUtil::LuaView& view) {
-            sol::table data = view.newTable();
-            data["attacker"] = LObject(attacker);
-            sendLocalEvent(victim, "UnarmedAttack", data);
-        });
-    }
-
     void LuaManager::onHit(const MWWorld::Ptr& attacker, const MWWorld::Ptr& victim, const MWWorld::Ptr& weapon,
         const MWWorld::Ptr& ammo, int attackType, float attackStrength, float damage, bool isHealth,
         const osg::Vec3f& hitPos, bool successful, MWMechanics::DamageSourceType sourceType)
