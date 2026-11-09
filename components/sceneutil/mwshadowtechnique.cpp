@@ -238,6 +238,74 @@ public:
     }
 };
 
+struct CasterRegionBounds
+{
+    osg::Matrixd projection;
+    osg::BoundingBoxd bounds;
+    bool unbounded = false;
+    void operator()(const osgUtil::RenderLeaf* leaf)
+    {
+        if (unbounded)
+            return;
+        const auto& box = leaf->_drawable->getBoundingBox();
+        if (!box.valid())
+        {
+            unbounded = true;
+            return;
+        }
+        osg::Matrixd matrix = projection;
+        if (leaf->_modelview)
+            matrix = *leaf->_modelview * projection;
+        for (unsigned int corner = 0; corner < 8; ++corner)
+        {
+            const auto point = box.corner(corner);
+            const osg::Vec4d clip = osg::Vec4d(point.x(), point.y(), point.z(), 1) * matrix;
+            if (clip.w() <= 1e-6 || !std::isfinite(clip.x()) || !std::isfinite(clip.y()) || !std::isfinite(clip.w()))
+            {
+                unbounded = true;
+                return;
+            }
+            bounds.expandBy(osg::Vec3d(clip.x() / clip.w(), clip.y() / clip.w(), 0));
+        }
+    }
+    osg::Vec4i region(int width, int height) const
+    {
+        if (unbounded)
+            return osg::Vec4i(0, 0, width, height);
+        if (!bounds.valid())
+            return osg::Vec4i(0, 0, 0, 0);
+        const int left
+            = std::clamp(int(std::floor((std::clamp(bounds.xMin(), -1.0, 1.0) * .5 + .5) * width)) - 2, 0, width);
+        const int bottom
+            = std::clamp(int(std::floor((std::clamp(bounds.yMin(), -1.0, 1.0) * .5 + .5) * height)) - 2, 0, height);
+        const int right
+            = std::clamp(int(std::ceil((std::clamp(bounds.xMax(), -1.0, 1.0) * .5 + .5) * width)) + 2, 0, width);
+        const int top
+            = std::clamp(int(std::ceil((std::clamp(bounds.yMax(), -1.0, 1.0) * .5 + .5) * height)) + 2, 0, height);
+        return osg::Vec4i(left, bottom, std::max(0, right - left), std::max(0, top - bottom));
+    }
+};
+
+void configureDepthCopy(
+    MWShadowTechnique::ShadowData& shadow, osgUtil::RenderStage* stage, unsigned int traversal, bool fresh)
+{
+    RenderLeafTraverser<CasterRegionBounds> bounds;
+    bounds.projection = shadow._camera->getProjectionMatrix();
+    bounds.traverse(stage);
+    const auto current = bounds.region(shadow._texture->getTextureWidth(), shadow._texture->getTextureHeight());
+    auto* copy = static_cast<ShadowDepthRestore*>(shadow._depthRestore[traversal % 2].get());
+    // Large projected casters can make copying more expensive than drawing.
+    // Refresh those maps completely; retain reuse on the remaining cascades.
+    const double area = double(current.z()) * current.w();
+    const double mapArea = double(shadow._texture->getTextureWidth()) * shadow._texture->getTextureHeight();
+    if (fresh)
+        shadow._refreshWholeMap = area > mapArea * 0.25;
+    const osg::Vec4i empty(0, 0, 0, 0);
+    copy->setRegions(fresh || shadow._refreshWholeMap ? empty : shadow._previousCasterRegion,
+        shadow._refreshWholeMap ? empty : current);
+    shadow._previousCasterRegion = shadow._refreshWholeMap ? empty : current;
+}
+
 ///////////////////////////////////////////////////////////////////////////////////////////////
 //
 // VDSMCameraCullCallback
@@ -249,6 +317,7 @@ class VDSMCameraCullCallback : public osg::NodeCallback
         VDSMCameraCullCallback(MWShadowTechnique* vdsm, osg::Polytope& polytope, osg::Drawable* restore = nullptr);
 
         void operator()(osg::Node*, osg::NodeVisitor* nv) override;
+        void setRestore(osg::Drawable* restore) { mRestore = restore; }
 
         osg::RefMatrix* getProjectionMatrix() { return _projectionMatrix.get(); }
         osgUtil::RenderStage* getRenderStage() { return _renderStage.get(); }
@@ -640,36 +709,42 @@ void MWShadowTechnique::ShadowData::releaseGLObjects(osg::State* state) const
     _texture->releaseGLObjects(state);
     _camera->releaseGLObjects(state);
     if (_staticCamera) _staticCamera->releaseGLObjects(state);
-    if (_staticTexture) _staticTexture->releaseGLObjects(state);
-    if (_depthRestore) _depthRestore->releaseGLObjects(state);
+    if (_backgroundTexture) _backgroundTexture->releaseGLObjects(state);
+    for (const auto& copy : _depthRestore) if (copy) copy->releaseGLObjects(state);
 }
 
 void MWShadowTechnique::ShadowData::setStaticCacheEnabled(bool enabled)
 {
     if (enabled && !_staticCamera)
     {
-        _staticTexture = new osg::Texture2D(*_texture, osg::CopyOp::SHALLOW_COPY);
-        _staticTexture->setShadowComparison(false);
-        _staticTexture->setFilter(osg::Texture::MIN_FILTER, osg::Texture::NEAREST);
-        _staticTexture->setFilter(osg::Texture::MAG_FILTER, osg::Texture::NEAREST);
+        _backgroundTexture = new osg::Texture2D(*_texture, osg::CopyOp::SHALLOW_COPY);
+        _backgroundTexture->setShadowComparison(false);
+        _backgroundTexture->setFilter(osg::Texture::MIN_FILTER, osg::Texture::NEAREST);
+        _backgroundTexture->setFilter(osg::Texture::MAG_FILTER, osg::Texture::NEAREST);
         _staticCamera = new osg::Camera(*_camera, osg::CopyOp::SHALLOW_COPY);
         _staticCamera->setName("StaticShadowCamera");
         _staticCamera->detach(osg::Camera::DEPTH_BUFFER);
-        _staticCamera->attach(osg::Camera::DEPTH_BUFFER, _staticTexture);
+        _staticCamera->attach(osg::Camera::DEPTH_BUFFER, _texture);
+        _staticCamera->setClearMask(GL_DEPTH_BUFFER_BIT | GL_COLOR_BUFFER_BIT);
+        _camera->setClearMask(0);
         _staticCamera->setRenderOrder(osg::Camera::PRE_RENDER, -1);
-        _depthRestore = new ShadowDepthRestore(_staticTexture);
+        for (auto& copy : _depthRestore)
+            copy = new ShadowDepthRestore(_backgroundTexture, _texture);
+        _previousCasterRegion.set(0, 0, 0, 0);
     }
     else if (!enabled)
     {
         _staticCamera = nullptr;
-        _staticTexture = nullptr;
-        _depthRestore = nullptr;
+        _backgroundTexture = nullptr;
+        _depthRestore = {};
+        _camera->setClearMask(GL_DEPTH_BUFFER_BIT | GL_COLOR_BUFFER_BIT);
     }
 }
 
 void MWShadowTechnique::ShadowData::updateTextureSize()
 {
-    const ShadowSettings* settings = _viewDependentData->getViewDependentShadowMap()->getShadowedScene()->getShadowSettings();
+    const ShadowSettings* settings
+        = _viewDependentData->getViewDependentShadowMap()->getShadowedScene()->getShadowSettings();
 
     const osg::Vec2s textureSize = settings->getDebugDraw() ? osg::Vec2s(512, 512) : settings->getTextureSize();
     if (_texture->getTextureWidth() == textureSize.x() && _texture->getTextureHeight() == textureSize.y())
@@ -680,14 +755,16 @@ void MWShadowTechnique::ShadowData::updateTextureSize()
     _camera->dirtyAttachmentMap();
 
     _camera->setViewport(0, 0, textureSize.x(), textureSize.y());
-    if (_staticTexture)
+    if (_backgroundTexture)
     {
-        _staticTexture->setTextureSize(textureSize.x(), textureSize.y());
-        _staticTexture->dirtyTextureObject();
+        _backgroundTexture->setTextureSize(textureSize.x(), textureSize.y());
+        _backgroundTexture->dirtyTextureObject();
         _staticCamera->dirtyAttachmentMap();
         _staticCamera->setViewport(0, 0, textureSize.x(), textureSize.y());
         // Its read framebuffer must attach the newly allocated texture object.
-        _depthRestore = new ShadowDepthRestore(_staticTexture);
+        for (auto& copy : _depthRestore)
+            copy = new ShadowDepthRestore(_backgroundTexture, _texture);
+        _previousCasterRegion.set(0, 0, 0, 0);
     }
 }
 
@@ -1087,8 +1164,10 @@ void SceneUtil::MWShadowTechnique::copyShadowMap(osgUtil::CullVisitor& cv, ViewD
         lhs_sd->_sm_i = rhs_sd->_sm_i;
         lhs_sd->_projection.copyMatrices(rhs_sd->_projection);
         lhs_sd->_staticCamera = rhs_sd->_staticCamera;
-        lhs_sd->_staticTexture = rhs_sd->_staticTexture;
+        lhs_sd->_backgroundTexture = rhs_sd->_backgroundTexture;
         lhs_sd->_depthRestore = rhs_sd->_depthRestore;
+        lhs_sd->_previousCasterRegion = rhs_sd->_previousCasterRegion;
+        lhs_sd->_refreshWholeMap = rhs_sd->_refreshWholeMap;
         sdl.push_back(lhs_sd);
     }
 
@@ -1240,7 +1319,7 @@ void MWShadowTechnique::cull(osgUtil::CullVisitor& cv)
 
         if (vdd->numValidShadows() > 0)
         {
-            cullDynamicShadows(cv, *vdd);
+            if (splitCasters) cullDynamicShadows(cv, *vdd);
             copyShadowStateSettings(cv, vdd);
             prepareStateSetForRenderingShadow(*vdd, cv.getTraversalNumber());
         }
@@ -1509,6 +1588,7 @@ void MWShadowTechnique::cull(osgUtil::CullVisitor& cv)
 
             sd->setStaticCacheEnabled(splitCasters);
             osg::ref_ptr<osg::Camera> camera = sd->_camera;
+            camera->setClearMask(splitCasters ? 0 : GL_DEPTH_BUFFER_BIT | GL_COLOR_BUFFER_BIT);
 
             camera->setProjectionMatrix(projectionMatrix);
             camera->setViewMatrix(viewMatrix);
@@ -1659,11 +1739,13 @@ void MWShadowTechnique::cull(osgUtil::CullVisitor& cv)
                 staticCallback = new VDSMCameraCullCallback(this, local_polytope);
                 sd->_staticCamera->setCullCallback(staticCallback);
             }
-            osg::Polytope dynamicPolytope;
-            dynamicPolytope.setToUnitFrustum();
-            dynamicPolytope.transformProvidingInverse(camera->getProjectionMatrix());
+            if (splitCasters)
+            {
+                local_polytope.setToUnitFrustum();
+                local_polytope.transformProvidingInverse(camera->getProjectionMatrix());
+            }
             osg::ref_ptr<VDSMCameraCullCallback> vdsmCallback = new VDSMCameraCullCallback(this,
-                splitCasters ? dynamicPolytope : local_polytope, sd->_depthRestore);
+                local_polytope, sd->_depthRestore[cv.getTraversalNumber() % 2]);
             camera->setCullCallback(vdsmCallback.get());
 
             // 4.3 traverse RTT camera
@@ -1706,6 +1788,7 @@ void MWShadowTechnique::cull(osgUtil::CullVisitor& cv)
                 sd->_staticCamera->setProjectionMatrix(camera->getProjectionMatrix());
                 staticCallback->getProjectionMatrix()->set(camera->getProjectionMatrix());
             }
+            if (splitCasters) configureDepthCopy(*sd, vdsmCallback->getRenderStage(), cv.getTraversalNumber(), true);
             // Cache the projections that match this texture before the camera is reused.
             sd->_projection.setMatrices(validRegionProjection, shadowProjection, perspective);
 
@@ -3335,7 +3418,16 @@ void MWShadowTechnique::cullDynamicShadows(osgUtil::CullVisitor& cv, ViewDepende
     cv.pushStateSet(_shadowCastingStateSet);
     for (const auto& shadow : data.getShadowDataList())
         if (shadow->_staticCamera)
-            cullShadowCastingScene(&cv, shadow->_camera, sharedMask | (castingMask & _dynamicCasterMask));
+        {
+            auto* callback = static_cast<VDSMCameraCullCallback*>(shadow->_camera->getCullCallback()->asNodeCallback());
+            const bool refresh = shadow->_refreshWholeMap;
+            shadow->_camera->setClearMask(refresh ? GL_DEPTH_BUFFER_BIT | GL_COLOR_BUFFER_BIT : 0);
+            callback->setRestore(refresh ? nullptr : shadow->_depthRestore[cv.getTraversalNumber() % 2].get());
+            const unsigned int mask = refresh ? castingMask : sharedMask | (castingMask & _dynamicCasterMask);
+            cullShadowCastingScene(&cv, shadow->_camera, mask);
+            if (!refresh)
+                configureDepthCopy(*shadow, callback->getRenderStage(), cv.getTraversalNumber(), false);
+        }
     cv.popStateSet();
 }
 

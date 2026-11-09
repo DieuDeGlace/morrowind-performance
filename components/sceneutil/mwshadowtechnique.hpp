@@ -36,6 +36,7 @@
 #include <components/shader/shadermanager.hpp>
 
 #include "shadowprojection.hpp"
+#include <osg/Vec4i>
 
 // NOLINTBEGIN(readability-identifier-naming)
 
@@ -209,9 +210,12 @@ namespace SceneUtil {
             osg::ref_ptr<osg::Texture2D>        _texture;
             osg::ref_ptr<osg::Camera>           _camera;
             ShadowProjection                    _projection;
-            osg::ref_ptr<osg::Texture2D> _staticTexture;
+            osg::ref_ptr<osg::Texture2D> _backgroundTexture;
             osg::ref_ptr<osg::Camera> _staticCamera;
-            osg::ref_ptr<osg::Drawable> _depthRestore;
+            // Each cull buffer owns its depth-copy parameters until its draw completes.
+            std::array<osg::ref_ptr<osg::Drawable>, 2> _depthRestore;
+            osg::Vec4i _previousCasterRegion;
+            bool _refreshWholeMap = false;
         };
 
         typedef std::list< osg::ref_ptr<ShadowData> > ShadowDataList;

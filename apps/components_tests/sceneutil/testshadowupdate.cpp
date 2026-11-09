@@ -286,7 +286,7 @@ namespace
             scene.cull(frame, 1 + frame / 60.);
         auto* data = scene.shadows->getViewDependentData(scene.views[0]->getCullVisitor());
         EXPECT_EQ(scene.shadows->mapUpdates, 4);
-        EXPECT_FALSE(data->getShadowDataList().front()->_staticTexture);
+        EXPECT_FALSE(data->getShadowDataList().front()->_backgroundTexture);
     }
 
     TEST(ShadowUpdateTest, unsupported_depth_restore_keeps_moving_shadows_fresh)
@@ -297,7 +297,7 @@ namespace
             scene.cull(frame, 1 + frame / 60.);
         auto* data = scene.shadows->getViewDependentData(scene.views[0]->getCullVisitor());
         EXPECT_EQ(scene.shadows->mapUpdates, 4);
-        EXPECT_FALSE(data->getShadowDataList().front()->_staticTexture);
+        EXPECT_FALSE(data->getShadowDataList().front()->_backgroundTexture);
     }
 
     TEST(ShadowUpdateTest, cached_depth_resizes_when_only_one_texture_dimension_changes)
@@ -310,9 +310,9 @@ namespace
         scene.cull(2, 1 + 2 / 60.);
         auto* data = scene.shadows->getViewDependentData(scene.views[0]->getCullVisitor());
         const auto& shadow = data->getShadowDataList().front();
-        ASSERT_TRUE(shadow->_staticTexture);
+        ASSERT_TRUE(shadow->_backgroundTexture);
         EXPECT_EQ(shadow->_texture->getTextureHeight(), 2048);
-        EXPECT_EQ(shadow->_staticTexture->getTextureHeight(), 2048);
+        EXPECT_EQ(shadow->_backgroundTexture->getTextureHeight(), 2048);
         EXPECT_EQ(shadow->_camera->getViewport()->height(), 2048);
         EXPECT_EQ(shadow->_staticCamera->getViewport()->height(), 2048);
     }
@@ -323,11 +323,11 @@ namespace
         scene.shadows->setDynamicCasterMask(movingMask);
         scene.cull(0, 1);
         auto* data = scene.shadows->getViewDependentData(scene.views[0]->getCullVisitor());
-        ASSERT_TRUE(data->getShadowDataList().front()->_staticTexture);
+        ASSERT_TRUE(data->getShadowDataList().front()->_backgroundTexture);
         scene.shadows->setShadowUpdateInterval(1);
         scene.cull(1, 1 + 1 / 60.);
-        EXPECT_FALSE(data->getShadowDataList().front()->_staticTexture);
-        EXPECT_FALSE(data->getShadowDataList().front()->_depthRestore);
+        EXPECT_FALSE(data->getShadowDataList().front()->_backgroundTexture);
+        EXPECT_FALSE(data->getShadowDataList().front()->_depthRestore[0]);
     }
 }
 
@@ -343,7 +343,7 @@ namespace
             scene.cull(frame, 1 + frame / 60.);
         auto* data = scene.shadows->getViewDependentData(scene.views[0]->getCullVisitor());
         EXPECT_EQ(scene.shadows->mapUpdates, 4);
-        EXPECT_FALSE(data->getShadowDataList().front()->_staticTexture);
+        EXPECT_FALSE(data->getShadowDataList().front()->_backgroundTexture);
     }
 
     TEST(ShadowUpdateTest, changing_caster_mask_invalidates_the_cached_depth_pass)
@@ -352,10 +352,10 @@ namespace
         scene.shadows->setDynamicCasterMask(movingMask);
         scene.cull(0, 1);
         auto* data = scene.shadows->getViewDependentData(scene.views[0]->getCullVisitor());
-        ASSERT_TRUE(data->getShadowDataList().front()->_staticTexture);
+        ASSERT_TRUE(data->getShadowDataList().front()->_backgroundTexture);
         scene.root->getShadowSettings()->setCastsShadowTraversalMask(sceneryMask);
         scene.cull(1, 1 + 1 / 60.);
         EXPECT_EQ(scene.shadows->mapUpdates, 2);
-        EXPECT_FALSE(data->getShadowDataList().front()->_staticTexture);
+        EXPECT_FALSE(data->getShadowDataList().front()->_backgroundTexture);
     }
 }
