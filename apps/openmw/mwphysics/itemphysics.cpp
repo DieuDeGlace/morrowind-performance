@@ -409,7 +409,10 @@ namespace MWPhysics
                 return;
             body->wake(world);
             body->mCulprit = player;
-            world.grab(*body, *body->mBody, target, from, Misc::Convert::toBullet(view), ItemPhysicsRules::DragImpulse);
+            // A surface point can be far outside the small item collision proxy.
+            // Pull through the centre of mass to avoid injecting drag-induced spin.
+            const auto& center = body->mBody->getCenterOfMassPosition();
+            world.grab(*body, *body->mBody, center, from, Misc::Convert::toBullet(view), ItemPhysicsRules::DragImpulse);
             grabbed = true;
             Log(Debug::Info) << "Item physics: " << item.getCellRef().getRefId() << " grabbed";
         });
