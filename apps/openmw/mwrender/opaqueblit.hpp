@@ -7,6 +7,11 @@
 #include <osg/FrameBufferObject>
 #include <osgUtil/RenderBin>
 
+#ifdef ANDROID
+#include <osg/Geometry>
+#include <osg/StateSet>
+#endif
+
 namespace Stereo
 {
     class MultiviewFramebufferResolve;
@@ -30,7 +35,8 @@ namespace MWRender
     private:
         // GL4ES cannot blit framebuffers, so the copy is drawn instead.
         void drawCopy(osg::State& state, osg::RenderInfo& renderInfo, osgUtil::RenderLeaf* previous,
-            unsigned int frameId, osg::Texture* sceneColor, osg::Texture* sceneDepth, osg::Texture* opaqueColor);
+            unsigned int frameId, const osg::Texture* sceneColor, const osg::Texture* sceneDepth,
+            const osg::Texture* opaqueColor);
 
         osg::ref_ptr<osg::Geometry> mCopyGeometry;
         osg::ref_ptr<osg::StateSet> mCopyStateSet[2];
