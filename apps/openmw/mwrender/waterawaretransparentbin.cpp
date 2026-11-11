@@ -128,7 +128,7 @@ namespace MWRender
             farSideLeaves, mStraddlingLeaves, renderInfo, previous, farSidePlane, inverseView, false);
 
         if (!farSideLeaves.empty() || !mStraddlingLeaves.empty())
-            mOpaqueColorResolve->resolve(this, renderInfo);
+            mOpaqueColorResolve->resolve(this, renderInfo, previous);
 
         for (osgUtil::RenderLeaf* leaf : mWaterLeaves)
         {
