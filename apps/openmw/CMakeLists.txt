@@ -230,10 +230,9 @@ if (ANDROID)
     target_link_libraries(openmw-lib EGL android log z)
 
     if (BUILD_OPENMW)
-        # Force static OSG plugin objects into libopenmw.so on Android.
-        find_package(OSGPlugins REQUIRED COMPONENTS ${USED_OSG_PLUGINS})
-        list(APPEND OPENSCENEGRAPH_LIBRARIES ${OSGPlugins_LIBRARIES})
-        target_link_libraries(openmw ${OPENSCENEGRAPH_LIBRARIES} freetype jpeg png)
+        # The components library already links the static OSG plugins as whole
+        # archives. Listing them here as well defines every plugin symbol twice.
+        target_link_libraries(openmw freetype jpeg png)
     endif()
 endif (ANDROID)
 
