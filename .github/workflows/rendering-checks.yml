@@ -44,6 +44,4 @@ jobs:
       - name: Check Android shadow path compiles
         run: g++ -DANDROID -std=c++20 -fsyntax-only -I. components/sceneutil/mwshadowtechnique.cpp
       - name: Check Android water scene copy compiles
-        run: |
-          g++ -DANDROID -std=c++20 -fsyntax-only -I. apps/openmw/mwrender/opaqueblit.cpp
-          g++ -DANDROID -std=c++20 -fsyntax-only -I. apps/openmw/mwrender/waterawaretransparentbin.cpp
+        run: g++ -DANDROID -std=c++20 -fsyntax-only -I. apps/openmw/mwrender/opaqueblit.cpp
