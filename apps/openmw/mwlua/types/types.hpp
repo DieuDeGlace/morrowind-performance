@@ -31,6 +31,7 @@ namespace MWLua
     void addActivatorBindings(sol::table activator, const Context& context);
     ESM::Activator tableToActivator(const sol::table& rec);
     void addMutableActivatorType(sol::state_view& lua);
+    void addBodyPartBindings(sol::table list, const Context& context);
     void addBookBindings(sol::table book, const Context& context);
     ESM::Book tableToBook(const sol::table& rec);
     void addMutableBookType(sol::state_view& lua);
@@ -45,11 +46,18 @@ namespace MWLua
     void addPlayerBindings(sol::table player, const Context& context);
     void addCreatureBindings(sol::table creature, const Context& context);
     void addLockpickBindings(sol::table lockpick, const Context& context);
+    ESM::Lockpick tableToLockpick(const sol::table& rec);
+    void addMutableLockpickType(sol::state_view& lua);
     void addProbeBindings(sol::table probe, const Context& context);
     ESM::Probe tableToProbe(const sol::table& rec);
     void addMutableProbeType(sol::state_view& lua);
     void addApparatusBindings(sol::table apparatus, const Context& context);
+    ESM::Apparatus tableToApparatus(const sol::table& rec);
+    void addMutableApparatusType(sol::state_view& lua);
+    sol::table makeApparatusTypeTable(sol::state_view lua);
     void addRepairBindings(sol::table repair, const Context& context);
+    ESM::Repair tableToRepair(const sol::table& rec);
+    void addMutableRepairType(sol::state_view& lua);
     void addMiscellaneousBindings(sol::table miscellaneous, const Context& context);
     ESM::Miscellaneous tableToMisc(const sol::table& rec);
     void addMutableMiscType(sol::state_view& lua);
@@ -68,6 +76,11 @@ namespace MWLua
     ESM::Light tableToLight(const sol::table& rec);
     void addMutableLightType(sol::state_view& lua);
     void addLevelledCreatureBindings(sol::table list, const Context& context);
+    ESM::CreatureLevList tableToCreatureLevList(const sol::table& rec);
+    void addMutableCreatureLevListType(sol::state_view& lua);
+    sol::table addLevelledItemBindings(const Context& context);
+    ESM::ItemLevList tableToItemLevList(const sol::table& rec);
+    void addMutableItemLevListType(sol::state_view& lua);
 
     void addESM4DoorBindings(sol::table door, const Context& context);
     void addESM4TerminalBindings(sol::table term, const Context& context);

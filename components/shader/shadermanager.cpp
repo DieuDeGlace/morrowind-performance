@@ -1,5 +1,7 @@
 #include "shadermanager.hpp"
 
+#include "inlinelinked.hpp"
+
 #include <algorithm>
 #include <cassert>
 #include <chrono>
@@ -13,6 +15,8 @@
 #include <unordered_map>
 
 #include <osg/Program>
+#include <osg/Uniform>
+#include <osg/buffered_value>
 #include <osgViewer/Viewer>
 
 #include <components/debug/debuglog.hpp>
@@ -509,37 +513,82 @@ namespace Shader
     {
         std::unique_lock<std::mutex> lock(mMutex);
 
+        return getShaderInternal(std::move(templateName), defines, type);
+    }
+
+    ShaderManager::TemplateMap::iterator ShaderManager::loadTemplate(const std::string& templateName)
+    {
+        // read the template if we haven't already
+        TemplateMap::iterator templateIt = mShaderTemplates.find(templateName);
+        if (templateIt != mShaderTemplates.end())
+            return templateIt;
+
+        std::filesystem::path path = mPath / templateName;
+        std::ifstream stream;
+        stream.open(path);
+        if (stream.fail())
+        {
+            Log(Debug::Error) << "Failed to open shader " << path << ": " << std::generic_category().message(errno);
+            return mShaderTemplates.end();
+        }
+        std::stringstream buffer;
+        buffer << stream.rdbuf();
+
+        // parse includes
+        int fileNumber = 1;
+        std::string source = buffer.str();
+        std::set<std::filesystem::path> insertedPaths;
+        if (!addLineDirectivesAfterConditionalBlocks(source)
+            || !parseIncludes(mPath, source, templateName, fileNumber, {}, insertedPaths))
+            return mShaderTemplates.end();
+        mHotReloadManager->templateIncludedFiles[templateName] = std::move(insertedPaths);
+        return mShaderTemplates.insert(std::make_pair(templateName, source)).first;
+    }
+
+    bool ShaderManager::inlineLinkedTemplates(std::string& source, std::vector<std::string>& linkedShaderTemplateNames,
+        const std::string& templateName, const ShaderManager::DefineMap& defines)
+    {
+        // Linked modules link each other, so follow the names transitively and take each one once.
+        std::set<std::string> visited{ templateName };
+        std::vector<std::string> pending = std::move(linkedShaderTemplateNames);
+        linkedShaderTemplateNames.clear();
+        std::vector<std::string> linkedSources;
+        while (!pending.empty())
+        {
+            std::string linkedName = std::move(pending.back());
+            pending.pop_back();
+            if (getRootPrefix(linkedName).empty())
+                linkedName = "compatibility/" + linkedName;
+            if (!visited.insert(linkedName).second)
+                continue;
+            const TemplateMap::iterator linkedIt = loadTemplate(linkedName);
+            if (linkedIt == mShaderTemplates.end())
+                return false;
+            std::string linkedSource = linkedIt->second;
+            std::vector<std::string> nested;
+            if (!parseDefines(linkedSource, defines, mGlobalDefines, linkedName)
+                || !parseDirectives(linkedSource, nested, defines, mGlobalDefines, linkedName))
+                return false;
+            linkedSources.push_back(std::move(linkedSource));
+            for (std::string& name : nested)
+                pending.push_back(std::move(name));
+        }
+        if (!linkedSources.empty())
+            source = inlineLinkedShaders(source, linkedSources);
+        return true;
+    }
+
+    osg::ref_ptr<osg::Shader> ShaderManager::getShaderInternal(
+        std::string templateName, const ShaderManager::DefineMap& defines, std::optional<osg::Shader::Type> type)
+    {
         // TODO: Implement mechanism to switch to core or compatibility profile shaders.
         // This logic is temporary until core support is supported.
         if (getRootPrefix(templateName).empty())
             templateName = "compatibility/" + templateName;
 
-        // read the template if we haven't already
-        TemplateMap::iterator templateIt = mShaderTemplates.find(templateName);
-        std::set<std::filesystem::path> insertedPaths;
-
+        const TemplateMap::iterator templateIt = loadTemplate(templateName);
         if (templateIt == mShaderTemplates.end())
-        {
-            std::filesystem::path path = mPath / templateName;
-            std::ifstream stream;
-            stream.open(path);
-            if (stream.fail())
-            {
-                Log(Debug::Error) << "Failed to open shader " << path << ": " << std::generic_category().message(errno);
-                return nullptr;
-            }
-            std::stringstream buffer;
-            buffer << stream.rdbuf();
-
-            // parse includes
-            int fileNumber = 1;
-            std::string source = buffer.str();
-            if (!addLineDirectivesAfterConditionalBlocks(source)
-                || !parseIncludes(mPath, source, templateName, fileNumber, {}, insertedPaths))
-                return nullptr;
-            mHotReloadManager->templateIncludedFiles[templateName] = std::move(insertedPaths);
-            templateIt = mShaderTemplates.insert(std::make_pair(templateName, source)).first;
-        }
+            return nullptr;
 
         ShaderMap::iterator shaderIt = mShaders.find(std::make_pair(templateName, defines));
         if (shaderIt == mShaders.end())
@@ -562,17 +611,99 @@ namespace Shader
 
             mHotReloadManager->addShaderFiles(templateName, defines);
 
-            lock.unlock();
             getLinkedShaders(shader, linkedShaderNames, defines);
-            lock.lock();
 
             shaderIt = mShaders.insert(std::make_pair(std::make_pair(templateName, defines), shader)).first;
         }
         return shaderIt->second;
     }
 
-    osg::ref_ptr<osg::Program> ShaderManager::getProgram(
-        const std::string& templateName, const DefineMap& defines, const osg::Program* programTemplate)
+    class SamplerProgram : public osg::Program
+    {
+    public:
+        SamplerProgram() = default;
+        explicit SamplerProgram(const ShaderManager::SamplerBindingMap& samplers);
+        SamplerProgram(
+            const ShaderManager::SamplerBindingMap& samplers, const osg::Program& other, const osg::CopyOp& copyop);
+        SamplerProgram(const SamplerProgram& other, const osg::CopyOp& copyop = osg::CopyOp::SHALLOW_COPY);
+
+        META_Object(Shader, SamplerProgram)
+
+        bool hasSamplers(const ShaderManager::SamplerBindingMap& samplers) const;
+
+        void apply(osg::State& state) const override;
+
+        void resizeGLObjectBuffers(unsigned int maxSize) override;
+
+    private:
+        std::vector<osg::ref_ptr<osg::Uniform>> mSamplers;
+        mutable osg::buffered_value<const PerContextProgram*> mApplied;
+    };
+
+    SamplerProgram::SamplerProgram(const ShaderManager::SamplerBindingMap& samplers)
+    {
+        for (const auto& [name, unit] : samplers)
+            mSamplers.emplace_back(new osg::Uniform(name.c_str(), unit));
+    }
+
+    SamplerProgram::SamplerProgram(
+        const ShaderManager::SamplerBindingMap& samplers, const osg::Program& other, const osg::CopyOp& copyop)
+        : osg::Program(other, copyop)
+    {
+        for (const auto& [name, index] : other.getUniformBlockBindingList())
+            addBindUniformBlock(name, index);
+        for (const auto& [name, unit] : samplers)
+            mSamplers.emplace_back(new osg::Uniform(name.c_str(), unit));
+    }
+
+    SamplerProgram::SamplerProgram(const SamplerProgram& other, const osg::CopyOp& copyop)
+        : SamplerProgram({}, other, copyop)
+    {
+        mSamplers = other.mSamplers;
+    }
+
+    bool SamplerProgram::hasSamplers(const ShaderManager::SamplerBindingMap& samplers) const
+    {
+        if (mSamplers.size() != samplers.size())
+            return false;
+        for (const osg::ref_ptr<osg::Uniform>& sampler : mSamplers)
+        {
+            int unit = -1;
+            sampler->get(unit);
+            const auto it = samplers.find(sampler->getName());
+            if (it == samplers.end() || it->second != unit)
+                return false;
+        }
+        return true;
+    }
+
+    void SamplerProgram::apply(osg::State& state) const
+    {
+        const PerContextProgram* pcp = getPCP(state);
+        const bool relink = pcp->needsLink();
+
+        osg::Program::apply(state);
+
+        if (state.getLastAppliedProgramObject() != pcp)
+            return;
+
+        const PerContextProgram*& applied = mApplied[state.getContextID()];
+        if (applied == pcp && !relink)
+            return;
+
+        for (const osg::ref_ptr<osg::Uniform>& sampler : mSamplers)
+            pcp->apply(*sampler);
+        applied = pcp;
+    }
+
+    void SamplerProgram::resizeGLObjectBuffers(unsigned int maxSize)
+    {
+        osg::Program::resizeGLObjectBuffers(maxSize);
+        mApplied.resize(maxSize);
+    }
+
+    osg::ref_ptr<osg::Program> ShaderManager::getProgram(const std::string& templateName, const DefineMap& defines,
+        const osg::Program* programTemplate, const SamplerBindingMap& samplers)
     {
         auto vert = getShader(templateName + ".vert", defines);
         auto frag = getShader(templateName + ".frag", defines);
@@ -580,11 +711,12 @@ namespace Shader
         if (!vert || !frag)
             throw std::runtime_error("failed initializing shader: " + templateName);
 
-        return getProgram(std::move(vert), std::move(frag), programTemplate);
+        return getProgram(std::move(vert), std::move(frag), programTemplate, samplers);
     }
 
     osg::ref_ptr<osg::Program> ShaderManager::getProgram(osg::ref_ptr<osg::Shader> vertexShader,
-        osg::ref_ptr<osg::Shader> fragmentShader, const osg::Program* programTemplate)
+        osg::ref_ptr<osg::Shader> fragmentShader, const osg::Program* programTemplate,
+        const SamplerBindingMap& samplers)
     {
         std::lock_guard<std::mutex> lock(mMutex);
         ProgramMap::iterator found = mPrograms.find(std::make_pair(vertexShader, fragmentShader));
@@ -592,15 +724,17 @@ namespace Shader
         {
             if (!programTemplate)
                 programTemplate = mProgramTemplate;
-            osg::ref_ptr<osg::Program> program
-                = programTemplate ? cloneProgram(programTemplate) : osg::ref_ptr<osg::Program>(new osg::Program);
+            osg::ref_ptr<SamplerProgram> program = programTemplate
+                ? new SamplerProgram(samplers, *programTemplate, osg::CopyOp::SHALLOW_COPY)
+                : new SamplerProgram(samplers);
             program->addShader(vertexShader);
             program->addShader(fragmentShader);
             addLinkedShaders(vertexShader, program);
             addLinkedShaders(fragmentShader, program);
-
             found = mPrograms.insert(std::make_pair(std::make_pair(vertexShader, fragmentShader), program)).first;
         }
+        else
+            assert(static_cast<SamplerProgram*>(found->second.get())->hasSamplers(samplers));
         return found->second;
     }
 
@@ -619,7 +753,19 @@ namespace Shader
 
     void ShaderManager::setGlobalDefines(DefineMap& globalDefines)
     {
+        std::lock_guard<std::mutex> lock(mMutex);
         mGlobalDefines = globalDefines;
+        // clear out linked dependencies - changing defines may make them obsolete
+        for (const auto& [pair, program] : mPrograms)
+        {
+            for (unsigned int i = 0; i < program->getNumShaders();)
+            {
+                if (program->getShader(i) != pair.first && program->getShader(i) != pair.second)
+                    program->removeShader(program->getShader(i));
+                else
+                    ++i;
+            }
+        }
         for (const auto& [key, shader] : mShaders)
         {
             std::string templateId = key.first;
@@ -638,6 +784,11 @@ namespace Shader
             shader->setShaderSource(shaderSource);
 
             getLinkedShaders(shader, linkedShaderNames, defines);
+        }
+        for (const auto& [pair, program] : mPrograms)
+        {
+            addLinkedShaders(pair.first, program);
+            addLinkedShaders(pair.second, program);
         }
     }
 
@@ -661,6 +812,11 @@ namespace Shader
             return false;
         if (!parseDirectives(source, linkedShaderTemplateNames, defines, mGlobalDefines, templateName))
             return false;
+#ifdef ANDROID
+        // OpenGL ES 2 links one shader object per stage: make the linked modules part of this one.
+        if (!inlineLinkedTemplates(source, linkedShaderTemplateNames, templateName, defines))
+            return false;
+#endif
         return true;
     }
 
@@ -673,7 +829,7 @@ namespace Shader
 
         for (auto& linkedShaderName : linkedShaderNames)
         {
-            auto linkedShader = getShader(linkedShaderName, defines, shader->getType());
+            auto linkedShader = getShaderInternal(linkedShaderName, defines, shader->getType());
             if (linkedShader)
                 mLinkedShaders[shader].emplace_back(linkedShader);
         }
@@ -735,6 +891,9 @@ namespace Shader
             case Slot::OpaqueDepthTexture:
                 slotDescr = "opaque depth texture";
                 break;
+            case Slot::OpaqueColorTexture:
+                slotDescr = "opaque color texture";
+                break;
             case Slot::SkyTexture:
                 slotDescr = "sky RTT";
                 break;
@@ -785,6 +944,8 @@ namespace Shader
             { "useOVR_multiview", "0" },
             { "distorionRTRatio", "0" },
             { "numViews", "1" },
+            { "particle", "0" },
+            { "particlePointLighting", "1" },
         };
     }
 }

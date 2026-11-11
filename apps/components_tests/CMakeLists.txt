@@ -49,6 +49,7 @@ file(GLOB UNITTEST_SRC_FILES
     settings/shadermanager.cpp
     settings/testvalues.cpp
 
+    shader/inlinelinked.cpp
     shader/parsedefines.cpp
     shader/parsefors.cpp
     shader/parselinks.cpp
@@ -79,19 +80,23 @@ file(GLOB UNITTEST_SRC_FILES
     esm3/testinfoorder.cpp
     esm3/testcstringids.cpp
 
+    nifosg/testcontroller.cpp
     nifosg/testnifloader.cpp
 
     esmterrain/testgridsampling.cpp
 
+    resource/testmultiobjectcache.cpp
     resource/testobjectcache.cpp
     resource/testresourcesystem.cpp
 
     vfs/testpathutil.cpp
 
+    sceneutil/occlusionculling.cpp
     sceneutil/osgacontroller.cpp
     sceneutil/shadowprojection.cpp
     sceneutil/testshadowupdate.cpp
     sceneutil/testriggeometry.cpp
+    sceneutil/userdata.cpp
 
     bsa/testbsafile.cpp
     bsa/testcompressedbsafile.cpp
@@ -109,6 +114,11 @@ target_link_libraries(components-tests
     GMock::GMock
     components
 )
+
+if (USE_QT)
+    target_sources(components-tests PRIVATE config/testlaunchersettings.cpp)
+    target_link_libraries(components-tests components_qt)
+endif()
 
 if (WIN32)
     target_sources(components-tests PRIVATE ${CMAKE_SOURCE_DIR}/files/windows/other-apps.manifest)

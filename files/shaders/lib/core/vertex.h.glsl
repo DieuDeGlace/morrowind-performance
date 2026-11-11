@@ -1,19 +1,19 @@
-// OPENMW_ANDROID_051_GL4ES_CORE_INLINE
-// GL4ES/GLES2 compatibility: keep helper implementations in the consuming
-// shader instead of linking a helper-only shader object without main().
-uniform mat4 projectionMatrix;
+#ifndef OPENMW_VERTEX_H_GLSL
+#define OPENMW_VERTEX_H_GLSL
 
-vec4 modelToView(vec4 pos)
-{
-    return gl_ModelViewMatrix * pos;
-}
+@link "lib/core/vertex.glsl" if !@useOVR_multiview
+@link "lib/core/vertex_multiview.glsl" if @useOVR_multiview
+@link "lib/core/lighting_vertex.glsl" if @lightingMethodClustered
+@link "lib/core/lighting_vertex_legacy.glsl" if !@lightingMethodClustered
 
-vec4 modelToClip(vec4 pos)
-{
-    return projectionMatrix * modelToView(pos);
-}
+#include "lib/material/struct.glsl"
 
-vec4 viewToClip(vec4 pos)
-{
-    return projectionMatrix * pos;
-}
+vec4 modelToClip(vec4 pos);
+vec4 modelToView(vec4 pos);
+vec4 viewToClip(vec4 pos);
+vec2 clipToScreen(vec4 pos);
+void directionalLighting(vec3 viewDir, vec3 viewNormal, float shininess, out vec3 diffuseLight, out vec3 ambientLight, out vec3 specularLight);
+void pointLighting(vec2 screenCoord, vec3 viewDir, vec3 viewPos, vec3 viewNormal, float shininess, out vec3 diffuseLight, out vec3 ambientLight, out vec3 specularLight);
+Material getMaterial();
+
+#endif  // OPENMW_VERTEX_H_GLSL

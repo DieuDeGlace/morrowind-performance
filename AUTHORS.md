@@ -48,8 +48,10 @@ Programmers
     Austin Salgat (Salgat)
     Ben Shealy (bentsherman)
     Berulacks
+    bmdhacks
     Bo Svensson
     Britt Mathis (galdor557)
+    Calandiel
     Carl Maxwell
     cc9cii
     Cédric Mocquillon
@@ -94,6 +96,7 @@ Programmers
     Florian Weber (Florianjw)
     Frédéric Chardon (fr3dz10)
     Gaëtan Dezeiraud (Brouilles)
+    Garet Cole Green (nox7)
     Gašper Sedej
     Gijsbert ter Horst (Ghostbird)
     Gohan1989
@@ -101,6 +104,7 @@ Programmers
     guidoj
     Hailey Tribble (daisyhasacat)
     Haoda Wang (h313)
+    Hemaris
     holorat
     hristoast
     Internecine
@@ -134,6 +138,7 @@ Programmers
     Julien Voisin (jvoisin/ap0)
     Karl-Felix Glatzer (k1ll)
     Kevin Poitra (PuppyKevin)
+    Kirill Blagodarov (blagish)
     Koncord
     Kurnevsky Evgeny (kurnevsky)
     Lars Söderberg (Lazaroth)
@@ -142,12 +147,14 @@ Programmers
     Leon Krieg (lkrieg)
     Leon Saunders (emoose)
     logzero
+    Logan Sterling (solidest-snake)
     lohikaarme
     Lordrea
     Łukasz Gołębiewski (lukago)
     Lukasz Gromanowski (lgro)
     Mads Sandvei (Foal)
     Maksim Eremenko (Max Yari)
+    Malte Hammar (Eb-dur)
     Marc Bouvier (CramitDeFrog)
     Marcin Hulist (Gohan)
     Mark Siewert (mark76)
@@ -231,10 +238,12 @@ Programmers
     svaante
     Sylvain Thesnieres (Garvek)
     t6
+    Telvanni4Life
     terrorfisch
     Tess (tescoShoppah)
     thegriglat
     Thomas Luppi (Digmaster)
+    Thomas Portal (OursCodeur)
     Tim Hagberg (hazardMan)
     tlmullis
     trav

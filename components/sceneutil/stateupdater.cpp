@@ -1,7 +1,6 @@
 #include "stateupdater.hpp"
 
 #include <osg/Fog>
-#include <osg/LightModel>
 #include <osg/PolygonMode>
 
 #include "depth.hpp"
@@ -9,14 +8,17 @@
 #include "statesetupdater.hpp"
 
 #include <components/resource/scenemanager.hpp>
+#include <components/sceneutil/fog.hpp>
 #include <components/stereo/multiview.hpp>
 #include <components/stereo/stereomanager.hpp>
 
 namespace SceneUtil
 {
-    PerViewUniformStateUpdater::PerViewUniformStateUpdater(Resource::SceneManager* sceneManager, int opaqueTextureUnit)
+    PerViewUniformStateUpdater::PerViewUniformStateUpdater(
+        Resource::SceneManager* sceneManager, int opaqueTextureUnit, int opaqueColorTextureUnit)
         : mSceneManager(sceneManager)
         , mOpaqueTextureUnit(opaqueTextureUnit)
+        , mOpaqueColorTextureUnit(opaqueColorTextureUnit)
     {
     }
 
@@ -40,6 +42,9 @@ namespace SceneUtil
         if (mOpaqueTextureUnit > 0)
             stateset->setTextureAttribute(mOpaqueTextureUnit,
                 mSceneManager->getOpaqueDepthTex(nv->getTraversalNumber()), osg::StateAttribute::ON);
+        if (mOpaqueColorTextureUnit > 0)
+            stateset->setTextureAttribute(mOpaqueColorTextureUnit,
+                mSceneManager->getOpaqueColorTex(nv->getTraversalNumber()), osg::StateAttribute::ON);
     }
 
     void PerViewUniformStateUpdater::applyLeft(osg::StateSet* stateset, osgUtil::CullVisitor* nv)
@@ -127,20 +132,6 @@ namespace SceneUtil
 
     void StateUpdater::setDefaults(osg::StateSet* stateset)
     {
-        osg::LightModel* lightModel = new osg::LightModel;
-        stateset->setAttribute(lightModel, osg::StateAttribute::ON);
-        osg::Fog* fog = new osg::Fog;
-        fog->setMode(osg::Fog::LINEAR);
-        stateset->setAttributeAndModes(fog, osg::StateAttribute::ON);
-#ifdef ANDROID
-        // OPENMW_ANDROID_051_GL4ES_EXPLICIT_OBJECT_FOG_UNIFORMS
-        // GL4ES does not reliably propagate compatibility gl_Fog built-ins to
-        // every OpenMW 0.51 objects-program variant. Expose the same authoritative
-        // StateUpdater values as ordinary uniforms; only objects.frag consumes them.
-        stateset->addUniform(new osg::Uniform("omwFogColor", osg::Vec4f{}));
-        stateset->addUniform(new osg::Uniform("omwFogStart", 0.f));
-        stateset->addUniform(new osg::Uniform("omwFogEnd", 0.f));
-#endif
         if (mWireframe)
         {
             osg::PolygonMode* polygonmode = new osg::PolygonMode;
@@ -149,22 +140,33 @@ namespace SceneUtil
         }
         else
             stateset->removeAttribute(osg::StateAttribute::POLYGONMODE);
+
+        SceneUtil::setFogColor(*stateset, mFogColor);
+        SceneUtil::setFogStart(*stateset, mFogStart);
+        SceneUtil::setFogEnd(*stateset, mFogEnd);
+        SceneUtil::setUnderwaterFogColor(*stateset, mUnderwaterFogColor);
+        SceneUtil::setUnderwaterFogStart(*stateset, mUnderwaterFogStart);
+        SceneUtil::setUnderwaterFogEnd(*stateset, mUnderwaterFogEnd);
+        SceneUtil::setFogDepth(*stateset, -1.f);
+
+        stateset->addUniform(new osg::Uniform("waterHeight", mWaterHeight));
+        stateset->addUniform(new osg::Uniform("waterEnabled", mWaterEnabled));
+        stateset->addUniform(new osg::Uniform("waterSurface", false));
     }
 
     void StateUpdater::apply(osg::StateSet* stateset, osg::NodeVisitor*)
     {
-        osg::LightModel* lightModel
-            = static_cast<osg::LightModel*>(stateset->getAttribute(osg::StateAttribute::LIGHTMODEL));
-        lightModel->setAmbientIntensity(mAmbientColor);
-        osg::Fog* fog = static_cast<osg::Fog*>(stateset->getAttribute(osg::StateAttribute::FOG));
-        fog->setColor(mFogColor);
-        fog->setStart(mFogStart);
-        fog->setEnd(mFogEnd);
-#ifdef ANDROID
-        stateset->getUniform("omwFogColor")->set(mFogColor);
-        stateset->getUniform("omwFogStart")->set(mFogStart);
-        stateset->getUniform("omwFogEnd")->set(mFogEnd);
-#endif
+        configureSunAmbientOverride(mAmbientColor, stateset);
+
+        SceneUtil::updateFogColor(*stateset, mFogColor);
+        SceneUtil::updateFogStart(*stateset, mFogStart);
+        SceneUtil::updateFogEnd(*stateset, mFogEnd);
+        SceneUtil::updateUnderwaterFogColor(*stateset, mUnderwaterFogColor);
+        SceneUtil::updateUnderwaterFogStart(*stateset, mUnderwaterFogStart);
+        SceneUtil::updateUnderwaterFogEnd(*stateset, mUnderwaterFogEnd);
+
+        stateset->getUniform("waterHeight")->set(mWaterHeight);
+        stateset->getUniform("waterEnabled")->set(mWaterEnabled);
     }
 
     void StateUpdater::setAmbientColor(const osg::Vec4f& col)
@@ -185,6 +187,31 @@ namespace SceneUtil
     void StateUpdater::setFogEnd(float end)
     {
         mFogEnd = end;
+    }
+
+    void StateUpdater::setUnderwaterFogColor(const osg::Vec4f& col)
+    {
+        mUnderwaterFogColor = col;
+    }
+
+    void StateUpdater::setUnderwaterFogStart(float start)
+    {
+        mUnderwaterFogStart = start;
+    }
+
+    void StateUpdater::setUnderwaterFogEnd(float end)
+    {
+        mUnderwaterFogEnd = end;
+    }
+
+    void StateUpdater::setWaterHeight(float waterHeight)
+    {
+        mWaterHeight = waterHeight;
+    }
+
+    void StateUpdater::setWaterEnabled(bool enabled)
+    {
+        mWaterEnabled = enabled;
     }
 
     void StateUpdater::setWireframe(bool wireframe)

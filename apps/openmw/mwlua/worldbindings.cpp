@@ -9,6 +9,8 @@
 #include <components/esm3/loadcrea.hpp>
 #include <components/esm3/loaddoor.hpp>
 #include <components/esm3/loadench.hpp>
+#include <components/esm3/loadingr.hpp>
+#include <components/esm3/loadlevlist.hpp>
 #include <components/esm3/loadligh.hpp>
 #include <components/esm3/loadmisc.hpp>
 #include <components/esm3/loadnpc.hpp>
@@ -134,7 +136,7 @@ namespace MWLua
             = [cells3Store, cells4Store](const CellsStore&) { return cells3Store->getSize() + cells4Store->getSize(); };
         cells[sol::meta_function::index]
             = [cells3Store, cells4Store](const CellsStore&, size_t index) -> sol::optional<GCell> {
-            if (index > cells3Store->getSize() + cells3Store->getSize() || index == 0)
+            if (index > cells3Store->getSize() + cells4Store->getSize() || index == 0)
                 return sol::nullopt;
 
             index--; // Translate from Lua's 1-based indexing.
@@ -169,6 +171,16 @@ namespace MWLua
         api["activeActors"] = GObjectList{ objectLists->getActorsInScene() };
         api["players"] = GObjectList{ objectLists->getPlayers() };
 
+        api["getObjectsInRange"] = [](osg::Vec3f position, Misc::FiniteFloat range) -> GObjectList {
+            std::vector<MWWorld::Ptr> objects;
+            MWBase::Environment::get().getMechanicsManager()->getObjectsInRange(position, range, objects);
+            GObjectList objList;
+            objList.mIds = std::make_shared<std::vector<ObjectId>>();
+            objList.mIds->reserve(objects.size());
+            for (const auto& object : objects)
+                objList.mIds->push_back(getId(object));
+            return objList;
+        };
         api["createObject"] = [lua = context.mLua](std::string_view recordId, sol::optional<int> count) -> GObject {
             checkGameInitialized(lua);
             MWWorld::ManualRef mref(*MWBase::Environment::get().getESMStore(), ESM::RefId::deserializeText(recordId));
@@ -183,6 +195,27 @@ namespace MWLua
             if (!refId.is<ESM::FormId>())
                 throw std::runtime_error("FormId expected, got " + std::string(formIdStr) + "; use core.getFormId");
             return GObject(*refId.getIf<ESM::FormId>());
+        };
+        api["getObjectsByRecordId"]
+            = [](sol::this_state thisState, std::string_view serializedId, std::optional<std::string_view> worldSpace,
+                  std::optional<bool> loadedOnly) -> sol::table {
+            ESM::RefId id = ESM::RefId::deserializeText(serializedId);
+            sol::table objects(thisState, sol::create);
+            if (id.empty())
+                return objects;
+            ESM::RefId worldSpaceId;
+            if (worldSpace)
+            {
+                worldSpaceId = ESM::RefId::deserializeText(*worldSpace);
+                if (worldSpaceId.empty())
+                    return objects;
+            }
+            const bool searchUnloaded = !loadedOnly.value_or(false);
+            std::vector<MWWorld::Ptr> ptrs
+                = MWBase::Environment::get().getWorldModel()->getAll(id, worldSpaceId, searchUnloaded);
+            for (const MWWorld::Ptr& ptr : ptrs)
+                objects.add(GObject(ptr));
+            return objects;
         };
 
         // Creates a new record in the world database.
@@ -199,6 +232,10 @@ namespace MWLua
                 checkGameInitialized(lua);
                 return MWBase::Environment::get().getESMStore()->insert(clothing);
             },
+            [lua = context.mLua](const ESM::CreatureLevList& list) -> const ESM::CreatureLevList* {
+                checkGameInitialized(lua);
+                return MWBase::Environment::get().getESMStore()->insert(list);
+            },
             [lua = context.mLua](const ESM::Book& book) -> const ESM::Book* {
                 checkGameInitialized(lua);
                 return MWBase::Environment::get().getESMStore()->insert(book);
@@ -206,6 +243,14 @@ namespace MWLua
             [lua = context.mLua](const ESM::Enchantment& enchantment) -> const ESM::Enchantment* {
                 checkGameInitialized(lua);
                 return MWBase::Environment::get().getESMStore()->insert(enchantment);
+            },
+            [lua = context.mLua](const ESM::Ingredient& ingred) -> const ESM::Ingredient* {
+                checkGameInitialized(lua);
+                return MWBase::Environment::get().getESMStore()->insert(ingred);
+            },
+            [lua = context.mLua](const ESM::ItemLevList& list) -> const ESM::ItemLevList* {
+                checkGameInitialized(lua);
+                return MWBase::Environment::get().getESMStore()->insert(list);
             },
             [lua = context.mLua](const ESM::Miscellaneous& misc) -> const ESM::Miscellaneous* {
                 checkGameInitialized(lua);

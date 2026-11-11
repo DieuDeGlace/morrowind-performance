@@ -35,7 +35,7 @@ namespace
         if (rec["model"] != sol::nil)
             weapon.mModel = Misc::ResourceHelpers::meshPathForESM3(rec["model"].get<std::string_view>());
         if (rec["icon"] != sol::nil)
-            weapon.mIcon = rec["icon"];
+            weapon.mIcon = rec["icon"].get<std::string_view>();
         if (rec["enchant"] != sol::nil)
         {
             std::string_view enchantId = rec["enchant"].get<std::string_view>();
@@ -64,10 +64,10 @@ namespace
         if (rec["type"] != sol::nil)
         {
             int weaponType = rec["type"].get<int>();
-            if (weaponType >= 0 && weaponType <= ESM::Weapon::Last)
-                weapon.mData.mType = static_cast<int16_t>(weaponType);
-            else
+            ESM::RefId weaponTypeId = ESM::Weapon::indexToRefId(weaponType);
+            if (weaponTypeId.empty())
                 throw std::runtime_error("Invalid Weapon Type provided: " + std::to_string(weaponType));
+            weapon.mData.mType = weaponTypeId;
         }
         if (rec["weight"] != sol::nil)
             weapon.mData.mWeight = rec["weight"].get<Misc::FiniteFloat>();
@@ -103,22 +103,23 @@ namespace MWLua
     void addWeaponBindings(sol::table weapon, const Context& context)
     {
         sol::state_view lua = context.sol();
+        const auto typeIndex = [](ESM::RefId id) { return ESM::Weapon::refIdToIndex(id); };
         weapon["TYPE"] = LuaUtil::makeStrictReadOnly(LuaUtil::tableFromPairs<std::string_view, int>(lua,
             {
-                { "ShortBladeOneHand", ESM::Weapon::ShortBladeOneHand },
-                { "LongBladeOneHand", ESM::Weapon::LongBladeOneHand },
-                { "LongBladeTwoHand", ESM::Weapon::LongBladeTwoHand },
-                { "BluntOneHand", ESM::Weapon::BluntOneHand },
-                { "BluntTwoClose", ESM::Weapon::BluntTwoClose },
-                { "BluntTwoWide", ESM::Weapon::BluntTwoWide },
-                { "SpearTwoWide", ESM::Weapon::SpearTwoWide },
-                { "AxeOneHand", ESM::Weapon::AxeOneHand },
-                { "AxeTwoHand", ESM::Weapon::AxeTwoHand },
-                { "MarksmanBow", ESM::Weapon::MarksmanBow },
-                { "MarksmanCrossbow", ESM::Weapon::MarksmanCrossbow },
-                { "MarksmanThrown", ESM::Weapon::MarksmanThrown },
-                { "Arrow", ESM::Weapon::Arrow },
-                { "Bolt", ESM::Weapon::Bolt },
+                { "ShortBladeOneHand", typeIndex(ESM::WeaponType::ShortBladeOneHand) },
+                { "LongBladeOneHand", typeIndex(ESM::WeaponType::LongBladeOneHand) },
+                { "LongBladeTwoHand", typeIndex(ESM::WeaponType::LongBladeTwoHand) },
+                { "BluntOneHand", typeIndex(ESM::WeaponType::BluntOneHand) },
+                { "BluntTwoClose", typeIndex(ESM::WeaponType::BluntTwoClose) },
+                { "BluntTwoWide", typeIndex(ESM::WeaponType::BluntTwoWide) },
+                { "SpearTwoWide", typeIndex(ESM::WeaponType::SpearTwoWide) },
+                { "AxeOneHand", typeIndex(ESM::WeaponType::AxeOneHand) },
+                { "AxeTwoHand", typeIndex(ESM::WeaponType::AxeTwoHand) },
+                { "MarksmanBow", typeIndex(ESM::WeaponType::MarksmanBow) },
+                { "MarksmanCrossbow", typeIndex(ESM::WeaponType::MarksmanCrossbow) },
+                { "MarksmanThrown", typeIndex(ESM::WeaponType::MarksmanThrown) },
+                { "Arrow", typeIndex(ESM::WeaponType::Arrow) },
+                { "Bolt", typeIndex(ESM::WeaponType::Bolt) },
             }));
 
         auto vfs = MWBase::Environment::get().getResourceSystem()->getVFS();
@@ -134,7 +135,7 @@ namespace MWLua
         record["name"] = sol::readonly_property([](const ESM::Weapon& rec) -> std::string { return rec.mName; });
         addModelProperty(record);
         record["icon"] = sol::readonly_property([vfs](const ESM::Weapon& rec) -> std::string {
-            return Misc::ResourceHelpers::correctIconPath(VFS::Path::toNormalized(rec.mIcon), *vfs);
+            return Misc::ResourceHelpers::correctIconPath(rec.mIcon.getNormalized(), *vfs);
         });
         record["enchant"] = sol::readonly_property([](const ESM::Weapon& rec) -> ESM::RefId { return rec.mEnchant; });
         record["mwscript"] = sol::readonly_property([](const ESM::Weapon& rec) -> ESM::RefId { return rec.mScript; });
@@ -144,7 +145,8 @@ namespace MWLua
             [](const ESM::Weapon& rec) -> bool { return rec.mData.mFlags & ESM::Weapon::Silver; });
         record["weight"] = sol::readonly_property([](const ESM::Weapon& rec) -> float { return rec.mData.mWeight; });
         record["value"] = sol::readonly_property([](const ESM::Weapon& rec) -> int { return rec.mData.mValue; });
-        record["type"] = sol::readonly_property([](const ESM::Weapon& rec) -> int { return rec.mData.mType; });
+        record["type"] = sol::readonly_property(
+            [](const ESM::Weapon& rec) -> int { return ESM::Weapon::refIdToIndex(rec.mData.mType); });
         record["health"] = sol::readonly_property([](const ESM::Weapon& rec) -> int { return rec.mData.mHealth; });
         record["speed"] = sol::readonly_property([](const ESM::Weapon& rec) -> float { return rec.mData.mSpeed; });
         record["reach"] = sol::readonly_property([](const ESM::Weapon& rec) -> float { return rec.mData.mReach; });

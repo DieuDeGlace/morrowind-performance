@@ -4,22 +4,20 @@ on:
   workflow_call:
     inputs:
       image:
-        description: Window Server image
+        description: Windows Server image
         required: true
         type: string
       msvc:
         description: MSVC version (2022/2026)
         default: "2022"
         type: string
+      vcpkg-deps-tag:
+        description: Override vcpkg tag (reads CI/deps_versions.msvc.sh if empty)
+        default: ""
+        type: string
       build-type:
         default: RelWithDebInfo
         type: string
-      package:
-        default: false
-        type: boolean
-      release:
-        default: false
-        type: boolean
 
 jobs:
   Windows:
@@ -31,23 +29,38 @@ jobs:
       archive: FAILEDTODOWNLOAD
 
     steps:
-    - name: Install NSIS
-      if: ${{ inputs.package }}
-      run: choco install nsis
+    - uses: actions/checkout@v4
 
-    - uses: actions/checkout@v6
-
-    - shell: bash
-      name: Add deps version env to GITHUB_ENV, stripping comments
+    - name: Read dependency versions
+      shell: bash
       run: |
-        sed '/^\s*#/d; /^\s*$/d' "${{ github.workspace }}/CI/deps_versions.msvc.sh" >> $GITHUB_ENV
+        source CI/deps_versions.msvc.sh
+        echo "QT_VER=$QT_VER" >> $GITHUB_ENV
+
+    - name: Resolve vcpkg tag
+      shell: bash
+      run: |
+        if [[ -n "${{ inputs.vcpkg-deps-tag }}" ]]; then
+          echo "VCPKG_TAG=${{ inputs.vcpkg-deps-tag }}" >> $GITHUB_ENV
+        else
+          source CI/deps_versions.msvc.sh
+          echo "VCPKG_TAG=$VCPKG_TAG" >> $GITHUB_ENV
+        fi
 
     - name: Create directories for dependencies
       run: |
         mkdir -p ${{ github.workspace }}/deps
         mkdir -p ${{ github.workspace }}/deps/Qt
 
+    - name: Cache vcpkg deps
+      id: vcpkg-cache
+      uses: actions/cache@v4
+      with:
+        path: ${{ github.workspace }}/deps/vcpkg-x64-windows-${{ inputs.msvc }}-${{ env.VCPKG_TAG }}
+        key: vcpkg-deps-${{ inputs.msvc }}-${{ env.VCPKG_TAG }}
+
     - name: Download prebuilt vcpkg packages
+      if: steps.vcpkg-cache.outputs.cache-hit != 'true'
       working-directory: ${{ github.workspace }}/deps
       run: |
         $MANIFEST = "vcpkg-x64-windows-${{ inputs.msvc }}-${{ env.VCPKG_TAG }}-manifest.txt"
@@ -65,12 +78,13 @@ jobs:
         echo "archive=$FILE" >> $env:GITHUB_ENV
 
     - name: Extract archived prebuilt vcpkg packages
+      if: steps.vcpkg-cache.outputs.cache-hit != 'true'
       working-directory: ${{ github.workspace }}/deps
       run: 7z x -y -ovcpkg-x64-windows-${{ inputs.msvc }}-${{ env.VCPKG_TAG }} $env:archive
 
     - name: Cache Qt
       id: qt-cache
-      uses: actions/cache@v5
+      uses: actions/cache@v4
       with:
         path: ${{ github.workspace }}/deps/Qt/${{ env.QT_VER }}/msvc2019_64
         key: qt-cache-${{ env.QT_VER }}-msvc2019_64-v1
@@ -92,6 +106,12 @@ jobs:
 
     - uses: seanmiddleditch/gha-setup-ninja@master
 
+    - name: Prime ccache
+      uses: hendrikmuhs/ccache-action@v1
+      with:
+        key: windows-${{ inputs.msvc }}-${{ inputs.build-type }}
+        max-size: 2000M
+
     - name: Configure OpenMW
       run: >
         cmake
@@ -99,21 +119,26 @@ jobs:
         -B ${{ github.workspace }}/build
         -G Ninja
         -D CMAKE_BUILD_TYPE=${{ inputs.build-type }}
+        -D CMAKE_C_COMPILER_LAUNCHER=ccache
+        -D CMAKE_CXX_COMPILER_LAUNCHER=ccache
         -D CMAKE_TOOLCHAIN_FILE='${{ github.workspace }}/deps/vcpkg-x64-windows-${{ inputs.msvc }}-${{ env.VCPKG_TAG }}/scripts/buildsystems/vcpkg.cmake'
         -D CMAKE_PREFIX_PATH='${{ github.workspace }}/deps/Qt/${{ env.QT_VER }}/msvc2019_64'
-        ${{ inputs.package && '-D CMAKE_CXX_FLAGS_RELEASE="/O2 /Ob2 /DNDEBUG /Zi"' || '' }}
-        ${{ inputs.package && '-D "CMAKE_EXE_LINKER_FLAGS_RELEASE=/DEBUG /OPT:REF /OPT:ICF /INCREMENTAL:NO"' || '' }}
         -D LuaJit_INCLUDE_DIR='${{ github.workspace }}/deps/vcpkg-x64-windows-${{ inputs.msvc }}-${{ env.VCPKG_TAG }}/installed/x64-windows/include/luajit'
         -D LuaJit_LIBRARY='${{ github.workspace }}/deps/vcpkg-x64-windows-${{ inputs.msvc }}-${{ env.VCPKG_TAG }}/installed/x64-windows/lib/lua51.lib'
-        -D BUILD_BENCHMARKS=${{ ! inputs.package }}
-        -D BUILD_COMPONENTS_TESTS=${{ ! inputs.package }}
-        -D BUILD_OPENMW_TESTS=${{ ! inputs.package }}
-        -D BUILD_OPENCS_TESTS=${{ ! inputs.package }}
         -D OPENMW_USE_SYSTEM_SQLITE3=OFF
         -D OPENMW_USE_SYSTEM_YAML_CPP=OFF
         -D OPENMW_LTO_BUILD=ON
-        ${{ inputs.package && '-D "VCREDIST64=$env:VCToolsRedistDir/vc_redist.x64.exe"' || '' }}
-        -D CMAKE_EXPORT_COMPILE_COMMANDS=ON
+        -D BUILD_OPENMW=ON
+        -D BUILD_LAUNCHER=ON
+        -D BUILD_WIZARD=ON
+        -D BUILD_OPENCS=ON
+        -D BUILD_MWINIIMPORTER=ON
+        -D BUILD_ESSIMPORTER=ON
+        -D BUILD_BSATOOL=ON
+        -D BUILD_ESMTOOL=ON
+        -D BUILD_NIFTEST=ON
+        -D BUILD_NAVMESHTOOL=ON
+        -D BUILD_BULLETOBJECTTOOL=ON
 
     - name: Build OpenMW
       run: cmake --build ${{ github.workspace }}/build
@@ -143,119 +168,12 @@ jobs:
         mkdir ${{ github.workspace }}/build/iconengines
         cp plugins/iconengines/qsvgicon.dll ${{ github.workspace }}/build/iconengines
 
-    - name: Create symbol server directory structure
-      working-directory: ${{ github.workspace }}/build
-      run: |
-        ${{ github.workspace }}\CI\Store-Symbols.ps1
-        Move-Item ${{ github.workspace }}\build\SymStore ${{ github.workspace }}
-
-    - name: Move pdb files
-      run: |
-        robocopy build pdb *.pdb /MOVE
-        if ($lastexitcode -lt 8) {
-          $global:LASTEXITCODE = $null
-        }
-
-    - name: Install OpenMW
-      if: ${{ ! inputs.package }}
-      run: cmake --install ${{ github.workspace }}/build --prefix ${{ github.workspace }}/install
-
-    - name: Package OpenMW
-      if: ${{ inputs.package }}
-      run: |
-        cpack --config "${{ github.workspace }}/build/CPackConfig.cmake" -B "${{ github.workspace }}/install"
-        rm -r -Force "${{ github.workspace }}/install/_CPack_Packages"
-
-    - name: Remove extra pdb files
-      if: ${{ ! inputs.package }}
+    - name: Package
       shell: bash
-      run: |
-        rm -rf install/bin
-        rm -rf install/_deps
+      run: bash CI/package-windows.sh build . openmw-windows-x64
 
-    - name: Generate CI-ID.txt
-      shell: bash
-      env:
-        GH_TOKEN: ${{ github.token }}
-      run: |
-        job_url=$(gh run --repo ${{ github.repository }} view ${{ github.run_id }} --json jobs --jq '.jobs[] | select(.name == "windows-${{ inputs.msvc }}") | .url')
-        printf "Ref ${{ github.ref }}\nJob ${job_url}\nCommit ${{ github.sha }}\n" > install/CI-ID.txt
-        cp install/CI-ID.txt pdb/CI-ID.txt
-        cp install/CI-ID.txt SymStore/CI-ID.txt
-
-    - name: Store OpenMW archived pdb files
-      uses: actions/upload-artifact@v6
-      with:
-        name: openmw-windows-${{ inputs.msvc }}-pdb-${{ github.sha }}
-        path: ${{ github.workspace }}/pdb/*
-
-    - name: Store OpenMW build artifacts
-      uses: actions/upload-artifact@v6
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
       with:
         name: openmw-windows-${{ inputs.msvc }}-${{ github.sha }}
-        path: ${{ github.workspace }}/install/*
-
-    - name: Store symbol server artifacts
-      uses: actions/upload-artifact@v6
-      with:
-        name: openmw-windows-${{ inputs.msvc }}-sym-store-${{ github.sha }}
-        path: ${{ github.workspace }}/SymStore/*
-
-    - name: Store log etc. artifacts
-      uses: actions/upload-artifact@v6
-      with:
-        name: openmw-windows-${{ inputs.msvc }}-logs-and-stuff-${{ github.sha }}
-        path: |
-          ${{ github.workspace }}/build/compile_commands.json
-          ${{ github.workspace }}/build/**/*.log
-          ${{ github.workspace }}/build/**/*.ninja_log
-          ${{ github.workspace }}/build/**/CMakeCache.txt
-
-    - name: Upload to symbol server
-      env:
-        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        AWS_DEFAULT_REGION: eu-west-3
-      if: ${{ env.AWS_ACCESS_KEY_ID != '' && env.AWS_SECRET_ACCESS_KEY != '' && inputs.package }}
-      working-directory: ${{ github.workspace }}/SymStore
-      run: |
-        choco uninstall awscli -y
-        choco install awscli -y --version=2.22.35
-        aws --version
-        aws --endpoint-url https://rgw.ctrl-c.liu.se s3 sync --size-only --exclude * --include *.ex_ --include *.dl_ --include *.pd_ . s3://openmw-sym
-
-    - name: Add install directory to PATH
-      shell: bash
-      run: echo '${{ github.workspace }}/install' >> ${GITHUB_PATH}
-
-    - name: Run components tests
-      if: ${{ ! inputs.package }}
-      run: build/components-tests.exe
-
-    - name: Run OpenMW tests
-      if: ${{ ! inputs.package }}
-      run: build/openmw-tests.exe
-
-    - name: Run OpenMW-CS tests
-      if: ${{ ! inputs.package }}
-      run: build/openmw-cs-tests.exe
-
-    - name: Run detournavigator navmeshtilescache benchmark
-      if: ${{ ! inputs.package }}
-      run: build/openmw_detournavigator_navmeshtilescache_benchmark.exe
-
-    - name: Run settings access benchmark
-      if: ${{ ! inputs.package }}
-      run: build/openmw_settings_access_benchmark.exe
-
-    - name: Run esm refid benchmark
-      if: ${{ ! inputs.package }}
-      run: build/openmw_esm_refid_benchmark.exe
-
-    - name: Create prerelease
-      if: ${{ inputs.release }}
-      uses: softprops/action-gh-release@v2
-      with:
-        files: ${{ github.workspace }}/install/*.exe
-        prerelease: true
-        draft: true
+        path: openmw-windows-x64.zip

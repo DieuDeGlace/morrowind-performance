@@ -1,88 +1,59 @@
-name: Build and test
+name: Windows Performance Release
 
 on:
   workflow_dispatch:
 
-env:
-  BUILD_TYPE: RelWithDebInfo
+permissions:
+  contents: read
 
 jobs:
-  Ubuntu:
-    runs-on: ubuntu-latest
-
+  shadow-filter:
+    runs-on: ubuntu-24.04
     steps:
-    - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install headless GPU test dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends libegl1 libgl1-mesa-dri
+          python -m pip install moderngl==5.12.0 numpy==2.2.6
+      - name: Render shadow filter regression fixtures
+        env:
+          LIBGL_ALWAYS_SOFTWARE: '1'
+          OPENBLAS_NUM_THREADS: '1'
+        run: python CI/test-shadow-filter-gpu.py --report shadow-filter-gpu.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Windows-shadow-filter-GPU-tests
+          path: shadow-filter-gpu.json
+          if-no-files-found: error
 
-    - name: Add OpenMW PPA Dependencies
-      run: sudo add-apt-repository ppa:openmw/openmw; sudo apt-get update
+  windows:
+    needs: shadow-filter
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Build, test, and package Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: ./CI/build-windows-release.ps1 -Jobs 4
+      - uses: actions/upload-artifact@v4
+        with:
+          name: OpenMW-performance-Windows-x64
+          path: release/*.zip
+          if-no-files-found: error
 
-    - name: Install Building Dependencies
-      run: sudo CI/install_debian_deps.sh gcc openmw-deps openmw-deps-dynamic
-
-    - name: Prime ccache
-      uses: hendrikmuhs/ccache-action@v1
-      with:
-        key: ${{ matrix.os }}-${{ env.BUILD_TYPE }}
-        max-size: 1000M
-
-    - name: Configure
-      run: >
-        cmake .
-        -D CMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
-        -D OPENMW_USE_SYSTEM_RECASTNAVIGATION=ON
-        -D USE_SYSTEM_TINYXML=ON
-        -D BUILD_COMPONENTS_TESTS=ON
-        -D BUILD_OPENMW_TESTS=ON
-        -D BUILD_OPENCS_TESTS=ON
-        -D CMAKE_INSTALL_PREFIX=install
-
-    - name: Build
-      run: cmake --build . -- -j$(nproc)
-
-    - name: Run components tests
-      run: ./components-tests
-
-    - name: Run OpenMW tests
-      run: ./openmw-tests
-
-    - name: Run OpenMW-CS tests
-      run: ./openmw-cs-tests
-
-    # - name: Install
-    #   shell: bash
-    #   run: cmake --install .
-
-    # - name: Create Artifact
-    #   shell: bash
-    #   working-directory: install
-    #   run: |
-    #     ls -laR
-    #     7z a ../build_artifact.7z .
-
-    # - name: Upload Artifact
-    #   uses: actions/upload-artifact@v1
-    #   with:
-    #     path: ./build_artifact.7z
-    #     name: build_artifact.7z
-
-  MacOS:
-    strategy:
-      fail-fast: true
-      matrix:
-        args:
-          - image: macos-15
-          - image: macos-15-intel
-    uses: ./.github/workflows/macos.yml
-    with:
-      image: ${{ matrix.args.image }}
-
-  Windows:
-    strategy:
-      fail-fast: true
-      matrix:
-        image:
-        - "2022"
-
-    uses: ./.github/workflows/windows.yml
-    with:
-      image: ${{ matrix.image }}
+      - name: Preserve release staging and test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenMW-release-staging-and-tests
+          path: |
+            release/
+            build-release/*-tests.xml
+          if-no-files-found: ignore

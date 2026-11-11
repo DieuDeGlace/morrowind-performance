@@ -1,0 +1,2 @@
+GLOBAL: scripts/item_physics_test.lua
+MENU: scripts/item_physics_test_menu.lua

@@ -1,5 +1,7 @@
 #include "shadow.hpp"
 
+#include <limits>
+
 #include <osgShadow/ShadowSettings>
 #include <osgShadow/ShadowedScene>
 
@@ -32,15 +34,11 @@ namespace SceneUtil
     {
         mEnableShadows = settings.mEnableShadows;
 
-        if (!mEnableShadows)
-        {
+        if (mEnableShadows)
+            mShadowTechnique->enableShadows();
+        else
             mShadowTechnique->disableShadows();
-            return;
-        }
 
-        mShadowTechnique->enableShadows();
-
-        mShadowSettings->setLightNum(0);
         mShadowSettings->setReceivesShadowTraversalMask(~0u);
 
         const int numberOfShadowMapsPerLight = settings.mNumberOfShadowMaps;
@@ -53,8 +51,13 @@ namespace SceneUtil
         if (maximumShadowMapDistance > 0)
         {
             const float shadowFadeStart = settings.mShadowFadeStart;
-            mShadowSettings->setMaximumShadowMapDistance(maximumShadowMapDistance);
+            mShadowTechnique->setMaximumShadowMapDistance(maximumShadowMapDistance);
             mShadowTechnique->setShadowFadeStart(maximumShadowMapDistance * shadowFadeStart);
+        }
+        else
+        {
+            mShadowTechnique->setMaximumShadowMapDistance(std::numeric_limits<float>::max());
+            mShadowTechnique->setShadowFadeStart(std::numeric_limits<float>::max());
         }
 
         mShadowSettings->setMinimumShadowMapNearFarRatio(settings.mMinimumLispsmNearFarRatio);
@@ -64,6 +67,8 @@ namespace SceneUtil
             mShadowSettings->setComputeNearFarModeOverride(osg::CullSettings::COMPUTE_NEAR_FAR_USING_PRIMITIVES);
         else if (Misc::StringUtils::ciEqual(computeSceneBounds, "bounds"))
             mShadowSettings->setComputeNearFarModeOverride(osg::CullSettings::COMPUTE_NEAR_FAR_USING_BOUNDING_VOLUMES);
+        else
+            mShadowSettings->setComputeNearFarModeOverride(osg::CullSettings::DO_NOT_COMPUTE_NEAR_FAR);
 
         const short mapres = static_cast<short>(settings.mShadowMapResolution);
         mShadowSettings->setTextureSize(osg::Vec2s(mapres, mapres));
@@ -90,17 +95,29 @@ namespace SceneUtil
         mShadowSettings->setShadowMapProjectionHint(osgShadow::ShadowSettings::ORTHOGRAPHIC_SHADOW_MAP);
 #endif
 
-        if (settings.mEnableDebugHud)
+        if (mEnableShadows && settings.mEnableDebugHud)
             mShadowTechnique->enableDebugHUD();
         else
             mShadowTechnique->disableDebugHUD();
     }
 
+    void ShadowManager::setOutdoorShadowCastingMask(unsigned int mask)
+    {
+        mOutdoorShadowCastingMask = mask;
+    }
+
+    void ShadowManager::setIndoorShadowCastingMask(unsigned int mask)
+    {
+        mIndoorShadowCastingMask = mask;
+    }
+
+    void ShadowManager::setupShaders(Shader::ShaderManager& shaderManager) const
+    {
+        mShadowTechnique->setupCastingShader(shaderManager);
+    }
+
     void ShadowManager::disableShadowsForStateSet(osg::StateSet& stateset) const
     {
-        if (!mEnableShadows)
-            return;
-
         osg::ref_ptr<osg::Image> fakeShadowMapImage = new osg::Image();
 #ifdef ANDROID
         // OPENMW_ANDROID_051_GLES2_MANUAL_SHADOW_COMPARE
@@ -160,7 +177,6 @@ namespace SceneUtil
         mShadowSettings = mShadowedScene->getShadowSettings();
         setupShadowSettings(settings, shaderManager);
 
-        mShadowTechnique->setupCastingShader(shaderManager);
         mShadowTechnique->setWorldMask(worldMask);
 #ifdef ANDROID
         const bool depthRestoreSupported = gl4es_getDepthCopySupport && gl4es_getDepthCopySupport();
@@ -182,7 +198,7 @@ namespace SceneUtil
 
     Shader::ShaderManager::DefineMap ShadowManager::getShadowDefines(const Settings::ShadowsCategory& settings) const
     {
-        if (!mEnableShadows)
+        if (!settings.mEnableShadows)
             return getShadowsDisabledDefines();
 
         Shader::ShaderManager::DefineMap definesWithShadows;
@@ -208,6 +224,7 @@ namespace SceneUtil
         definesWithShadows["limitShadowMapDistance"] = settings.mMaximumShadowMapDistance > 0 ? "1" : "0";
 
         definesWithShadows["softShadows"] = settings.mSoftShadows ? "1" : "0";
+        definesWithShadows["softShadowRadius"] = std::to_string(settings.mSoftShadowRadius.get());
         definesWithShadows["shadowMapResolution"] = std::to_string(settings.mShadowMapResolution) + ".0";
 
         return definesWithShadows;
@@ -232,6 +249,7 @@ namespace SceneUtil
         definesWithoutShadows["limitShadowMapDistance"] = "0";
 
         definesWithoutShadows["softShadows"] = "0";
+        definesWithoutShadows["softShadowRadius"] = "1.0";
         definesWithoutShadows["shadowMapResolution"] = "1024.0";
 
         return definesWithoutShadows;
@@ -249,13 +267,6 @@ namespace SceneUtil
     {
         if (mEnableShadows)
             mShadowTechnique->enableShadows();
-        mShadowSettings->setCastsShadowTraversalMask(mOutdoorShadowCastingMask);
-    }
-
-    void ShadowManager::updateCastingMasks(unsigned int outdoorMask, unsigned int indoorMask)
-    {
-        mOutdoorShadowCastingMask = outdoorMask;
-        mIndoorShadowCastingMask = indoorMask;
         mShadowSettings->setCastsShadowTraversalMask(mOutdoorShadowCastingMask);
     }
 }

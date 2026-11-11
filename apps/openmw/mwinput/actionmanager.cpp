@@ -29,11 +29,9 @@
 namespace MWInput
 {
 
-    ActionManager::ActionManager(BindingsManager* bindingsManager, osg::ref_ptr<osgViewer::Viewer> viewer,
-        osg::ref_ptr<osgViewer::ScreenCaptureHandler> screenCaptureHandler)
+    ActionManager::ActionManager(BindingsManager* bindingsManager, std::function<void()> takeScreenshot)
         : mBindingsManager(bindingsManager)
-        , mViewer(std::move(viewer))
-        , mScreenCaptureHandler(std::move(screenCaptureHandler))
+        , mTakeScreenshot(std::move(takeScreenshot))
         , mTimeIdle(0.f)
     {
     }
@@ -177,8 +175,7 @@ namespace MWInput
 
     void ActionManager::screenshot()
     {
-        mScreenCaptureHandler->setFramesToCapture(1);
-        mScreenCaptureHandler->captureNextFrame(*mViewer);
+        mTakeScreenshot();
     }
 
     void ActionManager::toggleMainMenu()
@@ -334,7 +331,7 @@ namespace MWInput
 
         mGrabAttempted = true;
         if (sameTarget)
-            MWPhysics::Ragdoll::grab(player.getPlayer(), focus, world->getFocusHitPosition());
+            MWPhysics::Ragdoll::grab(player.getPlayer(), focus, world->getFocusRay().mHitPos);
     }
 
     void ActionManager::cancelCorpseActivation()

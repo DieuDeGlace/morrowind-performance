@@ -141,7 +141,7 @@ namespace MWRender
         if (glowColor != nullptr)
             mGlowUpdater = SceneUtil::addEnchantedGlow(instance, mResourceSystem, *glowColor);
 
-        return std::make_unique<PartHolder>(instance);
+        return std::make_unique<PartHolder>(instance, model);
     }
 
     osg::ref_ptr<osg::Node> ActorAnimation::attach(
@@ -163,7 +163,7 @@ namespace MWRender
             std::move(templateNode), mObjectRoot, bonefilter, found->second, mResourceSystem->getSceneManager());
     }
 
-    std::string ActorAnimation::getShieldMesh(const MWWorld::ConstPtr& shield, bool female) const
+    VFS::Path::Normalized ActorAnimation::getShieldMesh(const MWWorld::ConstPtr& shield, bool female) const
     {
         const ESM::Armor* armor = shield.get<ESM::Armor>()->mBase;
         const std::vector<ESM::PartReference>& bodyparts = armor->mParts.mParts;
@@ -187,9 +187,9 @@ namespace MWRender
                 {
                     const ESM::BodyPart* bodypart = partStore.search(*bodypartName);
                     if (bodypart == nullptr || bodypart->mData.mType != ESM::BodyPart::MT_Armor)
-                        return std::string();
-                    if (!bodypart->mModel.empty())
-                        return Misc::ResourceHelpers::correctMeshPath(VFS::Path::Normalized(bodypart->mModel)).value();
+                        return VFS::Path::Normalized();
+                    if (!bodypart->mModel.getNormalized().empty())
+                        return Misc::ResourceHelpers::correctMeshPath(bodypart->mModel.getNormalized());
                 }
             }
         }
@@ -217,7 +217,7 @@ namespace MWRender
         return mesh;
     }
 
-    bool ActorAnimation::updateCarriedLeftVisible(const int weaptype) const
+    bool ActorAnimation::updateCarriedLeftVisible(ESM::RefId weaptype) const
     {
         if (Settings::game().mShieldSheathing && mObjectRoot)
         {
@@ -269,7 +269,7 @@ namespace MWRender
         if (type == ESM::Weapon::sRecordId)
         {
             const MWWorld::LiveCellRef<ESM::Weapon>* ref = weapon->get<ESM::Weapon>();
-            ESM::Weapon::Type weaponType = (ESM::Weapon::Type)ref->mBase->mData.mType;
+            const ESM::RefId weaponType = ref->mBase->mData.mType;
             if (MWMechanics::getWeaponType(weaponType)->mFlags & ESM::WeaponType::TwoHanded)
                 return;
         }
@@ -329,7 +329,7 @@ namespace MWRender
             if (type == ESM::Weapon::sRecordId)
             {
                 const MWWorld::LiveCellRef<ESM::Weapon>* ref = weapon->get<ESM::Weapon>();
-                ESM::Weapon::Type weaponType = (ESM::Weapon::Type)ref->mBase->mData.mType;
+                const ESM::RefId weaponType = ref->mBase->mData.mType;
                 return !(MWMechanics::getWeaponType(weaponType)->mFlags & ESM::WeaponType::TwoHanded);
             }
             else if (type == ESM::Lockpick::sRecordId || type == ESM::Probe::sRecordId)
@@ -359,7 +359,7 @@ namespace MWRender
         if (type == ESM::Weapon::sRecordId)
         {
             const MWWorld::LiveCellRef<ESM::Weapon>* ref = weapon.get<ESM::Weapon>();
-            int weaponType = ref->mBase->mData.mType;
+            const ESM::RefId weaponType = ref->mBase->mData.mType;
             return MWMechanics::getWeaponType(weaponType)->mSheathingBone;
         }
 
@@ -392,7 +392,7 @@ namespace MWRender
             return;
 
         // Since throwing weapons stack themselves, do not show such weapon itself
-        int type = weapon->get<ESM::Weapon>()->mBase->mData.mType;
+        const ESM::RefId type = weapon->get<ESM::Weapon>()->mBase->mData.mType;
         auto weaponClass = MWMechanics::getWeaponType(type)->mWeaponClass;
         if (weaponClass == ESM::WeaponType::Thrown)
             showHolsteredWeapons = false;
@@ -478,7 +478,7 @@ namespace MWRender
         if (weapon == inv.end() || weapon->getType() != ESM::Weapon::sRecordId)
             return;
 
-        std::string_view mesh = weapon->getClass().getModel(*weapon);
+        const VFS::Path::NormalizedView mesh = weapon->getClass().getModel(*weapon);
         std::string_view boneName = getHolsteredWeaponBoneName(*weapon);
         if (mesh.empty() || boneName.empty())
             return;
@@ -491,7 +491,7 @@ namespace MWRender
         bool suitableAmmo = false;
         MWWorld::ConstContainerStoreIterator ammo = weapon;
         unsigned int ammoCount = 0;
-        int type = weapon->get<ESM::Weapon>()->mBase->mData.mType;
+        const ESM::RefId type = weapon->get<ESM::Weapon>()->mBase->mData.mType;
         const auto& weaponType = MWMechanics::getWeaponType(type);
         if (weaponType->mWeaponClass == ESM::WeaponType::Thrown)
         {
@@ -566,7 +566,7 @@ namespace MWRender
             return;
 
         MWWorld::ConstContainerStoreIterator ammo = inv.end();
-        int type = weapon->get<ESM::Weapon>()->mBase->mData.mType;
+        const ESM::RefId type = weapon->get<ESM::Weapon>()->mBase->mData.mType;
         if (MWMechanics::getWeaponType(type)->mWeaponClass == ESM::WeaponType::Thrown)
             ammo = weapon;
         else
@@ -600,7 +600,7 @@ namespace MWRender
             return;
 
         MWWorld::ConstContainerStoreIterator ammo = inv.end();
-        int type = weapon->get<ESM::Weapon>()->mBase->mData.mType;
+        const ESM::RefId type = weapon->get<ESM::Weapon>()->mBase->mData.mType;
         if (MWMechanics::getWeaponType(type)->mWeaponClass == ESM::WeaponType::Thrown)
             ammo = weapon;
         else

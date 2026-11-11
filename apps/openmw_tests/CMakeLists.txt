@@ -16,14 +16,22 @@ file(GLOB UNITTEST_SRC_FILES
     mwworld/testduration.cpp
     mwworld/testtimestamp.cpp
     mwworld/testptr.cpp
+    mwworld/testlocalscripts.cpp
     mwworld/testweather.cpp
+    mwworld/testpositioncellgrid.cpp
 
     mwdialogue/testkeywordsearch.cpp
 
     mwgui/tooltips.cpp
     mwgui/weightedsearch.cpp
 
+    mwlua/testobjectcache.cpp
+    mwlua/testmwscriptbindings.cpp
+
     mwscript/testscripts.cpp
+
+    mwsound/testheadcache.cpp
+    mwsound/testwarmqueue.cpp
 )
 
 if (MSVC)

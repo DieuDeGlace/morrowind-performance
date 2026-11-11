@@ -1,0 +1,26 @@
+name: Windows Physics Runtime Probe
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [codex/native-item-physics]
+    paths: ['.github/workflows/physics-probe.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  runtime:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Build engine for gameplay verification
+        shell: pwsh
+        run: ./CI/build-windows-runtime-probe.ps1 -Jobs 4
+      - uses: actions/upload-artifact@v4
+        with:
+          name: OpenMW-physics-runtime-probe
+          path: release/OpenMW-physics-runtime-probe.zip
+          if-no-files-found: error

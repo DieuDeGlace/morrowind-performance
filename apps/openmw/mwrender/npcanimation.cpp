@@ -2,7 +2,6 @@
 
 #include <osg/Depth>
 #include <osg/MatrixTransform>
-#include <osg/UserDataContainer>
 
 #include <osgUtil/CullVisitor>
 #include <osgUtil/RenderBin>
@@ -21,6 +20,8 @@
 #include <components/sceneutil/depth.hpp>
 #include <components/sceneutil/keyframe.hpp>
 #include <components/sceneutil/lightcommon.hpp>
+#include <components/sceneutil/textkeymap.hpp>
+#include <components/sceneutil/userdata.hpp>
 #include <components/sceneutil/visitor.hpp>
 #include <components/settings/values.hpp>
 
@@ -49,37 +50,44 @@
 namespace
 {
 
-    std::string getVampireHead(const ESM::RefId& race, bool female)
+    VFS::Path::Normalized getVampireHead(ESM::RefId race, bool female)
     {
-        static std::map<std::pair<ESM::RefId, int>, const ESM::BodyPart*> sVampireMapping;
+        static std::map<std::pair<ESM::RefId, bool>, const ESM::BodyPart*> sVampireMapping;
 
-        std::pair<ESM::RefId, int> thisCombination = std::make_pair(race, int(female));
+        const std::pair<ESM::RefId, bool> key(race, female);
+        const ESM::BodyPart* vampireHead = nullptr;
 
-        if (sVampireMapping.find(thisCombination) == sVampireMapping.end())
+        if (const auto it = sVampireMapping.find(key); it == sVampireMapping.end())
         {
             const MWWorld::ESMStore& store = *MWBase::Environment::get().getESMStore();
-            for (const ESM::BodyPart& bodypart : store.get<ESM::BodyPart>())
+
+            for (const ESM::BodyPart& bodyPart : store.get<ESM::BodyPart>())
             {
-                if (!bodypart.mData.mVampire)
+                if (!bodyPart.mData.mVampire)
                     continue;
-                if (bodypart.mData.mType != ESM::BodyPart::MT_Skin)
+                if (bodyPart.mData.mType != ESM::BodyPart::MT_Skin)
                     continue;
-                if (bodypart.mData.mPart != ESM::BodyPart::MP_Head)
+                if (bodyPart.mData.mPart != ESM::BodyPart::MP_Head)
                     continue;
-                if (female != (bodypart.mData.mFlags & ESM::BodyPart::BPF_Female))
+                if (female != (bodyPart.mData.mFlags & ESM::BodyPart::BPF_Female))
                     continue;
-                if (!(bodypart.mRace == race))
+                if (!(bodyPart.mRace == race))
                     continue;
-                sVampireMapping[thisCombination] = &bodypart;
+
+                vampireHead = &bodyPart;
             }
+
+            sVampireMapping.emplace_hint(it, key, vampireHead);
+        }
+        else
+        {
+            vampireHead = it->second;
         }
 
-        sVampireMapping.emplace(thisCombination, nullptr);
+        if (vampireHead == nullptr)
+            return {};
 
-        const ESM::BodyPart* bodyPart = sVampireMapping[thisCombination];
-        if (!bodyPart)
-            return std::string();
-        return Misc::ResourceHelpers::correctMeshPath(VFS::Path::Normalized(bodyPart->mModel)).value();
+        return Misc::ResourceHelpers::correctMeshPath(vampireHead->mModel.getNormalized());
     }
 
 }
@@ -303,9 +311,9 @@ namespace MWRender
 
         if (viewChange && Settings::game().mShieldSheathing)
         {
-            int weaptype = ESM::Weapon::None;
-            MWMechanics::getActiveWeapon(mPtr, &weaptype);
-            showCarriedLeft(updateCarriedLeftVisible(weaptype));
+            ESM::RefId weaponTypeId;
+            MWMechanics::getActiveWeapon(mPtr, &weaponTypeId);
+            showCarriedLeft(updateCarriedLeftVisible(weaponTypeId));
         }
     }
 
@@ -473,7 +481,7 @@ namespace MWRender
         {
             const ESM::BodyPart* bp = store.get<ESM::BodyPart>().search(headName);
             if (bp)
-                mHeadModel = Misc::ResourceHelpers::correctMeshPath(VFS::Path::Normalized(bp->mModel));
+                mHeadModel = Misc::ResourceHelpers::correctMeshPath(bp->mModel.getNormalized());
             else
                 Log(Debug::Warning) << "Warning: Failed to load body part '" << headName << "'";
         }
@@ -482,14 +490,14 @@ namespace MWRender
         {
             const ESM::BodyPart* bp = store.get<ESM::BodyPart>().search(hairName);
             if (bp)
-                mHairModel = Misc::ResourceHelpers::correctMeshPath(VFS::Path::Normalized(bp->mModel));
+                mHairModel = Misc::ResourceHelpers::correctMeshPath(bp->mModel.getNormalized());
             else
                 Log(Debug::Warning) << "Warning: Failed to load body part '" << hairName << "'";
         }
 
-        const std::string vampireHead = getVampireHead(mNpc->mRace, isFemale);
-        if (!isWerewolf && isVampire && !vampireHead.empty())
-            mHeadModel = vampireHead;
+        if (!isWerewolf && isVampire)
+            if (VFS::Path::Normalized vampireHead = getVampireHead(mNpc->mRace, isFemale); !vampireHead.empty())
+                mHeadModel = std::move(vampireHead);
 
         bool is1stPerson = mViewMode == VM_FirstPerson;
         bool isBeast = (race->mData.mFlags & ESM::Race::Beast) != 0;
@@ -511,7 +519,7 @@ namespace MWRender
         bool isCustomModel = false;
         if (!is1stPerson && !isWerewolf && !mNpc->mModel.empty())
         {
-            VFS::Path::Normalized model = Misc::ResourceHelpers::correctMeshPath(VFS::Path::Normalized(mNpc->mModel));
+            const VFS::Path::Normalized model = Misc::ResourceHelpers::correctMeshPath(mNpc->mModel.getNormalized());
             isCustomModel = !isDefaultActorSkeleton(model);
             smodel = Misc::ResourceHelpers::correctActorModelPath(model, mResourceSystem->getVFS());
         }
@@ -659,7 +667,7 @@ namespace MWRender
             {
                 const ESM::Light* light = part.get<ESM::Light>()->mBase;
                 addOrReplaceIndividualPart(ESM::PRT_Shield, MWWorld::InventoryStore::Slot_CarriedLeft, 1,
-                    Misc::ResourceHelpers::correctMeshPath(VFS::Path::Normalized(light->mModel)), false, nullptr, true);
+                    Misc::ResourceHelpers::correctMeshPath(light->mModel.getNormalized()), false, nullptr, true);
                 if (mObjectParts[ESM::PRT_Shield])
                     addExtraLight(mObjectParts[ESM::PRT_Shield]->getNode()->asGroup(), SceneUtil::LightCommon(*light));
             }
@@ -679,7 +687,7 @@ namespace MWRender
             {
                 if (const ESM::BodyPart* bodypart = parts[part])
                     addOrReplaceIndividualPart(static_cast<ESM::PartReferenceType>(part), -1, 1,
-                        Misc::ResourceHelpers::correctMeshPath(VFS::Path::Normalized(bodypart->mModel)));
+                        Misc::ResourceHelpers::correctMeshPath(bodypart->mModel.getNormalized()));
             }
         }
 
@@ -694,7 +702,7 @@ namespace MWRender
         if (enchantedGlow)
             mGlowUpdater = SceneUtil::addEnchantedGlow(attached, mResourceSystem, *glowColor);
 
-        return std::make_unique<PartHolder>(std::move(attached));
+        return std::make_unique<PartHolder>(std::move(attached), model);
     }
 
     osg::Vec3f NpcAnimation::runAnimation(float timepassed)
@@ -778,8 +786,8 @@ namespace MWRender
                 MWWorld::ConstContainerStoreIterator weapon = inv.getSlot(MWWorld::InventoryStore::Slot_CarriedRight);
                 if (weapon != inv.end() && weapon->getType() == ESM::Weapon::sRecordId)
                 {
-                    int weaponType = weapon->get<ESM::Weapon>()->mBase->mData.mType;
-                    const std::string& weaponBonename = MWMechanics::getWeaponType(weaponType)->mAttachBone;
+                    const ESM::RefId weaponTypeId = weapon->get<ESM::Weapon>()->mBase->mData.mType;
+                    const std::string& weaponBonename = MWMechanics::getWeaponType(weaponTypeId)->mAttachBone;
 
                     if (weaponBonename != bonename)
                     {
@@ -825,27 +833,18 @@ namespace MWRender
             {
                 src = mHeadAnimationTime;
 
-                if (node->getUserDataContainer())
+                if (const SceneUtil::TextKeyMap* keys = SceneUtil::findUserData<SceneUtil::TextKeyMap>(*node))
                 {
-                    for (unsigned int i = 0; i < node->getUserDataContainer()->getNumUserObjects(); ++i)
+                    for (const auto& key : *keys)
                     {
-                        osg::Object* obj = node->getUserDataContainer()->getUserObject(i);
-                        if (SceneUtil::TextKeyMapHolder* keys = dynamic_cast<SceneUtil::TextKeyMapHolder*>(obj))
-                        {
-                            for (const auto& key : keys->mTextKeys)
-                            {
-                                if (Misc::StringUtils::ciEqual(key.second, "talk: start"))
-                                    mHeadAnimationTime->setTalkStart(key.first);
-                                if (Misc::StringUtils::ciEqual(key.second, "talk: stop"))
-                                    mHeadAnimationTime->setTalkStop(key.first);
-                                if (Misc::StringUtils::ciEqual(key.second, "blink: start"))
-                                    mHeadAnimationTime->setBlinkStart(key.first);
-                                if (Misc::StringUtils::ciEqual(key.second, "blink: stop"))
-                                    mHeadAnimationTime->setBlinkStop(key.first);
-                            }
-
-                            break;
-                        }
+                        if (Misc::StringUtils::ciEqual(key.second, "talk: start"))
+                            mHeadAnimationTime->setTalkStart(key.first);
+                        if (Misc::StringUtils::ciEqual(key.second, "talk: stop"))
+                            mHeadAnimationTime->setTalkStop(key.first);
+                        if (Misc::StringUtils::ciEqual(key.second, "blink: start"))
+                            mHeadAnimationTime->setBlinkStart(key.first);
+                        if (Misc::StringUtils::ciEqual(key.second, "blink: stop"))
+                            mHeadAnimationTime->setBlinkStop(key.first);
                     }
                 }
                 SceneUtil::ForceControllerSourcesVisitor assignVisitor(std::move(src));
@@ -910,8 +909,7 @@ namespace MWRender
 
             if (bodypart)
                 addOrReplaceIndividualPart(static_cast<ESM::PartReferenceType>(part.mPart), group, priority,
-                    Misc::ResourceHelpers::correctMeshPath(VFS::Path::Normalized(bodypart->mModel)), enchantedGlow,
-                    glowColor);
+                    Misc::ResourceHelpers::correctMeshPath(bodypart->mModel.getNormalized()), enchantedGlow, glowColor);
             else
                 reserveIndividualPart((ESM::PartReferenceType)part.mPart, group, priority);
         }
@@ -963,9 +961,10 @@ namespace MWRender
 
                 // Crossbows start out with a bolt attached
                 if (weapon->getType() == ESM::Weapon::sRecordId
-                    && weapon->get<ESM::Weapon>()->mBase->mData.mType == ESM::Weapon::MarksmanCrossbow)
+                    && weapon->get<ESM::Weapon>()->mBase->mData.mType == ESM::WeaponType::MarksmanCrossbow)
                 {
-                    int ammotype = MWMechanics::getWeaponType(ESM::Weapon::MarksmanCrossbow)->mAmmoType;
+                    const ESM::RefId ammotype
+                        = MWMechanics::getWeaponType(ESM::WeaponType::MarksmanCrossbow)->mAmmoType;
                     MWWorld::ConstContainerStoreIterator ammo = inv.getSlot(MWWorld::InventoryStore::Slot_Ammunition);
                     if (ammo != inv.end() && ammo->get<ESM::Weapon>()->mBase->mData.mType == ammotype)
                         attachArrow();
@@ -984,7 +983,7 @@ namespace MWRender
         updateQuiver();
     }
 
-    bool NpcAnimation::updateCarriedLeftVisible(const int weaptype) const
+    bool NpcAnimation::updateCarriedLeftVisible(ESM::RefId weaptype) const
     {
         if (Settings::game().mShieldSheathing)
         {
@@ -1064,9 +1063,9 @@ namespace MWRender
         updateQuiver();
     }
 
-    void NpcAnimation::releaseArrow(float attackStrength)
+    void NpcAnimation::releaseArrow(float attackStrength, float attackWindUp)
     {
-        WeaponAnimation::releaseArrow(mPtr, attackStrength);
+        WeaponAnimation::releaseArrow(mPtr, attackStrength, attackWindUp);
         updateQuiver();
     }
 
@@ -1081,9 +1080,9 @@ namespace MWRender
         if (weapon == inv.end() || weapon->getType() != ESM::Weapon::sRecordId)
             return nullptr;
 
-        int type = weapon->get<ESM::Weapon>()->mBase->mData.mType;
-        int ammoType = MWMechanics::getWeaponType(type)->mAmmoType;
-        if (ammoType == ESM::Weapon::None)
+        const ESM::RefId type = weapon->get<ESM::Weapon>()->mBase->mData.mType;
+        const ESM::RefId ammoType = MWMechanics::getWeaponType(type)->mAmmoType;
+        if (ammoType.empty())
             return nullptr;
 
         // Try to find and attachment bone in actor's skeleton, otherwise fall back to the ArrowBone in weapon's mesh
@@ -1124,9 +1123,9 @@ namespace MWRender
     {
         if (Settings::game().mShieldSheathing)
         {
-            int weaptype = ESM::Weapon::None;
-            MWMechanics::getActiveWeapon(mPtr, &weaptype);
-            showCarriedLeft(updateCarriedLeftVisible(weaptype));
+            ESM::RefId weaponTypeId;
+            MWMechanics::getActiveWeapon(mPtr, &weaponTypeId);
+            showCarriedLeft(updateCarriedLeftVisible(weaponTypeId));
         }
 
         updateParts();
