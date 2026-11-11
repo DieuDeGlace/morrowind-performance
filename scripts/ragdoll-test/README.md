@@ -1,0 +1,112 @@
+# Native ragdoll experiment
+
+Actor and object physics are enabled by default, including when starting
+openmw-launcher.exe or openmw.exe directly. OPENMW_RAGDOLLS=0 disables the
+native physics backend; OPENMW_ITEMS=0 disables only native items.
+Actor animations hand off
+all NPC and creature models at death. The Bip01 and BBip01 maps cover humanoids
+and creatures with matching bones. Tuned maps also cover cliff racer wings and
+tail, shalk legs, and mudcrab claws and legs.
+
+Other models use automatic discovery of skin bones, OSG bones, or separate rigid
+mesh parts. Their actual hierarchy, bounds, death pose and reference scale
+determine the bodies and joints. Incomplete custom Bip01 rigs also use this
+fallback. Generated rigs are capped at 24 bodies; the largest segments get
+priority over tiny facial/finger bones.
+
+Large, genuinely deforming body morphs can now receive a death-only skin fitted
+to their own original morph animation. This includes the kwama forager and
+applicable body meshes on bonelords, netches and mixed skeleton/morph creatures.
+Normal living morph playback is unchanged. Conversion binds to the exact pose
+at death, shares fitted weights with matching shadow meshes, and restores the
+original drawables/controllers on resurrection. No replacement NIFs or game
+assets are bundled. This is articulated rigid-body physics, without elastic
+impact-driven squash/stretch.
+
+The fitter samples up to 64 authored poses and 512 training vertices, learns
+up to six body regions, and blends up to three influences per vertex. Layouts
+are cached for at most 64 mesh templates. At most 16 generated parts (including
+endpoint helpers) fit inside the existing 24-body automatic-rig limit. Small
+face/effect morphs, rigid-only morph motion, unsupported controllers, very large
+meshes and malformed data retain their existing handling. Models still lacking
+usable joints use a whole-model body; the simultaneous-rig limits still apply.
+
+The rig parts use the original skeleton and a shared Bullet solver. They
+collide with terrain, doors and world geometry. Player melee can wake a
+settled corpse and push the part it reaches. Bodies retain their inventory
+and ordinary activation. Tap Activate to loot a supported corpse. Hold
+Activate for about a third of a second to grab a limb, then walk or look
+around to drag it. Releasing Activate drops the body. Joint poses are
+session-only.
+
+The solver takes fixed 120 Hz steps while bodies are awake and stops when
+the last rig or item settles. It caps simultaneous awake rigs at 12 and retained
+rigs at 64. Rig bodies stay outside the normal actor movement and ray query
+filters. Rig profiles are in apps/openmw/mwphysics/ragdoll.cpp.
+
+## Replay
+
+Use a disposable OpenMW profile. Add the data directory here and load
+RagdollTest.omwscripts after the Morrowind masters. Start with --skip-menu
+--start "Seyda Neen". The scene prepares several corpses in the Census
+Office so you can aim a normal attack at them.
+
+To run the automated replay, put an empty ragdoll-smoke.txt in the same
+data directory. The replay checks indoor death and inventory, delivers
+player melee swings, then stages five exterior creatures and swings a
+sword at a guar. The log records rig creation, articulation, settling
+and hit location. The same replay with OPENMW_RAGDOLLS=0 exercises the
+original death path.
+
+For an input-driven drag replay, use ragdoll-drag-smoke.txt instead.
+Wait for RAGDOLL_TEST_DRAG_READY, tap Activate once, then hold Activate
+and move. The log records the tap, the grabbed body part and the distance
+it moved before release.
+
+## Skeleton ownership
+
+During ragdoll playback, embedded transform animation callbacks on simulated
+bones and their ancestors are suspended. Otherwise a NIF controller can restore
+its cached animation rotation after the physics pose is applied, making an
+articulated rig appear rigid. Unrelated callbacks (such as effects) keep running.
+Controllers are restored when normal animation resumes or the rig is removed.
+The pose is reapplied each animation update, including frames without a physics
+substep and root transform changes. This code is shared by Windows and Android.
+
+The RagdollControllers tests in openmw-tests reproduce the embedded NIF rotation
+overwrite and check callback preservation and restoration. For visual validation,
+use the replay above and check an NPC, guar, cliff racer, shalk, and mudcrab during
+their initial fall; limbs should rotate relative to the torso before settling.
+
+## Full base-game and expansion coverage replay
+
+With Morrowind.esm, Tribunal.esm and Bloodmoon.esm enabled, use the opt-in marker
+ragdoll-all-actors.txt instead of ragdoll-smoke.txt. This disposable replay stages
+all 89 distinct creature model paths and both sexes of all 10 NPC races, three
+actors at a time. It uses temporary nonessential, script-free copies of records
+to avoid quest death scripts and essential-actor warnings. It checks the death
+lifecycle and corpse inventory, allows the initial fall, then removes the batch.
+The log maps each source record to its generated record ID. For every spawned
+actor, verify a corresponding native "activated" entry, plus articulation or
+whole-model movement where the model permits it. The marker is not supplied in
+the interactive demo.
+
+## Native item replay
+
+Native inventory-item physics is enabled with the physics preview. The default
+collision policy follows MaxYari/OpenMWLuaPhysics 1.4; see PERFORMANCE-BUILD.md
+for eligible types, compatibility, limits and optional debris assets.
+Hold Activate to grab an item, release to drop it, and press Use while holding
+to throw. Tap Activate retains ordinary pickup. Melee can push eligible items.
+
+For the disposable regression, load ItemPhysicsTest.omwscripts instead of
+RagdollTest.omwscripts and launch with --skip-menu --start "Seyda Neen".
+It checks lazy activation, gravity/floor collision, moving-item pickup/removal,
+holding/throwing, scripted teleport and position/rotation save/reload. It creates
+a test save only in the selected disposable profile. ITEM_TEST_COMPLETE marks
+success. Do not enable MaxYari's solver manifest during the native replay.
+
+ItemImpactTest.omwscripts instead checks a real charged player melee swing and
+optional bottle debris. This replay requires the reference mod's installed
+asset data folder, with its Lua manifest disabled. The third-party assets are
+not included here. ITEM_IMPACT_TEST_COMPLETE marks success.

@@ -1,0 +1,2 @@
+GLOBAL: scripts/item_impact_test.lua
+PLAYER: scripts/ragdoll_player.lua
