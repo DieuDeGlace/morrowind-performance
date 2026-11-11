@@ -63,9 +63,9 @@ namespace MWRender
         // OPENMW_ANDROID_053_OPAQUE_COPY
         // GL4ES has no usable glBlitFramebuffer; the 0.51 Android port already
         // disabled every blit. Copy the opaque scene by drawing it instead.
-        osg::Texture* sceneColor
+        const osg::Texture* sceneColor
             = fbo->getAttachment(osg::FrameBufferObject::BufferComponent::COLOR_BUFFER0).getTexture();
-        osg::Texture* sceneDepth
+        const osg::Texture* sceneDepth
             = fbo->getAttachment(osg::FrameBufferObject::BufferComponent::PACKED_DEPTH_STENCIL_BUFFER).getTexture();
         if (msaaFbo || !sceneColor || !sceneDepth)
         {
@@ -77,7 +77,7 @@ namespace MWRender
             }
             return;
         }
-        drawCopy(state, renderInfo, previous, frameId, sceneColor, sceneDepth, const_cast<osg::Texture*>(colorTex));
+        drawCopy(state, renderInfo, previous, frameId, sceneColor, sceneDepth, colorTex);
         return;
 #endif
 
@@ -149,7 +149,8 @@ void main()
     }
 
     void OpaqueColorBinCallback::drawCopy(osg::State& state, osg::RenderInfo& renderInfo, osgUtil::RenderLeaf* previous,
-        unsigned int frameId, osg::Texture* sceneColor, osg::Texture* sceneDepth, osg::Texture* opaqueColor)
+        unsigned int frameId, const osg::Texture* sceneColor, const osg::Texture* sceneDepth,
+        const osg::Texture* opaqueColor)
     {
         const bool copyDepth = gl4es_getDepthCopySupport && gl4es_getDepthCopySupport();
         if (!mCopyGeometry)
@@ -188,8 +189,9 @@ void main()
             stateSet->setMode(GL_POLYGON_OFFSET_FILL, off);
         }
         const auto on = osg::StateAttribute::ON | osg::StateAttribute::OVERRIDE | osg::StateAttribute::PROTECTED;
-        stateSet->setTextureAttribute(0, sceneColor, on);
-        stateSet->setTextureAttribute(1, sceneDepth, on);
+        // The scene textures stay owned by the post-processor; binding does not modify them.
+        stateSet->setTextureAttribute(0, const_cast<osg::Texture*>(sceneColor), on);
+        stateSet->setTextureAttribute(1, const_cast<osg::Texture*>(sceneDepth), on);
         stateSet->setAttribute(
             new osg::Viewport(0, 0, opaqueColor->getTextureWidth(), opaqueColor->getTextureHeight()), on);
 
