@@ -119,6 +119,7 @@ namespace MWPhysics
             if (!finite(half) || !finite(mCenter) || half.length2() < .0001f || half.length2() > 1e10f)
                 return false;
             mProperties = ItemPhysicsRules::properties(half);
+            mLargestHalfExtent = std::max({ half.x(), half.y(), half.z() });
             mShape = std::make_unique<btSphereShape>(mProperties.mRadius);
             btVector3 inertia;
             mShape->calculateLocalInertia(mProperties.mMass, inertia);
@@ -139,6 +140,11 @@ namespace MWPhysics
             mBody->setGravity(btVector3(0, 0, -ItemPhysicsRules::Gravity));
             mBody->setCcdMotionThreshold(mProperties.mRadius * .5f);
             mBody->setCcdSweptSphereRadius(mProperties.mRadius * .8f);
+            // The sphere proxy must slide, not roll: friction on a rolling
+            // sphere never brings it to rest on uneven terrain. Orientation
+            // is driven by mSpin instead of the solver.
+            mBody->setAngularFactor(btScalar(0));
+            mRotation = mInitialTransform.getRotation();
             mSnapshot = mInitialTransform;
             return true;
         }
@@ -202,10 +208,10 @@ namespace MWPhysics
 
         bool advance(std::uint64_t, float elapsed) override
         {
-            mSnapshot = mBody->getWorldTransform();
             mNeedsSync = true;
             mActivityTime += elapsed;
             bool contact = false;
+            btVector3 normal(0, 0, 0);
             auto* dispatcher = mPhysics.getRagdollWorld()->getDispatcher();
             for (int index = 0; index < dispatcher->getNumManifolds(); ++index)
             {
@@ -214,9 +220,28 @@ namespace MWPhysics
                     && (manifold->getBody0() == mBody.get() || manifold->getBody1() == mBody.get()))
                 {
                     contact = true;
+                    // m_normalWorldOnB points from body 1 towards body 0.
+                    normal = manifold->getContactPoint(0).m_normalWorldOnB;
+                    if (manifold->getBody1() == mBody.get())
+                        normal = -normal;
                     break;
                 }
             }
+            const bool grabbed = mPhysics.getRagdollWorld()->isGrabbed(*this);
+            // Sliding over a triangle mesh loses and regains contact constantly;
+            // only a landing after real air time counts as an impact.
+            if (contact && !mHadContact && !grabbed && mAirTime >= .1f)
+                mSpin.impact(osg::Vec3f(Misc::Convert::toOsg(normal)),
+                    osg::Vec3f(Misc::Convert::toOsg(mBody->getLinearVelocity())), mProperties.mRadius,
+                    mLargestHalfExtent);
+            mAirTime = contact ? 0.f : mAirTime + elapsed;
+            const btVector3 turn = Misc::Convert::toBullet(mSpin.advance(elapsed, contact || grabbed));
+            if (const btScalar angle = turn.length(); angle > btScalar(1e-6))
+            {
+                mRotation = btQuaternion(turn / angle, angle) * mRotation;
+                mRotation.normalize();
+            }
+            mSnapshot = btTransform(mRotation, mBody->getWorldTransform().getOrigin());
             if (contact && !mHadContact && mPreviousSpeed >= 50.f && mSoundTime >= .1f)
             {
                 mImpact = true;
@@ -226,7 +251,7 @@ namespace MWPhysics
                     ++mDamage;
             }
             mHadContact = contact;
-            const bool held = mPhysics.getRagdollWorld()->isGrabbed(*this);
+            const bool held = grabbed;
             const osg::Vec3f center(Misc::Convert::toOsg(mSnapshot.getOrigin()));
             if (!mMovedLogged
                 && (center - osg::Vec3f(Misc::Convert::toOsg(mInitialTransform.getOrigin()))).length2() > 4.f)
@@ -238,6 +263,8 @@ namespace MWPhysics
             if (!finite(center) || center.z() < mInitialPosition.z() - 7200.f)
             {
                 mSnapshot = mInitialTransform;
+                mRotation = mInitialTransform.getRotation();
+                mSpin.reset();
                 mBody->setWorldTransform(mSnapshot);
                 mActivityTime = 31.f;
             }
@@ -248,6 +275,7 @@ namespace MWPhysics
             mBody->setLinearVelocity(btVector3(0, 0, 0));
             mBody->setAngularVelocity(btVector3(0, 0, 0));
             mBody->forceActivationState(ISLAND_SLEEPING);
+            mSpin.reset();
             // advance() is erasing this island from the awake list itself.
             // Do not mutate that vector through removeItem() here.
             mPhysics.getRagdollWorld()->removeRigidBody(mBody.get());
@@ -267,6 +295,10 @@ namespace MWPhysics
         std::unique_ptr<btRigidBody> mBody;
         btTransform mInitialTransform;
         btTransform mSnapshot;
+        btQuaternion mRotation = btQuaternion::getIdentity();
+        ItemPhysicsRules::Spin mSpin;
+        float mLargestHalfExtent = 0.f;
+        float mAirTime = 0.f;
         ItemPhysicsRules::SleepTimer mSleep;
         btCollisionObject* mMirror = nullptr;
         int mMirrorGroup = 0;

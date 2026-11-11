@@ -56,6 +56,45 @@ namespace
         EXPECT_FALSE(timer.update(10.f, 1.f / 60.f, false));
     }
 
+    TEST(ItemPhysicsRules, ImpactsStartATumbleAboutTheRollingAxis)
+    {
+        Rules::Spin spin;
+        // Landing on flat ground while travelling along +X rolls forward about +Y.
+        spin.impact(osg::Vec3f(0, 0, 1), osg::Vec3f(100, 0, 0), 2.f, 12.f);
+        EXPECT_NEAR(spin.velocity().x(), 0.f, 1e-4f);
+        EXPECT_NEAR(spin.velocity().y(), 100.f, 1e-3f);
+        EXPECT_NEAR(spin.velocity().z(), 0.f, 1e-4f);
+        const osg::Vec3f turn = spin.advance(1.f / 120.f, false);
+        EXPECT_GT(turn.y(), 0.f);
+        EXPECT_LT(turn.length(), .01f);
+    }
+
+    TEST(ItemPhysicsRules, ItemsOnTheGroundOrInHandStopTumbling)
+    {
+        Rules::Spin spin;
+        spin.impact(osg::Vec3f(0, 0, 1), osg::Vec3f(1e6f, 0, 0), 2.f, 2.f);
+        EXPECT_FLOAT_EQ(spin.velocity().length(), Rules::MaxSpin);
+        float turned = 0.f;
+        for (int step = 0; step < 120; ++step)
+            turned += spin.advance(1.f / 120.f, true).length();
+        // Even from the fastest possible tumble the item turns less than a
+        // quarter of a revolution before lying still.
+        EXPECT_LT(turned, 1.5f);
+        EXPECT_LT(spin.velocity().length(), 1e-6f);
+    }
+
+    TEST(ItemPhysicsRules, AirborneTumbleDecaysAndNeverGrowsWithoutAnImpact)
+    {
+        Rules::Spin spin;
+        EXPECT_EQ(spin.advance(1.f / 60.f, false), osg::Vec3f());
+        spin.impact(osg::Vec3f(0, 0, 1), osg::Vec3f(0, 200, 0), 2.f, 12.f);
+        const float initial = spin.velocity().length();
+        for (int step = 0; step < 600; ++step)
+            spin.advance(1.f / 60.f, false);
+        EXPECT_LT(spin.velocity().length(), initial * .4f);
+        EXPECT_GT(spin.velocity().length(), initial * .3f);
+    }
+
     TEST(ItemPhysicsRules, CrimeAmountsMatchMinorAndDestructionPenalties)
     {
         EXPECT_EQ(Rules::crimeAmount(1), 25);
