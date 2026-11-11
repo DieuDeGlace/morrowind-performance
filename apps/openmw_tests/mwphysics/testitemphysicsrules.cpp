@@ -64,21 +64,32 @@ namespace
         EXPECT_NEAR(spin.velocity().x(), 0.f, 1e-4f);
         EXPECT_NEAR(spin.velocity().y(), 100.f, 1e-3f);
         EXPECT_NEAR(spin.velocity().z(), 0.f, 1e-4f);
-        const osg::Vec3f turn = spin.advance(1.f / 120.f, false);
+        const osg::Vec3f turn = spin.advance(1.f / 120.f, Rules::Support::Air);
         EXPECT_GT(turn.y(), 0.f);
         EXPECT_LT(turn.length(), .01f);
     }
 
-    TEST(ItemPhysicsRules, ItemsOnTheGroundOrInHandStopTumbling)
+    TEST(ItemPhysicsRules, LandingTumbleIsVisibleButFadesOnTheGround)
     {
         Rules::Spin spin;
         spin.impact(osg::Vec3f(0, 0, 1), osg::Vec3f(1e6f, 0, 0), 2.f, 2.f);
         EXPECT_FLOAT_EQ(spin.velocity().length(), Rules::MaxSpin);
         float turned = 0.f;
+        for (int step = 0; step < 240; ++step)
+            turned += spin.advance(1.f / 120.f, Rules::Support::Ground).length();
+        // The hardest landing turns the item over once or twice, then stops.
+        EXPECT_GT(turned, 3.f);
+        EXPECT_LT(turned, 10.f);
+        EXPECT_LT(spin.velocity().length(), Rules::MaxSpin * .01f);
+    }
+
+    TEST(ItemPhysicsRules, HeldItemsStopTumblingAtOnce)
+    {
+        Rules::Spin spin;
+        spin.impact(osg::Vec3f(0, 0, 1), osg::Vec3f(1e6f, 0, 0), 2.f, 2.f);
+        float turned = 0.f;
         for (int step = 0; step < 120; ++step)
-            turned += spin.advance(1.f / 120.f, true).length();
-        // Even from the fastest possible tumble the item turns less than a
-        // quarter of a revolution before lying still.
+            turned += spin.advance(1.f / 120.f, Rules::Support::Held).length();
         EXPECT_LT(turned, 1.5f);
         EXPECT_LT(spin.velocity().length(), 1e-6f);
     }
@@ -86,13 +97,67 @@ namespace
     TEST(ItemPhysicsRules, AirborneTumbleDecaysAndNeverGrowsWithoutAnImpact)
     {
         Rules::Spin spin;
-        EXPECT_EQ(spin.advance(1.f / 60.f, false), osg::Vec3f());
+        EXPECT_EQ(spin.advance(1.f / 60.f, Rules::Support::Air), osg::Vec3f());
         spin.impact(osg::Vec3f(0, 0, 1), osg::Vec3f(0, 200, 0), 2.f, 12.f);
         const float initial = spin.velocity().length();
         for (int step = 0; step < 600; ++step)
-            spin.advance(1.f / 60.f, false);
+            spin.advance(1.f / 60.f, Rules::Support::Air);
         EXPECT_LT(spin.velocity().length(), initial * .4f);
         EXPECT_GT(spin.velocity().length(), initial * .3f);
+    }
+
+    // Rotates v by turn (axis * radians), as the item body does.
+    osg::Vec3f rotated(const osg::Vec3f& v, const osg::Vec3f& turn)
+    {
+        const float angle = turn.length();
+        if (angle == 0.f)
+            return v;
+        osg::Vec3f axis = turn;
+        axis.normalize();
+        return v * std::cos(angle) + (axis ^ v) * std::sin(angle) + axis * ((axis * v) * (1.f - std::cos(angle)));
+    }
+
+    float angleBetween(osg::Vec3f a, osg::Vec3f b)
+    {
+        a.normalize();
+        b.normalize();
+        return std::acos(std::clamp(a * b, -1.f, 1.f));
+    }
+
+    float settleFor(osg::Vec3f& up, const osg::Vec3f& normal, float seconds)
+    {
+        float turned = 0.f;
+        for (int step = 0; step < static_cast<int>(seconds * 60.f); ++step)
+        {
+            const osg::Vec3f turn = Rules::settleTurn(up, normal, 1.f / 60.f);
+            turned += turn.length();
+            up = rotated(up, turn);
+        }
+        return turned;
+    }
+
+    TEST(ItemPhysicsRules, TiltedItemOnTheGroundComesToLieFlat)
+    {
+        osg::Vec3f up(0.f, std::sin(.8f), std::cos(.8f));
+        const float turned = settleFor(up, osg::Vec3f(0, 0, 1), 1.f);
+        EXPECT_NEAR(turned, .8f, .01f);
+        EXPECT_LT(angleBetween(up, osg::Vec3f(0, 0, 1)), .01f);
+    }
+
+    TEST(ItemPhysicsRules, ItemSettlesAlongTheSlopeItRestsOn)
+    {
+        const osg::Vec3f slope(std::sin(.3f), 0.f, std::cos(.3f));
+        osg::Vec3f up(0, 0, 1);
+        settleFor(up, slope, 1.f);
+        EXPECT_LT(angleBetween(up, slope), .01f);
+    }
+
+    TEST(ItemPhysicsRules, ItemLyingUpsideDownStaysUpsideDown)
+    {
+        EXPECT_EQ(Rules::settleTurn(osg::Vec3f(0, 0, -1), osg::Vec3f(0, 0, 1), 1.f / 60.f), osg::Vec3f());
+        osg::Vec3f up(0.f, std::sin(.3f), -std::cos(.3f));
+        settleFor(up, osg::Vec3f(0, 0, 1), 1.f);
+        EXPECT_LT(angleBetween(up, osg::Vec3f(0, 0, -1)), .01f);
     }
 
     TEST(ItemPhysicsRules, CrimeAmountsMatchMinorAndDestructionPenalties)

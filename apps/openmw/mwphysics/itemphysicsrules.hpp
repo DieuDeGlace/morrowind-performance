@@ -113,13 +113,48 @@ namespace MWPhysics::ItemPhysicsRules
     // makes every item roll like a ball: a flat book dragged over terrain or
     // left on a slope tumbles for as long as it keeps moving. As in the Lua
     // mod, tumbling is cosmetic instead: impacts start it, air drag and
-    // contact end it, and it never feeds back into the linear motion.
+    // contact slow it, and it never feeds back into the linear motion. Items
+    // on the ground also turn until they rest on their broad side.
     constexpr float ImpactSpinDamping = .5f;
     constexpr float ImpactSpinGain = 6.f;
     constexpr float SpinDrag = .1f;
     constexpr float SpinToRadians = .01f;
     constexpr float MaxSpin = 5000.f;
-    constexpr float ContactSpinHalfLife = 1.f / 60.f;
+    // On the ground a landing tumble fades over a fraction of a second.
+    constexpr float GroundSpinHalfLife = .12f;
+    // A held item stops turning at once, so dragging cannot make it spin.
+    constexpr float HeldSpinHalfLife = 1.f / 60.f;
+    // How fast an item on the ground turns to lie flat on the surface (1/s).
+    constexpr float SettleRate = 6.f;
+
+    enum class Support
+    {
+        Air,
+        Ground,
+        Held
+    };
+
+    // Turn, as axis * radians in world space, that brings up (the item's
+    // model up axis in world space) part of the way towards the surface
+    // normal, or towards its reverse when the item lies upside down. Items
+    // are modelled lying on their broad side, so this lays them flat on the
+    // surface, following its slope.
+    inline osg::Vec3f settleTurn(osg::Vec3f up, osg::Vec3f normal, float dt)
+    {
+        if (normal.length2() < 1e-6f || up.length2() < 1e-6f)
+            return {};
+        normal.normalize();
+        up.normalize();
+        if (up * normal < 0.f)
+            up = -up;
+        const osg::Vec3f axis = up ^ normal;
+        const float sine = axis.length();
+        if (sine < 1e-5f)
+            return {};
+        const float angle = std::atan2(sine, std::clamp(up * normal, -1.f, 1.f));
+        const float fraction = 1.f - std::exp(-SettleRate * std::clamp(dt, 0.f, .05f));
+        return axis * (angle * fraction / sine);
+    }
 
     class Spin
     {
@@ -140,14 +175,13 @@ namespace MWPhysics::ItemPhysicsRules
         }
 
         // Returns the world-space rotation for this interval as axis * radians.
-        // grounded is true while the item rests on something or is being held.
-        osg::Vec3f advance(float dt, bool grounded)
+        osg::Vec3f advance(float dt, Support support)
         {
             dt = std::clamp(dt, 0.f, .05f);
-            if (grounded)
-                mVelocity *= std::pow(.5f, dt / ContactSpinHalfLife);
-            else
+            if (support == Support::Air)
                 mVelocity *= 1.f - SpinDrag * dt;
+            else
+                mVelocity *= std::pow(.5f, dt / (support == Support::Held ? HeldSpinHalfLife : GroundSpinHalfLife));
             return mVelocity * (dt * SpinToRadians);
         }
 
