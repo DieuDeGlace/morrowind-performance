@@ -235,7 +235,15 @@ namespace MWPhysics
                     osg::Vec3f(Misc::Convert::toOsg(mBody->getLinearVelocity())), mProperties.mRadius,
                     mLargestHalfExtent);
             mAirTime = contact ? 0.f : mAirTime + elapsed;
-            const btVector3 turn = Misc::Convert::toBullet(mSpin.advance(elapsed, contact || grabbed));
+            using ItemPhysicsRules::Support;
+            const Support support = grabbed ? Support::Held : contact ? Support::Ground : Support::Air;
+            osg::Vec3f spin = mSpin.advance(elapsed, support);
+            // Settle only on floor-like surfaces, not against walls or actors.
+            if (support == Support::Ground && normal.z() > btScalar(.5))
+                spin += ItemPhysicsRules::settleTurn(
+                    osg::Vec3f(Misc::Convert::toOsg(quatRotate(mRotation, btVector3(0, 0, 1)))),
+                    osg::Vec3f(Misc::Convert::toOsg(normal)), elapsed);
+            const btVector3 turn = Misc::Convert::toBullet(spin);
             if (const btScalar angle = turn.length(); angle > btScalar(1e-6))
             {
                 mRotation = btQuaternion(turn / angle, angle) * mRotation;
