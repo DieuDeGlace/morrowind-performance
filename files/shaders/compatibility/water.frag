@@ -206,10 +206,10 @@ void main(void)
     rawRefraction = refraction;
 
     // brighten up the refraction underwater
-    if (cameraPos.z < 0)
+    if (cameraPos.z < 0.0)
         refraction = clamp(refraction * 1.5, 0.0, 1.0);
 
-    if (cameraPos.z >= 0)
+    if (cameraPos.z >= 0.0)
     {
         vec3 deepWaterColor = waterColor * fogScale + fogOffset;
         if (!hasOpaqueGeometry(refractionCoords))
