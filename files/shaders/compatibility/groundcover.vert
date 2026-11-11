@@ -74,7 +74,7 @@ vec2 groundcoverDisplacement(in vec3 worldpos, float h)
     harmonics += vec2((1.0 + 0.28*v) * sin(5.0*osg_SimulationTime + worldpos.xy / 200.0));
 
     vec2 stomp = vec2(0.0);
-#if STOMP
+#ifdef STOMP
     float d = length(worldpos.xy - footPos.xy);
 #if STOMP_INTENSITY_LEVEL == 0
     // Gentle intensity
