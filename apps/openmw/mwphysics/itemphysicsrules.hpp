@@ -108,6 +108,55 @@ namespace MWPhysics::ItemPhysicsRules
     private:
         float mQuiet = 0.f;
     };
+
+    // The collision proxy is a small sphere, so letting the solver rotate it
+    // makes every item roll like a ball: a flat book dragged over terrain or
+    // left on a slope tumbles for as long as it keeps moving. As in the Lua
+    // mod, tumbling is cosmetic instead: impacts start it, air drag and
+    // contact end it, and it never feeds back into the linear motion.
+    constexpr float ImpactSpinDamping = .5f;
+    constexpr float ImpactSpinGain = 6.f;
+    constexpr float SpinDrag = .1f;
+    constexpr float SpinToRadians = .01f;
+    constexpr float MaxSpin = 5000.f;
+    constexpr float ContactSpinHalfLife = 1.f / 60.f;
+
+    class Spin
+    {
+    public:
+        // normal points from the surface towards the item; velocity is the
+        // item's velocity after the bounce.
+        void impact(const osg::Vec3f& normal, const osg::Vec3f& velocity, float radius, float largestHalfExtent)
+        {
+            mVelocity *= ImpactSpinDamping;
+            if (largestHalfExtent <= 0.f)
+                return;
+            mVelocity += ((normal * -radius) ^ (-velocity)) * (ImpactSpinGain / largestHalfExtent);
+            const float speed = mVelocity.length();
+            if (!std::isfinite(speed))
+                mVelocity = osg::Vec3f();
+            else if (speed > MaxSpin)
+                mVelocity *= MaxSpin / speed;
+        }
+
+        // Returns the world-space rotation for this interval as axis * radians.
+        // grounded is true while the item rests on something or is being held.
+        osg::Vec3f advance(float dt, bool grounded)
+        {
+            dt = std::clamp(dt, 0.f, .05f);
+            if (grounded)
+                mVelocity *= std::pow(.5f, dt / ContactSpinHalfLife);
+            else
+                mVelocity *= 1.f - SpinDrag * dt;
+            return mVelocity * (dt * SpinToRadians);
+        }
+
+        void reset() { mVelocity = osg::Vec3f(); }
+        const osg::Vec3f& velocity() const { return mVelocity; }
+
+    private:
+        osg::Vec3f mVelocity;
+    };
 }
 
 #endif
