@@ -38,8 +38,8 @@ const float VISIBILITY = 2500.0;
 const float BUMP_SUPPRESS_DEPTH = 300.0;           // at what water depth bumpmap will be suppressed for reflections and refractions (prevents artifacts at shores)
 const float REFR_FOG_DISTORT_DISTANCE = 3000.0;    // at what distance refraction fog will be calculated using real water depth instead of distorted depth (prevents splotchy shores)
 
-const vec2 WIND_DIR = vec2(0.5f, -0.8f);
-const float WIND_SPEED = 0.2f;
+const vec2 WIND_DIR = vec2(0.5, -0.8);
+const float WIND_SPEED = 0.2;
 
 #if @wobblyShores
 const float WOBBLY_SHORE_FADE_DISTANCE = 6200.0;   // fade out wobbly shores to mask precision errors, the effect is almost impossible to see at a distance
