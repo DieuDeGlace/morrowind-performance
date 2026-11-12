@@ -9,6 +9,7 @@
 
 #ifdef ANDROID
 #include <osg/Geometry>
+#include <osg/Matrixd>
 #include <osg/StateSet>
 #endif
 
@@ -19,6 +20,22 @@ namespace Stereo
 
 namespace MWRender
 {
+#ifdef ANDROID
+    // OPENMW_ANDROID_053_PACKED_DEPTH_DIAGNOSTIC
+    // What the water shader is given, recorded for the depth diagnostic log.
+    struct AndroidWaterDiagnostic
+    {
+        static AndroidWaterDiagnostic& get();
+
+        osg::Matrixd mProjection;
+        bool mHaveProjection = false;
+        double mNear = 0.0;
+        double mFar = 0.0;
+        double mWaterLevel = 0.0;
+        bool mHaveWaterLevel = false;
+    };
+#endif
+
     class OpaqueColorBinCallback : public osgUtil::RenderBin::DrawCallback
     {
     public:
@@ -47,7 +64,8 @@ namespace MWRender
         osg::ref_ptr<osg::StateSet> mPackStateSet[2];
         bool mLogged = false;
         // OPENMW_ANDROID_053_PACKED_DEPTH_DIAGNOSTIC
-        void logPackedDepth(osg::State& state, const osg::Texture* sceneDepth, const osg::Texture* packed);
+        void logPackedDepth(
+            osg::State& state, osg::RenderInfo& renderInfo, const osg::Texture* sceneDepth, const osg::Texture* packed);
         unsigned int mCopyCount = 0;
         unsigned int mDiagnosticReports = 0;
         bool mLoggedNoPackedFbo = false;
