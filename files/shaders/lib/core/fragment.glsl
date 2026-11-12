@@ -57,6 +57,29 @@ vec4 sampleOpaqueDepthTex(vec2 uv)
 #endif
 }
 
+// OPENMW_ANDROID_053_WATER_DEBUG_READBACK
+// The packed texel exactly as sampled, and which of the branches above this
+// shader compiled, so the water diagnostic can read what the GPU saw.
+vec4 sampleOpaqueDepthTexRaw(vec2 uv)
+{
+    return texture2D(opaqueDepthTex, uv);
+}
+
+float opaqueDepthDebugFlags()
+{
+    float flags = 0.0;
+#if defined(GL_ES) && defined(GL_FRAGMENT_PRECISION_HIGH)
+    flags += 128.0;
+#endif
+#if @opaqueDepthDisabled
+    flags += 64.0;
+#endif
+#if defined(GL_ES)
+    flags += 8.0;
+#endif
+    return flags;
+}
+
 vec4 sampleOpaqueColorTex(vec2 uv)
 {
     return texture2D(opaqueColorTex, uv);

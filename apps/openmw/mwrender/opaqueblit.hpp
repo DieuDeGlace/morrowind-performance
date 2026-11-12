@@ -11,6 +11,7 @@
 #include <osg/Geometry>
 #include <osg/Matrixd>
 #include <osg/StateSet>
+#include <osg/Uniform>
 #endif
 
 namespace Stereo
@@ -33,6 +34,11 @@ namespace MWRender
         double mFar = 0.0;
         double mWaterLevel = 0.0;
         bool mHaveWaterLevel = false;
+        // OPENMW_ANDROID_053_WATER_DEBUG_READBACK: water.frag's androidWaterDebug.
+        // 1 outputs the raw packed texel, 2 the depths and branch flags, 3 the
+        // gl_FragCoord depth and screen coordinates; read back after the water.
+        osg::ref_ptr<osg::Uniform> mDebugUniform;
+        int mPendingReadback = 0;
     };
 #endif
 
@@ -50,6 +56,8 @@ namespace MWRender
 #ifdef ANDROID
         // Receives the opaque depth packed into RGB, which every shader reads.
         osg::ref_ptr<osg::FrameBufferObject> mPackedDepthFbo[2];
+        // Called right after the water is drawn; logs its debug output, if any.
+        void afterWater(osg::RenderInfo& renderInfo);
 #endif
 
 #ifdef ANDROID
@@ -68,6 +76,7 @@ namespace MWRender
             osg::State& state, osg::RenderInfo& renderInfo, const osg::Texture* sceneDepth, const osg::Texture* packed);
         unsigned int mCopyCount = 0;
         unsigned int mDiagnosticReports = 0;
+        unsigned int mDebugBaseFrame = ~0u;
         bool mLoggedNoPackedFbo = false;
 #endif
     };

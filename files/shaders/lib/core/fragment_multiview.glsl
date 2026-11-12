@@ -37,6 +37,16 @@ vec4 sampleOpaqueDepthTex(vec2 uv)
     return texture(opaqueDepthTex, vec3((uv), gl_ViewID_OVR));
 }
 
+vec4 sampleOpaqueDepthTexRaw(vec2 uv)
+{
+    return sampleOpaqueDepthTex(uv);
+}
+
+float opaqueDepthDebugFlags()
+{
+    return 0.0;
+}
+
 vec4 sampleOpaqueColorTex(vec2 uv)
 {
     return texture(opaqueColorTex, vec3((uv), gl_ViewID_OVR));

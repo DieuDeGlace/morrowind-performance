@@ -135,6 +135,9 @@ namespace MWRender
             leaf->render(renderInfo, previous);
             previous = leaf;
         }
+#ifdef ANDROID
+        mOpaqueColorResolve->afterWater(renderInfo);
+#endif
 
         drawLeavesWithClippedStraddlers(
             nearSideLeaves, mStraddlingLeaves, renderInfo, previous, nearSidePlane, inverseView, true);

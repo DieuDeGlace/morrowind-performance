@@ -595,6 +595,9 @@ namespace MWRender
                 stateset->setTextureAttribute(4, mRipples->getColorTexture(), osg::StateAttribute::ON);
             }
             stateset->getUniform("nodePosition")->set(osg::Vec3f(mWater->getPosition()));
+#ifdef ANDROID
+            stateset->addUniform(AndroidWaterDiagnostic::get().mDebugUniform);
+#endif
         }
 
     private:

@@ -316,7 +316,12 @@ void main()
     // Must run while the packed framebuffer is bound for reading.
     AndroidWaterDiagnostic& AndroidWaterDiagnostic::get()
     {
-        static AndroidWaterDiagnostic instance;
+        static AndroidWaterDiagnostic instance = [] {
+            AndroidWaterDiagnostic diagnostic;
+            diagnostic.mDebugUniform = new osg::Uniform("androidWaterDebug", 0.f);
+            diagnostic.mDebugUniform->setDataVariance(osg::Object::DYNAMIC);
+            return diagnostic;
+        }();
         return instance;
     }
 
@@ -326,7 +331,21 @@ void main()
         static const unsigned int reportAt[] = { 600, 1800, 3600, 7200 };
         constexpr unsigned int reportCount = sizeof(reportAt) / sizeof(reportAt[0]);
         ++mCopyCount;
-        if (mDiagnosticReports >= reportCount || mCopyCount != reportAt[mDiagnosticReports])
+        const bool report = mDiagnosticReports < reportCount && mCopyCount == reportAt[mDiagnosticReports];
+
+        // The report frame and the two after it switch water.frag to one of its
+        // debug outputs; afterWater() reads the result back.
+        const unsigned int frame = state.getFrameStamp()->getFrameNumber();
+        if (report)
+            mDebugBaseFrame = frame;
+        int debugMode = 0;
+        if (mDebugBaseFrame != ~0u && frame >= mDebugBaseFrame && frame - mDebugBaseFrame < 3)
+            debugMode = static_cast<int>(frame - mDebugBaseFrame) + 1;
+        AndroidWaterDiagnostic& diagnostic = AndroidWaterDiagnostic::get();
+        diagnostic.mDebugUniform->set(static_cast<float>(debugMode));
+        diagnostic.mPendingReadback = debugMode;
+
+        if (!report)
             return;
         ++mDiagnosticReports;
 
@@ -426,6 +445,61 @@ void main()
         if (errorAfter != GL_NO_ERROR)
             Log(Debug::Warning) << "Android water diagnostic: reading the packed depth raised GL error 0x" << std::hex
                                 << errorAfter;
+    }
+
+    // OPENMW_ANDROID_053_WATER_DEBUG_READBACK
+    // Runs right after the water leaves are drawn into the scene framebuffer.
+    void OpaqueColorBinCallback::afterWater(osg::RenderInfo& renderInfo)
+    {
+        AndroidWaterDiagnostic& diagnostic = AndroidWaterDiagnostic::get();
+        const int mode = diagnostic.mPendingReadback;
+        if (mode == 0)
+            return;
+        diagnostic.mPendingReadback = 0;
+
+        GLint viewport[4] = { 0, 0, 0, 0 };
+        glGetIntegerv(GL_VIEWPORT, viewport);
+        const int width = viewport[2];
+        const int height = viewport[3];
+        static const char* const modeNames[]
+            = { "", "raw packed texel", "distances and flags", "gl_FragCoord distance and screen coordinates" };
+        Log(Debug::Info) << "Android water shader output, mode " << mode << " (" << modeNames[mode] << "), viewport "
+                         << viewport[0] << "," << viewport[1] << " " << width << "x" << height;
+        if (width <= 0 || height <= 0)
+            return;
+
+        const float fractions[] = { 0.1f, 0.5f, 0.9f };
+        for (float fy : fractions)
+        {
+            std::ostringstream row;
+            row << std::setprecision(7) << "Android water shader output: row " << static_cast<int>(fy * 100.f)
+                << "% up:";
+            for (float fx : fractions)
+            {
+                const GLint x = viewport[0] + std::min(width - 1, static_cast<int>(fx * width));
+                const GLint y = viewport[1] + std::min(height - 1, static_cast<int>(fy * height));
+                unsigned char rgba[4] = { 0, 0, 0, 0 };
+                glReadPixels(x, y, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
+                row << " (" << int(rgba[0]) << "," << int(rgba[1]) << "," << int(rgba[2]) << "," << int(rgba[3]) << ")";
+                if (mode == 1)
+                    row << "=" << (rgba[0] * 65536.0 + rgba[1] * 256.0 + rgba[2]) / 16777215.0;
+                else if (mode == 2)
+                {
+                    const int flags = rgba[2];
+                    row << "=[opaque " << rgba[0] * 4096.0 / 255.0 << ", surface " << rgba[1] * 4096.0 / 255.0
+                        << ((flags & 128) ? ", highp" : ", no highp") << ((flags & 64) ? ", depth disabled" : "")
+                        << ((flags & 32) ? ", guard fires" : "") << ((flags & 16) ? ", above water" : "")
+                        << ((flags & 8) ? ", GL ES" : "") << "]";
+                }
+                else
+                    row << "=[fragcoord distance " << rgba[0] * 4096.0 / 255.0 << ", uv " << rgba[1] / 255.0 << ","
+                        << rgba[2] / 255.0 << "]";
+            }
+            Log(Debug::Info) << row.str();
+        }
+        const GLenum error = glGetError();
+        if (error != GL_NO_ERROR)
+            Log(Debug::Warning) << "Android water shader output: reading back raised GL error 0x" << std::hex << error;
     }
 #endif
 }
