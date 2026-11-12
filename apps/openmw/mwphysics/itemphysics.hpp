@@ -14,6 +14,8 @@
 #include <osg/Quat>
 #include <osg/Vec3f>
 
+class btCollisionObject;
+
 namespace Resource
 {
     class ResourceSystem;
@@ -54,6 +56,10 @@ namespace MWPhysics
         bool breakable(const MWWorld::Ptr& item);
         const std::vector<VFS::Path::Normalized>* findDebris(const MWWorld::Ptr& item);
         void reportDestruction(const std::shared_ptr<Body>& body);
+        MWWorld::Ptr actorFor(const btCollisionObject* collider) const;
+        void hurt(const MWWorld::Ptr& victim, float damage, const MWWorld::Ptr& culprit);
+        void strike(const std::shared_ptr<Body>& body);
+        void splash(const std::shared_ptr<Body>& body);
         void buildDebrisIndex();
         PhysicsSystem& mPhysics;
         Resource::ResourceSystem* mResources;
