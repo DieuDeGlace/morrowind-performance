@@ -130,7 +130,12 @@ void main(void)
     float blendClose = smoothstep(0.001, 0.02, distToCenter);
     float blendFar = 1.0 - smoothstep(0.3, 0.4, distToCenter);
     float distortionLevel = 2.0;
-    rippleAdd += distortionLevel * vec3(texture2D(rippleMap, rippleMapUV).ba * blendFar * blendClose, 0.0);
+    // OPENMW_ANDROID_053_PACKED_RIPPLES: slopes are stored square-root
+    // companded around 128/255, with red set where written (ripples_normals.frag).
+    vec4 rippleTexel = texture2D(rippleMap, rippleMapUV);
+    vec2 rippleCompanded = (rippleTexel.ba * 255.0 - 128.0 * rippleTexel.r) / 127.0;
+    vec2 rippleSlope = sign(rippleCompanded) * rippleCompanded * rippleCompanded * 4.0;
+    rippleAdd += distortionLevel * vec3(rippleSlope * blendFar * blendClose, 0.0);
 
     vec2 bigWaves = BIG_WAVES;
     vec2 midWaves = mix(MID_WAVES, MID_WAVES_RAIN, rainIntensity);

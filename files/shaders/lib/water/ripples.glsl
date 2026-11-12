@@ -26,4 +26,51 @@ vec4 applySprings(in vec4 samplerData, in vec4 n, in vec4 n2)
     return storage;
 }
 
+#if @rippleStatePacked
+// OPENMW_ANDROID_053_PACKED_RIPPLES
+// Phones without half-float render targets give GL4ES an 8-bit texture for
+// the ripple state, which cannot hold the negative wave heights, so no ripple
+// ever showed. Each height is stored instead as a signed 16-bit value in two
+// 8-bit channels: current height in rg, previous height in ba. All-zero bytes
+// are still water, so a fresh texture is calm.
+const float RIPPLE_HEIGHT_SCALE = 8192.0; // heights from -4 to 4
+
+vec2 packRippleHeight(float height)
+{
+    float value = floor(clamp(height * RIPPLE_HEIGHT_SCALE, -32767.0, 32767.0) + 0.5);
+    if (value < 0.0)
+        value += 65536.0;
+    float high = floor(value / 256.0);
+    return vec2(high, value - high * 256.0) / 255.0;
+}
+
+float unpackRippleHeight(vec2 stored)
+{
+    vec2 bytes = floor(stored * 255.0 + vec2(0.5));
+    float value = bytes.x * 256.0 + bytes.y;
+    if (value >= 32768.0)
+        value -= 65536.0;
+    return value / RIPPLE_HEIGHT_SCALE;
+}
+
+vec4 packRippleState(vec2 heights)
+{
+    return vec4(packRippleHeight(heights.x), packRippleHeight(heights.y));
+}
+
+// Outside the map the water is still, as with the desktop's zero border.
+vec2 sampleRippleState(sampler2D state, vec2 uv)
+{
+    if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0))))
+        return vec2(0.0);
+    vec4 bytesIn = texture2D(state, uv);
+    return vec2(unpackRippleHeight(bytesIn.rg), unpackRippleHeight(bytesIn.ba));
+}
+
+float sampleRippleHeight(sampler2D state, vec2 uv)
+{
+    return sampleRippleState(state, uv).x;
+}
+#endif
+
 #endif

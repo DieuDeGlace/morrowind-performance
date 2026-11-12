@@ -78,6 +78,12 @@ namespace MWRender
 
         osg::ref_ptr<osg::Program> mProgramBlobber;
         osg::ref_ptr<osg::Program> mProgramSimulation;
+#ifdef ANDROID
+        // The state textures hold packed heights; the water samples these slopes.
+        osg::ref_ptr<osg::Texture2D> mNormalTexture;
+        osg::ref_ptr<osg::FrameBufferObject> mNormalFBO;
+        osg::ref_ptr<osg::Program> mProgramNormals;
+#endif
 
         bool mPaused = false;
         bool mUseCompute = false;
