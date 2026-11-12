@@ -1,5 +1,16 @@
 #include "apps/openmw/mwphysics/itemphysicsrules.hpp"
 
+#include <memory>
+
+#include <BulletCollision/BroadphaseCollision/btDbvtBroadphase.h>
+#include <BulletCollision/CollisionDispatch/btCollisionDispatcher.h>
+#include <BulletCollision/CollisionDispatch/btDefaultCollisionConfiguration.h>
+#include <BulletCollision/CollisionShapes/btBoxShape.h>
+#include <BulletCollision/CollisionShapes/btStaticPlaneShape.h>
+#include <BulletDynamics/ConstraintSolver/btSequentialImpulseConstraintSolver.h>
+#include <BulletDynamics/Dynamics/btDiscreteDynamicsWorld.h>
+#include <BulletDynamics/Dynamics/btRigidBody.h>
+
 #include <gtest/gtest.h>
 
 namespace
@@ -22,6 +33,7 @@ namespace
         EXPECT_FLOAT_EQ(props.mRadius, 2.f);
         EXPECT_FLOAT_EQ(props.mMass, 1.f);
         EXPECT_FLOAT_EQ(props.mRestitution, .5f);
+        EXPECT_EQ(Rules::collisionHalfExtents(osg::Vec3f(.001f, 5.f, .1f)), osg::Vec3f(1.f, 5.f, 1.f));
     }
 
     TEST(ItemPhysicsRules, SizeAndMaterialDetermineMassInsteadOfItemValue)
@@ -42,6 +54,16 @@ namespace
         EXPECT_EQ(Rules::debrisTargets("xmisc_com_jug_01__chunk_0"), (std::vector<std::string>{ "misc_com_jug_01" }));
     }
 
+    TEST(ItemPhysicsRules, GlassVesselsShatterButCeramicAndMetalDoNot)
+    {
+        for (const char* model : { "Misc_Com_Bottle_07", "misc_potion_bargain_01", "misc_de_glass_green_01",
+                 "misc_flask_02", "misc_skooma_vial" })
+            EXPECT_TRUE(Rules::glassModel(model)) << model;
+        for (const char* model : { "misc_lw_flask", "misc_com_metal_goblet_01", "misc_com_redware_cup", "text_folio_03",
+                 "misc_de_pot_redware_01" })
+            EXPECT_FALSE(Rules::glassModel(model)) << model;
+    }
+
     TEST(ItemPhysicsRules, HeldOrMovingItemsCannotSleep)
     {
         Rules::SleepTimer timer;
@@ -56,108 +78,10 @@ namespace
         EXPECT_FALSE(timer.update(10.f, 1.f / 60.f, false));
     }
 
-    TEST(ItemPhysicsRules, ImpactsStartATumbleAboutTheRollingAxis)
+    TEST(ItemPhysicsRules, TumblingItemsAreNotAtRest)
     {
-        Rules::Spin spin;
-        // Landing on flat ground while travelling along +X rolls forward about +Y.
-        spin.impact(osg::Vec3f(0, 0, 1), osg::Vec3f(100, 0, 0), 2.f, 12.f);
-        EXPECT_NEAR(spin.velocity().x(), 0.f, 1e-4f);
-        EXPECT_NEAR(spin.velocity().y(), 100.f, 1e-3f);
-        EXPECT_NEAR(spin.velocity().z(), 0.f, 1e-4f);
-        const osg::Vec3f turn = spin.advance(1.f / 120.f, Rules::Support::Air);
-        EXPECT_GT(turn.y(), 0.f);
-        EXPECT_LT(turn.length(), .01f);
-    }
-
-    TEST(ItemPhysicsRules, LandingTumbleIsVisibleButFadesOnTheGround)
-    {
-        Rules::Spin spin;
-        spin.impact(osg::Vec3f(0, 0, 1), osg::Vec3f(1e6f, 0, 0), 2.f, 2.f);
-        EXPECT_FLOAT_EQ(spin.velocity().length(), Rules::MaxSpin);
-        float turned = 0.f;
-        for (int step = 0; step < 240; ++step)
-            turned += spin.advance(1.f / 120.f, Rules::Support::Ground).length();
-        // The hardest landing turns the item over once or twice, then stops.
-        EXPECT_GT(turned, 3.f);
-        EXPECT_LT(turned, 10.f);
-        EXPECT_LT(spin.velocity().length(), Rules::MaxSpin * .01f);
-    }
-
-    TEST(ItemPhysicsRules, HeldItemsStopTumblingAtOnce)
-    {
-        Rules::Spin spin;
-        spin.impact(osg::Vec3f(0, 0, 1), osg::Vec3f(1e6f, 0, 0), 2.f, 2.f);
-        float turned = 0.f;
-        for (int step = 0; step < 120; ++step)
-            turned += spin.advance(1.f / 120.f, Rules::Support::Held).length();
-        EXPECT_LT(turned, 1.5f);
-        EXPECT_LT(spin.velocity().length(), 1e-6f);
-    }
-
-    TEST(ItemPhysicsRules, AirborneTumbleDecaysAndNeverGrowsWithoutAnImpact)
-    {
-        Rules::Spin spin;
-        EXPECT_EQ(spin.advance(1.f / 60.f, Rules::Support::Air), osg::Vec3f());
-        spin.impact(osg::Vec3f(0, 0, 1), osg::Vec3f(0, 200, 0), 2.f, 12.f);
-        const float initial = spin.velocity().length();
-        for (int step = 0; step < 600; ++step)
-            spin.advance(1.f / 60.f, Rules::Support::Air);
-        EXPECT_LT(spin.velocity().length(), initial * .4f);
-        EXPECT_GT(spin.velocity().length(), initial * .3f);
-    }
-
-    // Rotates v by turn (axis * radians), as the item body does.
-    osg::Vec3f rotated(const osg::Vec3f& v, const osg::Vec3f& turn)
-    {
-        const float angle = turn.length();
-        if (angle == 0.f)
-            return v;
-        osg::Vec3f axis = turn;
-        axis.normalize();
-        return v * std::cos(angle) + (axis ^ v) * std::sin(angle) + axis * ((axis * v) * (1.f - std::cos(angle)));
-    }
-
-    float angleBetween(osg::Vec3f a, osg::Vec3f b)
-    {
-        a.normalize();
-        b.normalize();
-        return std::acos(std::clamp(a * b, -1.f, 1.f));
-    }
-
-    float settleFor(osg::Vec3f& up, const osg::Vec3f& normal, float seconds)
-    {
-        float turned = 0.f;
-        for (int step = 0; step < static_cast<int>(seconds * 60.f); ++step)
-        {
-            const osg::Vec3f turn = Rules::settleTurn(up, normal, 1.f / 60.f);
-            turned += turn.length();
-            up = rotated(up, turn);
-        }
-        return turned;
-    }
-
-    TEST(ItemPhysicsRules, TiltedItemOnTheGroundComesToLieFlat)
-    {
-        osg::Vec3f up(0.f, std::sin(.8f), std::cos(.8f));
-        const float turned = settleFor(up, osg::Vec3f(0, 0, 1), 1.f);
-        EXPECT_NEAR(turned, .8f, .01f);
-        EXPECT_LT(angleBetween(up, osg::Vec3f(0, 0, 1)), .01f);
-    }
-
-    TEST(ItemPhysicsRules, ItemSettlesAlongTheSlopeItRestsOn)
-    {
-        const osg::Vec3f slope(std::sin(.3f), 0.f, std::cos(.3f));
-        osg::Vec3f up(0, 0, 1);
-        settleFor(up, slope, 1.f);
-        EXPECT_LT(angleBetween(up, slope), .01f);
-    }
-
-    TEST(ItemPhysicsRules, ItemLyingUpsideDownStaysUpsideDown)
-    {
-        EXPECT_EQ(Rules::settleTurn(osg::Vec3f(0, 0, -1), osg::Vec3f(0, 0, 1), 1.f / 60.f), osg::Vec3f());
-        osg::Vec3f up(0.f, std::sin(.3f), -std::cos(.3f));
-        settleFor(up, osg::Vec3f(0, 0, 1), 1.f);
-        EXPECT_LT(angleBetween(up, osg::Vec3f(0, 0, -1)), .01f);
+        EXPECT_FLOAT_EQ(Rules::restSpeed(1.f, 2.f, 10.f), 20.f);
+        EXPECT_FLOAT_EQ(Rules::restSpeed(30.f, .1f, 10.f), 30.f);
     }
 
     TEST(ItemPhysicsRules, CrimeAmountsMatchMinorAndDestructionPenalties)
@@ -165,5 +89,103 @@ namespace
         EXPECT_EQ(Rules::crimeAmount(1), 25);
         EXPECT_EQ(Rules::crimeAmount(1000), 100);
         EXPECT_EQ(Rules::crimeAmount(1000, true), 2000);
+    }
+
+    // Drops an item body, configured as the game does, onto flat ground at
+    // z = 0 and lets it come to rest.
+    class ItemOnGround : public testing::Test
+    {
+    protected:
+        ItemOnGround()
+            : mDispatcher(&mConfiguration)
+            , mWorld(&mDispatcher, &mBroadphase, &mSolver, &mConfiguration)
+            , mGroundShape(btVector3(0, 0, 1), 0)
+            , mGround(0.f, nullptr, &mGroundShape)
+        {
+            mWorld.setGravity(btVector3(0, 0, -Rules::Gravity));
+            mGround.setFriction(1.f);
+            mWorld.addRigidBody(&mGround);
+        }
+
+        ~ItemOnGround() override
+        {
+            if (mBody)
+                mWorld.removeRigidBody(mBody.get());
+            mWorld.removeRigidBody(&mGround);
+        }
+
+        btRigidBody& drop(const osg::Vec3f& half, const btQuaternion& rotation, float height)
+        {
+            const auto props = Rules::properties(half);
+            const osg::Vec3f box = Rules::collisionHalfExtents(half);
+            mShape = std::make_unique<btBoxShape>(btVector3(box.x(), box.y(), box.z()));
+            btVector3 inertia;
+            mShape->calculateLocalInertia(props.mMass, inertia);
+            btRigidBody::btRigidBodyConstructionInfo info(props.mMass, nullptr, mShape.get(), inertia);
+            info.m_startWorldTransform = btTransform(rotation, btVector3(0, 0, height));
+            info.m_restitution = props.mRestitution;
+            info.m_friction = Rules::Friction;
+            info.m_rollingFriction = Rules::RollingFriction;
+            info.m_linearDamping = props.mLinearDamping;
+            info.m_angularDamping = props.mAngularDamping;
+            mBody = std::make_unique<btRigidBody>(info);
+            mBody->setSleepingThresholds(0, 0);
+            mWorld.addRigidBody(mBody.get());
+            return *mBody;
+        }
+
+        void run(float seconds)
+        {
+            for (int step = 0; step < static_cast<int>(seconds * 120.f); ++step)
+                mWorld.stepSimulation(1.f / 120.f, 1, 1.f / 120.f);
+        }
+
+        // Angle between the item's model up axis and world up, either way up.
+        float tilt() const
+        {
+            const btVector3 up = quatRotate(mBody->getWorldTransform().getRotation(), btVector3(0, 0, 1));
+            return static_cast<float>(std::acos(std::min(btScalar(1), std::abs(up.z()))));
+        }
+
+        btDefaultCollisionConfiguration mConfiguration;
+        btCollisionDispatcher mDispatcher;
+        btDbvtBroadphase mBroadphase;
+        btSequentialImpulseConstraintSolver mSolver;
+        btDiscreteDynamicsWorld mWorld;
+        btStaticPlaneShape mGroundShape;
+        btRigidBody mGround;
+        std::unique_ptr<btBoxShape> mShape;
+        std::unique_ptr<btRigidBody> mBody;
+    };
+
+    TEST_F(ItemOnGround, StandingBottleRestsOnItsBaseInsteadOfSinking)
+    {
+        const btRigidBody& body = drop(osg::Vec3f(4, 4, 12), btQuaternion::getIdentity(), 20.f);
+        run(3.f);
+        EXPECT_NEAR(body.getWorldTransform().getOrigin().z(), 12.f, .5f);
+        EXPECT_LT(tilt(), .05f);
+        EXPECT_LT(body.getLinearVelocity().length(), 1.f);
+    }
+
+    TEST_F(ItemOnGround, TiltedBookLandsAndLiesFlat)
+    {
+        const btRigidBody& body = drop(osg::Vec3f(10, 7, 1.5f), btQuaternion(btVector3(1, 0, 0), 1.f), 30.f);
+        run(4.f);
+        EXPECT_LT(tilt(), .05f);
+        EXPECT_NEAR(body.getWorldTransform().getOrigin().z(), 1.5f, .3f);
+        EXPECT_LT(Rules::restSpeed(static_cast<float>(body.getLinearVelocity().length()),
+                      static_cast<float>(body.getAngularVelocity().length()), 10.f),
+            Rules::SleepSpeed);
+    }
+
+    TEST_F(ItemOnGround, SlidingBookStopsWithoutSpinning)
+    {
+        btRigidBody& body = drop(osg::Vec3f(10, 7, 1.5f), btQuaternion::getIdentity(), 1.6f);
+        run(.5f);
+        body.setLinearVelocity(btVector3(300, 0, 0));
+        run(3.f);
+        EXPECT_LT(body.getLinearVelocity().length(), 1.f);
+        EXPECT_LT(body.getAngularVelocity().length(), .1f);
+        EXPECT_LT(tilt(), .05f);
     }
 }

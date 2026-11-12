@@ -96,6 +96,7 @@ namespace MWRender
     class IntersectionVisitorWithIgnoreList;
 
     class EffectManager;
+    class ShatterEffects;
     class ScreenshotManager;
     class FogManager;
     class SkyManager;
@@ -217,6 +218,9 @@ namespace MWRender
             bool loop = false);
 
         void removeEffect(std::string_view effectId);
+
+        /// Break a copy of the object's model into shards that land on floor.
+        bool shatterObject(const MWWorld::ConstPtr& ptr, const osg::Vec3f& velocity, float floor);
 
         /// Clear all savegame-specific data
         void clear();
@@ -354,6 +358,7 @@ namespace MWRender
         std::unique_ptr<FogManager> mFog;
         std::unique_ptr<ScreenshotManager> mScreenshotManager;
         std::unique_ptr<EffectManager> mEffectManager;
+        std::unique_ptr<ShatterEffects> mShatterEffects;
         std::unique_ptr<SceneUtil::ShadowManager> mShadowManager;
         osg::ref_ptr<SceneUtil::OcclusionCuller> mOcclusionCuller;
         osg::ref_ptr<SceneOcclusionCallback> mSceneOcclusionCallback;
