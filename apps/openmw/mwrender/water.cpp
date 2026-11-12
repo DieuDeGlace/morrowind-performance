@@ -243,7 +243,15 @@ namespace MWRender
             : RTTNode(rttSize, rttSize, 0, false, 0, StereoAwareness::Aware, shouldAddMSAAIntermediateTarget())
         {
             setInterior(isInterior);
+#ifdef ANDROID
+            // GLES2 has no 32-bit float depth. With it the reflection target
+            // is incomplete and OSG falls back to drawing into the window,
+            // which cuts off the part of a large reflection above the
+            // window's height.
+            setDepthBufferInternalFormat(GL_DEPTH24_STENCIL8);
+#else
             setDepthBufferInternalFormat(GL_DEPTH32F_STENCIL8);
+#endif
             mClipCullNode = new ClipCullNode;
         }
 

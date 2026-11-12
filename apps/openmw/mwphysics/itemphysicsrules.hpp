@@ -2,6 +2,7 @@
 #define OPENMW_MWPHYSICS_ITEMPHYSICSRULES_HPP
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <string>
 #include <string_view>
@@ -109,88 +110,50 @@ namespace MWPhysics::ItemPhysicsRules
         float mQuiet = 0.f;
     };
 
-    // The collision proxy is a small sphere, so letting the solver rotate it
-    // makes every item roll like a ball: a flat book dragged over terrain or
-    // left on a slope tumbles for as long as it keeps moving. As in the Lua
-    // mod, tumbling is cosmetic instead: impacts start it, air drag and
-    // contact slow it, and it never feeds back into the linear motion. Items
-    // on the ground also turn until they rest on their broad side.
-    constexpr float ImpactSpinDamping = .5f;
-    constexpr float ImpactSpinGain = 6.f;
-    constexpr float SpinDrag = .1f;
-    constexpr float SpinToRadians = .01f;
-    constexpr float MaxSpin = 5000.f;
-    // On the ground a landing tumble fades over a fraction of a second.
-    constexpr float GroundSpinHalfLife = .12f;
-    // A held item stops turning at once, so dragging cannot make it spin.
-    constexpr float HeldSpinHalfLife = 1.f / 60.f;
-    // How fast an item on the ground turns to lie flat on the surface (1/s).
-    constexpr float SettleRate = 6.f;
+    // Items collide as a box the size of their model's bounds, so they rest
+    // on their real base: a standing bottle stands on its bottom instead of
+    // sinking to a sphere fitted to its narrowest width, and a book lands
+    // and settles on its broad side. A box cannot roll, so a dragged item
+    // slides and tips over instead of spinning.
+    constexpr float MinHalfExtent = 1.f;
+    constexpr float Friction = .6f;
+    constexpr float RollingFriction = .05f;
+    // Held items barely turn, so a drag over rough ground cannot whirl them.
+    constexpr float HeldAngularDamping = .95f;
 
-    enum class Support
+    inline osg::Vec3f collisionHalfExtents(const osg::Vec3f& half)
     {
-        Air,
-        Ground,
-        Held
-    };
-
-    // Turn, as axis * radians in world space, that brings up (the item's
-    // model up axis in world space) part of the way towards the surface
-    // normal, or towards its reverse when the item lies upside down. Items
-    // are modelled lying on their broad side, so this lays them flat on the
-    // surface, following its slope.
-    inline osg::Vec3f settleTurn(osg::Vec3f up, osg::Vec3f normal, float dt)
-    {
-        if (normal.length2() < 1e-6f || up.length2() < 1e-6f)
-            return {};
-        normal.normalize();
-        up.normalize();
-        if (up * normal < 0.f)
-            up = -up;
-        const osg::Vec3f axis = up ^ normal;
-        const float sine = axis.length();
-        if (sine < 1e-5f)
-            return {};
-        const float angle = std::atan2(sine, std::clamp(up * normal, -1.f, 1.f));
-        const float fraction = 1.f - std::exp(-SettleRate * std::clamp(dt, 0.f, .05f));
-        return axis * (angle * fraction / sine);
+        return osg::Vec3f(
+            std::max(half.x(), MinHalfExtent), std::max(half.y(), MinHalfExtent), std::max(half.z(), MinHalfExtent));
     }
 
-    class Spin
+    // Speed used for the sleep rule: tumbling counts as motion too, measured
+    // at the item's farthest edge.
+    inline float restSpeed(float linear, float angular, float largestHalfExtent)
     {
-    public:
-        // normal points from the surface towards the item; velocity is the
-        // item's velocity after the bounce.
-        void impact(const osg::Vec3f& normal, const osg::Vec3f& velocity, float radius, float largestHalfExtent)
-        {
-            mVelocity *= ImpactSpinDamping;
-            if (largestHalfExtent <= 0.f)
-                return;
-            mVelocity += ((normal * -radius) ^ (-velocity)) * (ImpactSpinGain / largestHalfExtent);
-            const float speed = mVelocity.length();
-            if (!std::isfinite(speed))
-                mVelocity = osg::Vec3f();
-            else if (speed > MaxSpin)
-                mVelocity *= MaxSpin / speed;
-        }
+        return std::max(linear, angular * largestHalfExtent);
+    }
 
-        // Returns the world-space rotation for this interval as axis * radians.
-        osg::Vec3f advance(float dt, Support support)
-        {
-            dt = std::clamp(dt, 0.f, .05f);
-            if (support == Support::Air)
-                mVelocity *= 1.f - SpinDrag * dt;
-            else
-                mVelocity *= std::pow(.5f, dt / (support == Support::Held ? HeldSpinHalfLife : GroundSpinHalfLife));
-            return mVelocity * (dt * SpinToRadians);
-        }
+    // Whether a model (file stem, any case) is a glass vessel that shatters.
+    // Limeware (_lw_) flasks are ceramic.
+    inline bool glassModel(std::string_view stem)
+    {
+        std::string name(stem);
+        std::transform(
+            name.begin(), name.end(), name.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        if (name.find("_lw_") != std::string::npos)
+            return false;
+        for (std::string_view word : { "bottle", "potion", "glass", "flask", "vial" })
+            if (name.find(word) != std::string::npos)
+                return true;
+        return false;
+    }
 
-        void reset() { mVelocity = osg::Vec3f(); }
-        const osg::Vec3f& velocity() const { return mVelocity; }
-
-    private:
-        osg::Vec3f mVelocity;
-    };
+    // Glass breaks more easily than other items (as in the Lua mod).
+    constexpr int HitPoints = 10;
+    constexpr int GlassHitPoints = 5;
+    // Landing at this speed or faster costs one hit point.
+    constexpr float DamagingImpactSpeed = 2.f * UnitsPerMetre;
 }
 
 #endif
