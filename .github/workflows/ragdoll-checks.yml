@@ -50,5 +50,7 @@ jobs:
           g++ -std=c++20 -fsyntax-only -I. -I/usr/include/bullet -Iextern/sol3 -Iextern/sol_config -I/usr/include/luajit-2.1 -I/usr/include/MYGUI -I/usr/include/SDL2 apps/openmw/mwlua/worldbindings.cpp
       - name: Run native item policy tests
         run: |
-          g++ -std=c++20 -I. apps/openmw_tests/mwphysics/testitemphysicsrules.cpp -lgtest_main -lgtest -pthread -o /tmp/item-physics-tests
+          g++ -std=c++20 -I. -I/usr/include/bullet apps/openmw_tests/mwphysics/testitemphysicsrules.cpp -lgtest_main -lgtest -lBulletDynamics -lBulletCollision -lLinearMath -pthread -o /tmp/item-physics-tests
           /tmp/item-physics-tests
+          g++ -std=c++20 -I. apps/openmw_tests/mwrender/testshatterrules.cpp -lgtest_main -lgtest -pthread -o /tmp/shatter-tests
+          /tmp/shatter-tests
