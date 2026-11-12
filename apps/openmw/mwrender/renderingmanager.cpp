@@ -1252,11 +1252,12 @@ namespace MWRender
 
     bool RenderingManager::shatterObject(const MWWorld::ConstPtr& ptr, const osg::Vec3f& velocity, float floor)
     {
-        const osg::Node* node = ptr.getRefData().getBaseNode();
-        const auto* object = node ? node->asTransform() : nullptr;
-        if (!object || !object->asPositionAttitudeTransform())
+        // Object base nodes are SceneUtil (not osg) PositionAttitudeTransforms.
+        const SceneUtil::PositionAttitudeTransform* object = ptr.getRefData().getBaseNode();
+        if (!object)
             return false;
-        return mShatterEffects->add(*object->asPositionAttitudeTransform(), velocity, floor);
+        return mShatterEffects->add(
+            *object, object->getPosition(), object->getAttitude(), object->getScale(), velocity, floor);
     }
 
     void RenderingManager::notifyWorldSpaceChanged()
