@@ -493,6 +493,7 @@ namespace MWPhysics
 
     void ItemPhysics::prepare(float dt)
     {
+        mPublicDamage.update(dt);
         if (mBodies.empty())
             return;
         const auto player = MWBase::Environment::get().getWorld()->getPlayerPtr();
@@ -623,11 +624,19 @@ namespace MWPhysics
     {
         const auto& item = body->mPtr;
         const auto& culprit = body->mCulprit;
+        if (culprit.isEmpty())
+            return;
         MWWorld::Ptr victim;
         const auto mechanics = MWBase::Environment::get().getMechanicsManager();
-        if (!culprit.isEmpty() && !mechanics->isAllowedToUse(culprit, item, victim))
+        // Witnesses are found by the engine's usual crime checks: line of
+        // sight and the culprit's sneak against the witness's awareness.
+        if (!mechanics->isAllowedToUse(culprit, item, victim))
             mechanics->commitCrime(culprit, victim, MWBase::MechanicsManager::OT_Pickpocket,
                 item.getCellRef().getFaction(), ItemPhysicsRules::crimeAmount(item.getClass().getValue(item), true));
+        else if (culprit == MWBase::Environment::get().getWorld()->getPlayerPtr() && mPublicDamage.broke()
+            && mechanics->commitCrime(culprit, MWWorld::Ptr(), MWBase::MechanicsManager::OT_Pickpocket, ESM::RefId(),
+                ItemPhysicsRules::PublicDamageFine))
+            mPublicDamage.reported();
     }
 
     const std::vector<VFS::Path::Normalized>* ItemPhysics::findDebris(const MWWorld::Ptr& item)

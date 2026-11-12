@@ -149,6 +149,30 @@ namespace MWPhysics::ItemPhysicsRules
         return false;
     }
 
+    // Breaking items nobody owns is tolerated a few times; doing it more
+    // often in front of witnesses is a petty crime (as in the Lua mod). The
+    // count fades over time.
+    constexpr float PublicDamageLimit = 3.f;
+    constexpr float PublicDamageDecay = .1f; // per second
+    constexpr int PublicDamageFine = 50;
+
+    class PublicDamage
+    {
+    public:
+        // Returns true when this break should be reported as a crime.
+        bool broke()
+        {
+            mRating += 1.f;
+            return mRating >= PublicDamageLimit;
+        }
+        void reported() { mRating = 0.f; }
+        void update(float dt) { mRating = std::max(0.f, mRating - PublicDamageDecay * std::max(dt, 0.f)); }
+        float rating() const { return mRating; }
+
+    private:
+        float mRating = 0.f;
+    };
+
     // Glass breaks more easily than other items (as in the Lua mod).
     constexpr int HitPoints = 10;
     constexpr int GlassHitPoints = 5;
