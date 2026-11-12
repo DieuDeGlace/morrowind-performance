@@ -72,6 +72,9 @@ uniform float far;
 
 uniform float rainIntensity;
 
+// OPENMW_ANDROID_053_WATER_DEBUG_READBACK: nonzero only on a few diagnostic frames.
+uniform float androidWaterDebug;
+
 uniform vec2 screenRes;
 
 #define PER_PIXEL_LIGHTING 0
@@ -169,13 +172,20 @@ void main(void)
     vec2 reflectionCoordsOffset = normal.xy * REFL_BUMP;
     vec2 refractionCoordsOffset = vec2(0.0);
     float depthSample = linearizeDepth(sampleOpaqueDepthTex(screenCoords).r, near, far);
-    float surfaceDepth = linearizeDepth(gl_FragCoord.z, near, far);
+    // OPENMW_ANDROID_053_VIEW_SPACE_SURFACE_DEPTH: GLSL ES 1.00 only gives
+    // gl_FragCoord medium precision. On phones that is a 16-bit float, which
+    // near the far plane cannot tell depths apart, so the surface could land
+    // hundreds of units behind the ground and every shore read as deep water.
+    // The interpolated view-space position gives the same distance exactly.
+    float surfaceDepth = -passViewPos.z;
     float realWaterDepth = depthSample - surfaceDepth;  // undistorted water depth in view direction, independent of frustum
     // OPENMW_ANDROID_053_WATER_DEPTH_GUARD: the water is depth tested, so the
     // opaque scene behind it can never be much nearer than the surface. If it
     // reads that way the depth copy is unusable on this device; treat the
     // water as deep instead of fading the whole surface out at the "shore".
-    if (!(depthSample >= surfaceDepth * 0.9))
+    float rawDepthSample = depthSample;
+    bool depthGuardFired = !(depthSample >= surfaceDepth * 0.9);
+    if (depthGuardFired)
     {
         depthSample = far;
         realWaterDepth = far - surfaceDepth;
@@ -273,6 +283,21 @@ void main(void)
     shoreOffset = clamp(mix(shoreOffset, 1.0, clamp(linearDepth / WOBBLY_SHORE_FADE_DISTANCE, 0.0, 1.0)), 0.0, 1.0);
     gl_FragData[0].rgb = mix(rawRefraction, gl_FragData[0].rgb, shoreOffset);
 #endif
+
+    // OPENMW_ANDROID_053_WATER_DEBUG_READBACK: on diagnostic frames, output what
+    // this shader read so the engine can log it (see opaqueblit.cpp).
+    if (androidWaterDebug > 0.5)
+    {
+        if (androidWaterDebug < 1.5)
+            gl_FragData[0] = vec4(sampleOpaqueDepthTexRaw(screenCoords).rgb, 1.0);
+        else if (androidWaterDebug < 2.5)
+        {
+            float flags = opaqueDepthDebugFlags() + (depthGuardFired ? 32.0 : 0.0) + (cameraPos.z >= 0.0 ? 16.0 : 0.0);
+            gl_FragData[0] = vec4(clamp(rawDepthSample / 4096.0, 0.0, 1.0), clamp(surfaceDepth / 4096.0, 0.0, 1.0), flags / 255.0, 1.0);
+        }
+        else
+            gl_FragData[0] = vec4(clamp(linearizeDepth(gl_FragCoord.z, near, far) / 4096.0, 0.0, 1.0), screenCoords, 1.0);
+    }
 
 #if !@disableNormals
     gl_FragData[1].rgb = normalize(gl_NormalMatrix * normal) * 0.5 + 0.5;
