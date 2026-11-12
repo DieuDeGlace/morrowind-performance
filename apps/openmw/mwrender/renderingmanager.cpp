@@ -288,6 +288,13 @@ namespace MWRender
 
         globalDefines["reverseZ"] = reverseZ ? "1" : "0";
 
+#ifdef ANDROID
+        // The launcher's "Medium shader precision" option makes GL4ES compile
+        // shaders at medium precision, too coarse for the packed opaque depth.
+        const char* noHighp = std::getenv("LIBGL_NOHIGHP");
+        globalDefines["opaqueDepthDisabled"] = (noHighp && noHighp[0] == '1') ? "1" : "0";
+#endif
+
         // It is unnecessary to stop/start the viewer as no frames are being rendered yet.
         mResourceSystem->getSceneManager()->getShaderManager().setGlobalDefines(globalDefines);
 

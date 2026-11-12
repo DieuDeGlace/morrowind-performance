@@ -36,11 +36,25 @@ uniform sampler2D opaqueDepthTex;
 #endif
 uniform sampler2D opaqueColorTex;
 
+// Unpacking sums the bytes up to 16777215, which overflows 16-bit floats, so
+// the sum is always done in high precision. When shaders run at medium
+// precision (the launcher's "Medium shader precision" option, or a GPU
+// without high precision) depth near the far plane is too coarse for shore
+// fading anyway; report no opaque depth there, i.e. deep open water.
 vec4 sampleOpaqueDepthTex(vec2 uv)
 {
+#if @opaqueDepthDisabled || (defined(GL_ES) && !defined(GL_FRAGMENT_PRECISION_HIGH))
+    return vec4(1.0);
+#else
+#if defined(GL_ES)
+    highp vec3 bytes = floor(texture2D(opaqueDepthTex, uv).rgb * 255.0 + vec3(0.5));
+    highp float depth = dot(bytes, vec3(65536.0, 256.0, 1.0)) / 16777215.0;
+#else
     vec3 bytes = floor(texture2D(opaqueDepthTex, uv).rgb * 255.0 + vec3(0.5));
     float depth = dot(bytes, vec3(65536.0, 256.0, 1.0)) / 16777215.0;
+#endif
     return vec4(depth);
+#endif
 }
 
 vec4 sampleOpaqueColorTex(vec2 uv)

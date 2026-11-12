@@ -936,6 +936,7 @@ namespace Shader
             { "radialFog", "0" },
             { "exponentialFog", "0" },
             { "reverseZ", "0" },
+            { "opaqueDepthDisabled", "0" },
             { "waterRefraction", "0" },
             { "classicFalloff", "1" },
             { "skyBlending", "0" },
