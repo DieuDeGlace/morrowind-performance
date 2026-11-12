@@ -4,6 +4,7 @@
 #include <deque>
 #include <vector>
 
+#include <osg/Quat>
 #include <osg/Vec3f>
 #include <osg/ref_ptr>
 
@@ -26,9 +27,10 @@ namespace MWRender
         explicit ShatterEffects(osg::ref_ptr<osg::Group> parent);
         ~ShatterEffects();
 
-        // object is the object's base node. Returns false when its model has
-        // no plain triangle geometry to break.
-        bool add(const osg::PositionAttitudeTransform& object, const osg::Vec3f& velocity, float floor);
+        // object is the object's base node, placed at position with attitude and
+        // scale. Returns false when its model has no plain triangle geometry.
+        bool add(const osg::Group& object, const osg::Vec3f& position, const osg::Quat& attitude,
+            const osg::Vec3f& scale, const osg::Vec3f& velocity, float floor);
         void update(float dt);
         void clear();
 
