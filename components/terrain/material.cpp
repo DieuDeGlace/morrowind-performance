@@ -198,7 +198,14 @@ namespace Terrain
             {
                 stateset->setMode(GL_BLEND, osg::StateAttribute::ON);
                 // This pass needs normals-buffer blending.
+#ifndef ANDROID
                 stateset->setAttribute(new osg::Enablei(GL_BLEND, 1));
+#else
+                // OPENMW_ANDROID_053_NO_INDEXED_BLEND
+                // Android never has a normals buffer (the post-processor turns
+                // indexed blending off for GL4ES), and GL4ES has no glEnablei, so
+                // this attribute only made OSG log a warning on every terrain draw.
+#endif
                 stateset->setRenderBinDetails(firstLayer ? 0 : 1, "RenderBin");
                 if (!firstLayer)
                 {
