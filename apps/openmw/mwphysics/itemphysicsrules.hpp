@@ -178,6 +178,21 @@ namespace MWPhysics::ItemPhysicsRules
     constexpr int GlassHitPoints = 5;
     // Landing at this speed or faster costs one hit point.
     constexpr float DamagingImpactSpeed = 2.f * UnitsPerMetre;
+
+    // An item striking someone at a damaging speed hurts them in proportion
+    // to its momentum: a thrown bottle takes a couple of points of health.
+    constexpr float StrikeMomentumPerPoint = 250.f;
+    constexpr float MaxStrikeDamage = 10.f;
+
+    inline float strikeDamage(float mass, float speed)
+    {
+        if (speed < DamagingImpactSpeed)
+            return 0.f;
+        return std::clamp(mass * speed / StrikeMomentumPerPoint, 1.f, MaxStrikeDamage);
+    }
+
+    // A potion that shatters splashes everyone this close to it.
+    constexpr float SplashRadius = 1.75f * UnitsPerMetre;
 }
 
 #endif

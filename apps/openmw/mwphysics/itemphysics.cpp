@@ -15,6 +15,8 @@
 #include <osg/ComputeBoundsVisitor>
 
 #include <components/debug/debuglog.hpp>
+#include <components/esm3/loadalch.hpp>
+#include <components/esm3/loadmgef.hpp>
 #include <components/esm3/loadmisc.hpp>
 #include <components/misc/convert.hpp>
 #include <components/misc/mathutil.hpp>
@@ -32,6 +34,7 @@
 #include "../mwbase/world.hpp"
 #include "../mwmechanics/creaturestats.hpp"
 #include "../mwmechanics/drawstate.hpp"
+#include "../mwmechanics/spellcasting.hpp"
 #include "../mwrender/renderingmanager.hpp"
 #include "../mwworld/cellstore.hpp"
 #include "../mwworld/class.hpp"
@@ -212,18 +215,30 @@ namespace MWPhysics
             mNeedsSync = true;
             mActivityTime += elapsed;
             bool contact = false;
+            const btCollisionObject* actor = nullptr;
             auto* dispatcher = mPhysics.getRagdollWorld()->getDispatcher();
             for (int index = 0; index < dispatcher->getNumManifolds(); ++index)
             {
                 const auto* manifold = dispatcher->getManifoldByIndexInternal(index);
-                if (manifold->getNumContacts() > 0
-                    && (manifold->getBody0() == mBody.get() || manifold->getBody1() == mBody.get()))
-                {
-                    contact = true;
-                    break;
-                }
+                if (manifold->getNumContacts() == 0
+                    || (manifold->getBody0() != mBody.get() && manifold->getBody1() != mBody.get()))
+                    continue;
+                contact = true;
+                const btCollisionObject* other
+                    = manifold->getBody0() == mBody.get() ? manifold->getBody1() : manifold->getBody0();
+                if (other->getBroadphaseHandle()
+                    && (other->getBroadphaseHandle()->m_collisionFilterGroup & CollisionType_Actor))
+                    actor = other;
             }
             const bool grabbed = mPhysics.getRagdollWorld()->isGrabbed(*this);
+            // A thrown or knocked item striking someone hurts them; the
+            // world side resolves who it was.
+            if (actor && actor != mStruckActor && !grabbed && mPreviousSpeed >= ItemPhysicsRules::DamagingImpactSpeed)
+            {
+                mStruck = actor;
+                mStruckSpeed = mPreviousSpeed;
+            }
+            mStruckActor = actor;
             if (grabbed != mWasGrabbed)
             {
                 mBody->setDamping(mProperties.mLinearDamping,
@@ -297,6 +312,11 @@ namespace MWPhysics
         int mDamage = 0;
         bool mImpact = false;
         bool mHadContact = false;
+        // The actor the item touches now, and one it struck hard and that
+        // synchronize() has not dealt with yet.
+        const btCollisionObject* mStruckActor = nullptr;
+        const btCollisionObject* mStruck = nullptr;
+        float mStruckSpeed = 0.f;
         std::vector<const btCollisionObject*> mIgnoredActors;
         bool mRegistered = false;
         bool mNeedsSync = false;
@@ -571,6 +591,8 @@ namespace MWPhysics
                         body->mPtr.getClass().getDownSoundId(body->mPtr),
                         std::clamp(body->mPreviousSpeed / 400.f, .15f, .8f), 1.f);
                 }
+                if (body->mStruck)
+                    strike(body);
                 if (body->mDamage > 0)
                 {
                     body->mHitPoints -= std::exchange(body->mDamage, 0);
@@ -617,6 +639,78 @@ namespace MWPhysics
                 continue;
             for (const auto& target : ItemPhysicsRules::debrisTargets(path.stem()))
                 mDebris[target].push_back(path);
+        }
+    }
+
+    MWWorld::Ptr ItemPhysics::actorFor(const btCollisionObject* collider) const
+    {
+        for (const auto& [_, actor] : mPhysics.getActors())
+            if (actor->getCollisionObject() == collider)
+                return actor->getPtr();
+        return {};
+    }
+
+    void ItemPhysics::hurt(const MWWorld::Ptr& victim, float damage, const MWWorld::Ptr& culprit)
+    {
+        auto& stats = victim.getClass().getCreatureStats(victim);
+        if (stats.isDead())
+            return;
+        if (damage > 0.f)
+        {
+            auto health = stats.getHealth();
+            health.setCurrent(health.getCurrent() - damage);
+            stats.setHealth(health);
+        }
+        // Hitting someone with a thrown object is an assault: they fight
+        // back or call the guards, as with any other attack.
+        const auto player = MWBase::Environment::get().getWorld()->getPlayerPtr();
+        if (culprit == player && victim != player)
+            MWBase::Environment::get().getMechanicsManager()->commitCrime(
+                player, victim, MWBase::MechanicsManager::OT_Assault);
+    }
+
+    void ItemPhysics::strike(const std::shared_ptr<Body>& body)
+    {
+        const auto victim = actorFor(std::exchange(body->mStruck, nullptr));
+        if (victim.isEmpty() || victim == body->mCulprit)
+            return;
+        const float damage = ItemPhysicsRules::strikeDamage(body->mProperties.mMass, body->mStruckSpeed);
+        if (damage <= 0.f)
+            return;
+        MWBase::Environment::get().getSoundManager()->playSound3D(
+            victim, ESM::RefId::stringRefId("Hand To Hand Hit"), 1.f, 1.f);
+        Log(Debug::Info) << "Item physics: " << body->mPtr.getCellRef().getRefId() << " struck "
+                         << victim.getCellRef().getRefId() << " for " << damage;
+        hurt(victim, damage, body->mCulprit);
+    }
+
+    void ItemPhysics::splash(const std::shared_ptr<Body>& body)
+    {
+        const auto& item = body->mPtr;
+        if (item.getType() != ESM::REC_ALCH)
+            return;
+        const ESM::Potion* potion = item.get<ESM::Potion>()->mBase;
+        const auto& effects = MWBase::Environment::get().getESMStore()->get<ESM::MagicEffect>();
+        const bool harmful
+            = std::any_of(potion->mEffects.mList.begin(), potion->mEffects.mList.end(), [&](const auto& effect) {
+                  return effects.find(effect.mData.mEffectID)->mData.mFlags & ESM::MagicEffect::Harmful;
+              });
+        const btVector3 centre = body->mBody->getWorldTransform().getOrigin();
+        std::vector<MWWorld::Ptr> splashed;
+        for (const auto& [_, actor] : mPhysics.getActors())
+            if ((actor->getCollisionObject()->getWorldTransform().getOrigin() - centre).length()
+                <= ItemPhysicsRules::SplashRadius)
+                splashed.push_back(actor->getPtr());
+        for (const auto& actor : splashed)
+        {
+            if (actor.getClass().getCreatureStats(actor).isDead())
+                continue;
+            // The splash works as if they had drunk it.
+            MWMechanics::CastSpell(actor, actor).cast(potion);
+            Log(Debug::Info) << "Item physics: " << item.getCellRef().getRefId() << " splashed "
+                             << actor.getCellRef().getRefId();
+            if (harmful)
+                hurt(actor, 0.f, body->mCulprit);
         }
     }
 
@@ -698,6 +792,7 @@ namespace MWPhysics
                 return false;
         }
         reportDestruction(body);
+        splash(body);
         MWBase::Environment::get().getSoundManager()->playSound3D(
             item.getRefData().getPosition().asVec3(), item.getClass().getDownSoundId(item), 1.f, .8f);
         if (!debris)

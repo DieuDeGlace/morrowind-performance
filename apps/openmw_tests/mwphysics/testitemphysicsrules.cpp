@@ -101,6 +101,17 @@ namespace
         EXPECT_FALSE(damage.broke());
     }
 
+    TEST(ItemPhysicsRules, StrikesHurtInProportionToMomentum)
+    {
+        // A light item dropping onto someone's foot does nothing.
+        EXPECT_FLOAT_EQ(Rules::strikeDamage(1.f, 100.f), 0.f);
+        // A thrown bottle (throw impulse on a 1 kg item).
+        EXPECT_FLOAT_EQ(Rules::strikeDamage(1.f, Rules::ThrowImpulse), 2.f);
+        // Never less than a point once it hurts, never more than ten.
+        EXPECT_FLOAT_EQ(Rules::strikeDamage(1.f, Rules::DamagingImpactSpeed), 1.f);
+        EXPECT_FLOAT_EQ(Rules::strikeDamage(50.f, 1000.f), Rules::MaxStrikeDamage);
+    }
+
     TEST(ItemPhysicsRules, CrimeAmountsMatchMinorAndDestructionPenalties)
     {
         EXPECT_EQ(Rules::crimeAmount(1), 25);
