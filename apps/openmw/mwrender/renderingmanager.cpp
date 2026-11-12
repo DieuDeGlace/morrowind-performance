@@ -385,9 +385,16 @@ namespace MWRender
         // OPENMW_ANDROID_051_CPU_SUN_OCCLUSION
         mPostProcessor->getStateUpdater()->setSunOcclusion(1.f);
 #endif
+#ifdef ANDROID
+        // Shaders read the opaque depth packed into RGB; see OpaqueColorBinCallback.
+        resourceSystem->getSceneManager()->setOpaqueDepthTex(
+            mPostProcessor->getTexture(PostProcessor::Tex_OpaqueDepthPacked, 0),
+            mPostProcessor->getTexture(PostProcessor::Tex_OpaqueDepthPacked, 1));
+#else
         resourceSystem->getSceneManager()->setOpaqueDepthTex(
             mPostProcessor->getTexture(PostProcessor::Tex_OpaqueDepth, 0),
             mPostProcessor->getTexture(PostProcessor::Tex_OpaqueDepth, 1));
+#endif
         resourceSystem->getSceneManager()->setOpaqueColorTex(
             mPostProcessor->getTexture(PostProcessor::Tex_OpaqueColor, 0),
             mPostProcessor->getTexture(PostProcessor::Tex_OpaqueColor, 1));

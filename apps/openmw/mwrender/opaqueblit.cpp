@@ -146,6 +146,52 @@ void main()
             program->addShader(new osg::Shader(osg::Shader::FRAGMENT, fragment));
             return program;
         }
+
+        // OPENMW_ANDROID_053_PACKED_OPAQUE_DEPTH
+        // Many GLES2 drivers cannot write gl_FragDepth, so the opaque depth copy
+        // above was left cleared to "far" and water treated every pixel as deep
+        // open water (no shore fade or wobbly shores). Any GLES2 device can
+        // sample the scene depth texture, so store it as a 24-bit integer in
+        // RGB instead; sampleOpaqueDepthTex unpacks it. A depth of 1.0 packs to
+        // white and unpacks to exactly 1.0, so the sky still reads as empty.
+        osg::Program* makePackProgram()
+        {
+            auto* program = new osg::Program;
+            program->addShader(new osg::Shader(osg::Shader::VERTEX, R"glsl(#version 120
+#if defined(GL_ES)
+varying highp vec2 copyUv;
+#else
+varying vec2 copyUv;
+#endif
+void main()
+{
+    gl_Position = gl_Vertex;
+    copyUv = gl_Vertex.xy * 0.5 + 0.5;
+}
+)glsl"));
+            program->addShader(new osg::Shader(osg::Shader::FRAGMENT, R"glsl(#version 120
+#if defined(GL_ES)
+varying highp vec2 copyUv;
+uniform highp sampler2D sceneDepth;
+#define HIGHP highp
+#else
+varying vec2 copyUv;
+uniform sampler2D sceneDepth;
+#define HIGHP
+#endif
+void main()
+{
+    // Clamp after rounding: in 32-bit floats 16777215.0 + 0.5 rounds up to 2^24.
+    HIGHP float value = min(floor(clamp(texture2D(sceneDepth, copyUv).r, 0.0, 1.0) * 16777215.0 + 0.5), 16777215.0);
+    HIGHP float red = floor(value / 65536.0);
+    value -= red * 65536.0;
+    HIGHP float green = floor(value / 256.0);
+    HIGHP float blue = value - green * 256.0;
+    gl_FragColor = vec4(red, green, blue, 255.0) / 255.0;
+}
+)glsl"));
+            return program;
+        }
     }
 
     void OpaqueColorBinCallback::drawCopy(osg::State& state, osg::RenderInfo& renderInfo, osgUtil::RenderLeaf* previous,
@@ -211,9 +257,40 @@ void main()
             glDepthMask(GL_FALSE);
         }
         mCopyGeometry->draw(renderInfo);
-        mFbo[frameId]->apply(state, osg::FrameBufferObject::READ_DRAW_FRAMEBUFFER);
-
         state.popStateSet();
+
+        if (const auto& packedFbo = mPackedDepthFbo[frameId])
+        {
+            const osg::Texture* packed
+                = packedFbo->getAttachment(osg::FrameBufferObject::BufferComponent::COLOR_BUFFER0).getTexture();
+            osg::ref_ptr<osg::StateSet>& packSet = mPackStateSet[frameId];
+            if (!packSet)
+            {
+                packSet = new osg::StateSet;
+                const auto off
+                    = osg::StateAttribute::OFF | osg::StateAttribute::OVERRIDE | osg::StateAttribute::PROTECTED;
+                static const osg::ref_ptr<osg::Program> program = makePackProgram();
+                packSet->setAttributeAndModes(program, on);
+                packSet->addUniform(new osg::Uniform("sceneDepth", 0), on);
+                packSet->setAttributeAndModes(new osg::Depth(osg::Depth::ALWAYS, 0, 1, false), on);
+                packSet->setAttributeAndModes(new osg::ColorMask(true, true, true, true), on);
+                packSet->setMode(GL_DEPTH_TEST, off);
+                packSet->setMode(GL_BLEND, off);
+                packSet->setMode(GL_CULL_FACE, off);
+                packSet->setMode(GL_SCISSOR_TEST, off);
+                packSet->setMode(GL_ALPHA_TEST, off);
+                packSet->setMode(GL_POLYGON_OFFSET_FILL, off);
+            }
+            packSet->setTextureAttribute(0, const_cast<osg::Texture*>(sceneDepth), on);
+            packSet->setAttribute(new osg::Viewport(0, 0, packed->getTextureWidth(), packed->getTextureHeight()), on);
+            state.pushStateSet(packSet);
+            state.apply();
+            packedFbo->apply(state, osg::FrameBufferObject::READ_DRAW_FRAMEBUFFER);
+            mCopyGeometry->draw(renderInfo);
+            state.popStateSet();
+        }
+
+        mFbo[frameId]->apply(state, osg::FrameBufferObject::READ_DRAW_FRAMEBUFFER);
         state.apply();
         if (previous)
         {

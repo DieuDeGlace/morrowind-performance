@@ -67,12 +67,26 @@ namespace MWRender
         {
             osg::ref_ptr<osg::Texture2D> texture = new osg::Texture2D;
             texture->setSourceFormat(GL_RGBA);
+#ifdef ANDROID
+            // OPENMW_ANDROID_053_PACKED_RIPPLES
+            // GL4ES silently turns RGBA16F render targets into 8-bit ones on
+            // phones without GL_EXT_color_buffer_half_float, which loses the
+            // negative wave heights. Store packed heights in RGBA8 instead
+            // (lib/water/ripples.glsl); packed bytes must not be filtered.
+            texture->setSourceType(GL_UNSIGNED_BYTE);
+            texture->setInternalFormat(GL_RGBA);
+            texture->setFilter(osg::Texture2D::MIN_FILTER, osg::Texture::NEAREST);
+            texture->setFilter(osg::Texture2D::MAG_FILTER, osg::Texture::NEAREST);
+            texture->setWrap(osg::Texture::WRAP_S, osg::Texture::CLAMP_TO_EDGE);
+            texture->setWrap(osg::Texture::WRAP_T, osg::Texture::CLAMP_TO_EDGE);
+#else
             texture->setInternalFormat(GL_RGBA16F);
             texture->setFilter(osg::Texture2D::MIN_FILTER, osg::Texture::LINEAR);
             texture->setFilter(osg::Texture2D::MAG_FILTER, osg::Texture::LINEAR);
             texture->setWrap(osg::Texture::WRAP_S, osg::Texture::CLAMP_TO_BORDER);
             texture->setWrap(osg::Texture::WRAP_T, osg::Texture::CLAMP_TO_BORDER);
             texture->setBorderColor(osg::Vec4(0, 0, 0, 0));
+#endif
             texture->setTextureSize(sRTTSize, sRTTSize);
 
             mTextures[i] = texture;
@@ -80,6 +94,20 @@ namespace MWRender
             mFBOs[i] = new osg::FrameBufferObject;
             mFBOs[i]->setAttachment(osg::Camera::COLOR_BUFFER0, osg::FrameBufferAttachment(mTextures[i]));
         }
+
+#ifdef ANDROID
+        mNormalTexture = new osg::Texture2D;
+        mNormalTexture->setSourceFormat(GL_RGBA);
+        mNormalTexture->setSourceType(GL_UNSIGNED_BYTE);
+        mNormalTexture->setInternalFormat(GL_RGBA);
+        mNormalTexture->setFilter(osg::Texture2D::MIN_FILTER, osg::Texture::LINEAR);
+        mNormalTexture->setFilter(osg::Texture2D::MAG_FILTER, osg::Texture::LINEAR);
+        mNormalTexture->setWrap(osg::Texture::WRAP_S, osg::Texture::CLAMP_TO_EDGE);
+        mNormalTexture->setWrap(osg::Texture::WRAP_T, osg::Texture::CLAMP_TO_EDGE);
+        mNormalTexture->setTextureSize(sRTTSize, sRTTSize);
+        mNormalFBO = new osg::FrameBufferObject;
+        mNormalFBO->setAttachment(osg::Camera::COLOR_BUFFER0, osg::FrameBufferAttachment(mNormalTexture));
+#endif
 
         if (mUseCompute)
             setupComputePipeline();
@@ -105,19 +133,34 @@ namespace MWRender
     {
         auto& shaderManager = mResourceSystem->getSceneManager()->getShaderManager();
 
-        Shader::ShaderManager::DefineMap defineMap = { { "rippleMapSize", std::to_string(sRTTSize) + ".0" } };
+#ifdef ANDROID
+        constexpr const char* packed = "1";
+#else
+        constexpr const char* packed = "0";
+#endif
+        Shader::ShaderManager::DefineMap defineMap
+            = { { "rippleMapSize", std::to_string(sRTTSize) + ".0" }, { "rippleStatePacked", packed } };
 
         osg::ref_ptr<osg::Shader> vertex = shaderManager.getShader("fullscreen_tri.vert", {}, osg::Shader::VERTEX);
         osg::ref_ptr<osg::Shader> blobber
             = shaderManager.getShader("ripples_blobber.frag", defineMap, osg::Shader::FRAGMENT);
         osg::ref_ptr<osg::Shader> simulate
             = shaderManager.getShader("ripples_simulate.frag", defineMap, osg::Shader::FRAGMENT);
+#ifdef ANDROID
+        osg::ref_ptr<osg::Shader> normals
+            = shaderManager.getShader("ripples_normals.frag", defineMap, osg::Shader::FRAGMENT);
+        if (normals == nullptr)
+            simulate = nullptr;
+#endif
         if (vertex == nullptr || blobber == nullptr || simulate == nullptr)
         {
             Log(Debug::Error) << "Failed to load shaders required for fragment shader ripple pipeline";
             return;
         }
 
+#ifdef ANDROID
+        mProgramNormals = shaderManager.getProgram(vertex, std::move(normals));
+#endif
         mProgramBlobber = shaderManager.getProgram(vertex, std::move(blobber));
         mProgramSimulation = shaderManager.getProgram(std::move(vertex), std::move(simulate));
     }
@@ -126,10 +169,11 @@ namespace MWRender
     {
         auto& shaderManager = mResourceSystem->getSceneManager()->getShaderManager();
 
+        const Shader::ShaderManager::DefineMap defineMap = { { "rippleStatePacked", "0" } };
         osg::ref_ptr<osg::Shader> blobber
-            = shaderManager.getShader("core/ripples_blobber.comp", {}, osg::Shader::COMPUTE);
+            = shaderManager.getShader("core/ripples_blobber.comp", defineMap, osg::Shader::COMPUTE);
         osg::ref_ptr<osg::Shader> simulate
-            = shaderManager.getShader("core/ripples_simulate.comp", {}, osg::Shader::COMPUTE);
+            = shaderManager.getShader("core/ripples_simulate.comp", defineMap, osg::Shader::COMPUTE);
         if (blobber == nullptr || simulate == nullptr)
         {
             Log(Debug::Error) << "Failed to load shaders required for compute shader ripple pipeline";
@@ -277,12 +321,32 @@ namespace MWRender
             osg::Geometry::drawImplementation(renderInfo);
         }
 
+#ifdef ANDROID
+        // PASS: Surface slopes for the water shader
+        if (mProgramNormals != nullptr)
+        {
+            state.applyAttribute(mProgramNormals);
+            for (const auto& [name, stack] : state.getUniformMap())
+            {
+                if (!stack.uniformVec.empty())
+                    state.getLastAppliedProgramObject()->apply(*(stack.uniformVec.back().first));
+            }
+            mNormalFBO->apply(state, osg::FrameBufferObject::DRAW_FRAMEBUFFER);
+            state.applyTextureAttribute(0, mTextures[0]);
+            osg::Geometry::drawImplementation(renderInfo);
+        }
+#endif
+
         state.popStateSet();
     }
 
     osg::Texture* RipplesSurface::getColorTexture() const
     {
+#ifdef ANDROID
+        return mNormalTexture;
+#else
         return mTextures[0];
+#endif
     }
 
     void RipplesSurface::emit(const osg::Vec3f pos, float sizeInCellUnits)
@@ -309,6 +373,14 @@ namespace MWRender
             mProgramBlobber->releaseGLObjects(state);
         if (mProgramSimulation)
             mProgramSimulation->releaseGLObjects(state);
+#ifdef ANDROID
+        if (mNormalTexture)
+            mNormalTexture->releaseGLObjects(state);
+        if (mNormalFBO)
+            mNormalFBO->releaseGLObjects(state);
+        if (mProgramNormals)
+            mProgramNormals->releaseGLObjects(state);
+#endif
     }
 
     Ripples::Ripples(Resource::ResourceSystem* resourceSystem)

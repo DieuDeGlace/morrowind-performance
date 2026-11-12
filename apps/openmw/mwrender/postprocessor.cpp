@@ -351,6 +351,9 @@ namespace MWRender
         mOpaqueColorResolve->mFbo[frameId] = mFbos[frameId][FBO_Primary];
         mOpaqueColorResolve->mMsaaFbo[frameId] = mFbos[frameId][FBO_Multisample];
         mOpaqueColorResolve->mOpaqueFbo[frameId] = mFbos[frameId][FBO_OpaqueDepth];
+#ifdef ANDROID
+        mOpaqueColorResolve->mPackedDepthFbo[frameId] = mFbos[frameId][FBO_OpaqueDepthPacked];
+#endif
 
         mDistortionCallback->setFBO(mFbos[frameId][FBO_Distortion], frameId);
         mDistortionCallback->setOriginalFBO(mFbos[frameId][FBO_Primary], frameId);
@@ -531,6 +534,11 @@ namespace MWRender
         setupDepth(textures[Tex_Depth]);
         setupDepth(textures[Tex_OpaqueDepth]);
         textures[Tex_OpaqueDepth]->setName("opaqueTexMap");
+        // Packed depth must not be filtered: blending neighbouring texels mixes
+        // the bytes of different depths.
+        textures[Tex_OpaqueDepthPacked]->setFilter(osg::Texture2D::MIN_FILTER, osg::Texture::NEAREST);
+        textures[Tex_OpaqueDepthPacked]->setFilter(osg::Texture2D::MAG_FILTER, osg::Texture::NEAREST);
+        textures[Tex_OpaqueDepthPacked]->setName("opaqueTexMapPacked");
         textures[Tex_OpaqueColor]->setName("opaqueTexColorMap");
 
         auto& fbos = mFbos[frameId];
@@ -594,6 +602,10 @@ namespace MWRender
         fbos[FBO_Distortion] = new osg::FrameBufferObject;
         fbos[FBO_Distortion]->setAttachment(osg::FrameBufferObject::BufferComponent::COLOR_BUFFER0,
             Stereo::createMultiviewCompatibleAttachment(textures[Tex_Distortion]));
+
+        fbos[FBO_OpaqueDepthPacked] = new osg::FrameBufferObject;
+        fbos[FBO_OpaqueDepthPacked]->setAttachment(osg::FrameBufferObject::BufferComponent::COLOR_BUFFER0,
+            Stereo::createMultiviewCompatibleAttachment(textures[Tex_OpaqueDepthPacked]));
 
         mCanvases[frameId]->dirty();
     }

@@ -26,12 +26,21 @@ vec3 sampleSkyColor(vec2 uv)
 }
 #endif
 
+// OPENMW_ANDROID_053_PACKED_OPAQUE_DEPTH
+// The opaque depth arrives packed into RGB as a 24-bit integer (see
+// opaqueblit.cpp); full precision is needed to unpack it exactly.
+#if defined(GL_ES) && defined(GL_FRAGMENT_PRECISION_HIGH)
+uniform highp sampler2D opaqueDepthTex;
+#else
 uniform sampler2D opaqueDepthTex;
+#endif
 uniform sampler2D opaqueColorTex;
 
 vec4 sampleOpaqueDepthTex(vec2 uv)
 {
-    return texture2D(opaqueDepthTex, uv);
+    vec3 bytes = floor(texture2D(opaqueDepthTex, uv).rgb * 255.0 + vec3(0.5));
+    float depth = dot(bytes, vec3(65536.0, 256.0, 1.0)) / 16777215.0;
+    return vec4(depth);
 }
 
 vec4 sampleOpaqueColorTex(vec2 uv)

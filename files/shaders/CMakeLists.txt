@@ -42,6 +42,7 @@ set(SHADER_FILES
     lib/material/colormodes.glsl
     compatibility/ripples_blobber.frag
     compatibility/ripples_simulate.frag
+    compatibility/ripples_normals.frag
     compatibility/fog.glsl
     compatibility/groundcover.vert
     compatibility/groundcover.frag

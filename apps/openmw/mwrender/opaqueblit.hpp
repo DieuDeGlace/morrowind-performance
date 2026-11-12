@@ -30,6 +30,10 @@ namespace MWRender
         osg::ref_ptr<osg::FrameBufferObject> mMsaaFbo[2];
         osg::ref_ptr<osg::FrameBufferObject> mOpaqueFbo[2];
         std::array<std::unique_ptr<Stereo::MultiviewFramebufferResolve>, 2> mMultiviewResolve;
+#ifdef ANDROID
+        // Receives the opaque depth packed into RGB, which every shader reads.
+        osg::ref_ptr<osg::FrameBufferObject> mPackedDepthFbo[2];
+#endif
 
 #ifdef ANDROID
     private:
@@ -40,6 +44,7 @@ namespace MWRender
 
         osg::ref_ptr<osg::Geometry> mCopyGeometry;
         osg::ref_ptr<osg::StateSet> mCopyStateSet[2];
+        osg::ref_ptr<osg::StateSet> mPackStateSet[2];
         bool mLogged = false;
 #endif
     };
