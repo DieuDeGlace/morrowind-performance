@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "../mwworld/ptr.hpp"
+#include "itemphysicsrules.hpp"
 #include <osg/Quat>
 #include <osg/Vec3f>
 
@@ -60,6 +61,7 @@ namespace MWPhysics
         std::unordered_map<std::string, ESM::RefId> mDebrisRecords;
         std::deque<MWWorld::Ptr> mDebrisPieces;
         bool mDebrisIndexed = false;
+        ItemPhysicsRules::PublicDamage mPublicDamage;
         std::unordered_map<const MWWorld::LiveCellRefBase*, std::shared_ptr<Body>> mBodies;
         bool mSynchronizing = false;
         bool mCompatibilityChecked = false;

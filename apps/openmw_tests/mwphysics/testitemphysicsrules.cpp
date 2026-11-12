@@ -84,6 +84,23 @@ namespace
         EXPECT_FLOAT_EQ(Rules::restSpeed(30.f, .1f, 10.f), 30.f);
     }
 
+    TEST(ItemPhysicsRules, BreakingPublicPropertyRepeatedlyIsACrime)
+    {
+        Rules::PublicDamage damage;
+        EXPECT_FALSE(damage.broke());
+        EXPECT_FALSE(damage.broke());
+        EXPECT_TRUE(damage.broke());
+        damage.reported();
+        EXPECT_FLOAT_EQ(damage.rating(), 0.f);
+
+        // Two breaks, then a long wait: the next break is forgiven.
+        damage.broke();
+        damage.broke();
+        for (int second = 0; second < 15; ++second)
+            damage.update(1.f);
+        EXPECT_FALSE(damage.broke());
+    }
+
     TEST(ItemPhysicsRules, CrimeAmountsMatchMinorAndDestructionPenalties)
     {
         EXPECT_EQ(Rules::crimeAmount(1), 25);
