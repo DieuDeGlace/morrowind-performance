@@ -2925,7 +2925,16 @@ bool MWShadowTechnique::cropShadowCameraToMainFrustum(Frustum& frustum, osg::Cam
     double yMin = -1.0, yMax = 1.0;
     double zMin = -1.0, zMax = 1.0;
 
-    if (convexHull.valid())
+    const ShadowSettings* shadowSettings = getShadowedScene()->getShadowSettings();
+    const bool orthographicLight = light_p(0, 3) == 0.0 && light_p(1, 3) == 0.0 && light_p(2, 3) == 0.0;
+    const bool stable
+        = orthographicLight && shadowSettings->getShadowMapProjectionHint() == ShadowSettings::ORTHOGRAPHIC_SHADOW_MAP;
+
+    // The hull is empty when nothing visible reaches this slice of the view
+    // (the visible scene ends before it). A stable cascade still needs its
+    // fixed box, or it falls back to a view-fitted one that shimmers.
+    const bool hullValid = convexHull.valid();
+    if (hullValid)
     {
         xMin = osg::maximum(-1.0, convexHull.min(0));
         xMax = osg::minimum(1.0, convexHull.max(0));
@@ -2934,12 +2943,10 @@ bool MWShadowTechnique::cropShadowCameraToMainFrustum(Frustum& frustum, osg::Cam
         zMin = osg::maximum(-1.0, convexHull.min(2));
         zMax = osg::minimum(1.0, convexHull.max(2));
     }
-    else
+    else if (!stable)
         return false;
 
-    const ShadowSettings* shadowSettings = getShadowedScene()->getShadowSettings();
-    const bool orthographicLight = light_p(0, 3) == 0.0 && light_p(1, 3) == 0.0 && light_p(2, 3) == 0.0;
-    if (orthographicLight && shadowSettings->getShadowMapProjectionHint() == ShadowSettings::ORTHOGRAPHIC_SHADOW_MAP)
+    if (stable)
     {
         // Stable cascade: cover a sphere around this slice of the view. Its
         // radius depends only on the field of view and the slice distances, so
@@ -3018,6 +3025,9 @@ bool MWShadowTechnique::cropShadowCameraToMainFrustum(Frustum& frustum, osg::Cam
 
         light_p.postMult(m);
         camera->setProjectionMatrix(light_p);
+
+        if (!hullValid)
+            return true;
 
         convexHull.transform(osg::Matrixd::inverse(oldLightP));
 
