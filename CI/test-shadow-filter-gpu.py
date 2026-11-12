@@ -1,7 +1,7 @@
-"""Check the shipped soft-shadow GLSL against an independent plane oracle.
+"""Check the shipped soft-shadow GLSL on a GPU.
 
 Requires moderngl and numpy. Linux uses EGL (Mesa works without a display).
-An optional old shader proves that the regression fixture detects the defect.
+An optional old shader proves that the regression fixtures detect the defects.
 """
 
 import argparse
@@ -20,63 +20,111 @@ in vec2 position;
 void main() { gl_Position = vec4(position, 0.0, 1.0); }
 """
 
-
-def plane_error(ctx, source, perspective):
-    # Execute the production direction calculation, with only the fixed-function
-    # normal-matrix input replaced by a uniform for a standalone GL context.
-    start = source.index("    // ---- Compute filter directions")
-    end = source.index("    // Build offset vectors", start)
-    block = source[start:end].replace("gl_NormalMatrix", "normalMatrix")
-    fragment = """#version 330
-#define PER_PIXEL_LIGHTING 1
-uniform mat4 matrix;
-uniform mat3 normalMatrix;
-uniform vec3 passNormal;
-uniform vec4 coord;
-uniform vec3 clipNormal;
-out vec4 result;
-void main() {
-    vec3 shadowUV = coord.xyz / coord.w;
-""" + block + """
-    result = vec4(abs(dot(clipNormal, filterX)),
-                  abs(dot(clipNormal, filterY)), 0.0, 1.0);
-}
+# Desktop GLSL 1.20 shadow lookups, expressed for a 3.30 test context.
+SHADOW_LOOKUPS = """#define shadow2DProj(s, c) vec4(textureProj(s, c))
+#define shadow2D(s, c) vec4(texture(s, c))
 """
-    plane = np.array([-.4, .2, 1, 0], dtype="f4")
-    projection = np.array([
-        [.04, .015, 0, .5], [0, .04, .012, .5],
-        [.005, .003, .015, .5], [0, .035, .01, 1],
-    ], dtype="f4")
-    if not perspective:
-        projection[3] = [0, 0, 0, 1]
-    # A plane transforms by inverse transpose. The filter axes must remain in
-    # that plane after projection, independently of the camera's view rotation.
-    projected_plane = np.linalg.inv(projection).T @ plane
+
+FLICKER_RESOLUTION = 256
+FLICKER_PIXELS = 512
+FLICKER_SPAN = 64.0  # shadow-map texels across the row of receivers
+# Worst change of the shadow at a fixed point when the map slides an eighth
+# of a texel, per soft shadow radius. A one-texel leaf still jumps a whole
+# texel in the map whenever the grid crosses it, which a filter of this width
+# cannot hide completely; the released 8-tap spiral changed by 0.29-0.46.
+MAX_FLICKER = {0.5: 0.25, 1.0: 0.17, 1.5: 0.14, 3.0: 0.14}
+
+
+def expand_single_map(source, soft, radius, resolution):
+    source = re.sub(
+        r"@foreach shadow_texture_unit_index @shadow_texture_unit_list\s*(.*?)@endforeach",
+        lambda match: match[1].replace("@shadow_texture_unit_index", "0"), source, flags=re.S,
+    )
+    for key, value in {
+        "shadows_enabled": 1, "softShadows": int(soft), "shadowMapResolution": f"{resolution}.0",
+        "softShadowRadius": radius, "perspectiveShadowMaps": 0,
+        "limitShadowMapDistance": 0, "useShadowDebugOverlay": 0,
+    }.items():
+        source = source.replace("@" + key, str(value))
+    assert "@" not in source, "Unexpanded shader template"
+    return source.replace("varying ", "in ").replace("gl_NormalMatrix", "normalMatrix").replace("gl_FragData[0]", "result")
+
+
+def moving_map_flicker(ctx, source, radius):
+    """Thin casters stay still in the world while the shadow map's texel grid
+    slides under them by a fraction of a texel, as it does each frame when
+    the camera moves. Returns how much the shadow at a fixed world point
+    changes between successive eighth-of-a-texel slides."""
+    fragment = "#version 330\n#define PER_PIXEL_LIGHTING 0\n" + SHADOW_LOOKUPS + """uniform mat3 normalMatrix;
+uniform vec3 passNormal;
+out vec4 result;
+""" + expand_single_map(source, True, radius, FLICKER_RESOLUTION) + """
+void main() { result = vec4(vec3(unshadowedLightRatio(100.0)), 1.0); }
+"""
+    vertex = f"""#version 330
+in vec2 position;
+uniform float gridShift;
+out vec4 shadowSpaceCoords0;
+void main() {{
+    gl_Position = vec4(position, 0.0, 1.0);
+    // World x in shadow-map texels, from 0 to the span across the row.
+    float world = (position.x * 0.5 + 0.5) * {FLICKER_SPAN};
+    shadowSpaceCoords0 = vec4((world + 32.0 + gridShift) / {FLICKER_RESOLUTION}.0, 0.5 + position.y * 0.05, 0.5, 1.0);
+}}
+"""
+    res = FLICKER_RESOLUTION
+    # One-texel-wide leaves every few texels, at irregular spacing.
+    leaves = np.cumsum(np.tile([5.0, 7.0, 4.0, 9.0, 6.0], 12)) + 30.0
     with ExitStack() as resources:
-        program = ctx.program(vertex_shader=VERTEX, fragment_shader=fragment)
+        fbo = ctx.simple_framebuffer((FLICKER_PIXELS, 1), components=1, dtype="f4")
+        resources.callback(fbo.release)
+        fbo.use()
+        program = ctx.program(vertex_shader=vertex, fragment_shader=fragment)
         resources.callback(program.release)
-        program["passNormal"].value = tuple(plane[:3] / np.linalg.norm(plane[:3]))
-        program["coord"].value = tuple(projection @ np.array([1, 2, 0, 1], dtype="f4"))
-        program["clipNormal"].value = tuple(projected_plane[:3] / np.linalg.norm(projected_plane[:3]))
+        for name, value in (("normalMatrix", None), ("passNormal", (0, 0, 1))):
+            if name in program:
+                if value is None:
+                    program[name].write(np.eye(3, dtype="f4").tobytes())
+                else:
+                    program[name].value = value
+        if "shadowSpaceMatrix0" in program:
+            program["shadowSpaceMatrix0"].write(np.eye(4, dtype="f4").tobytes())
+        program["shadowTexture0"].value = 0
         vbo = ctx.buffer(np.array([-1, -1, 3, -1, -1, 3], dtype="f4").tobytes())
         resources.callback(vbo.release)
         vao = ctx.vertex_array(program, [(vbo, "2f", "position")])
         resources.callback(vao.release)
-        errors = []
-        for angle in np.linspace(-1.4, 1.4, 57):
-            c, s = np.cos(angle), np.sin(angle)
-            view = np.array([[c, 0, s], [0, 1, 0], [-s, 0, c]], dtype="f4")
-            inverse_view = np.eye(4, dtype="f4")
-            inverse_view[:3, :3] = view.T
-            program["matrix"].write((projection @ inverse_view).T.tobytes())
-            program["normalMatrix"].write(view.T.tobytes())
+        rows = []
+        for step in range(17):
+            shift = step / 8.0
+            # Rasterize the leaves into the shifted grid: a texel holds a
+            # leaf when its centre lies inside it.
+            centres = np.arange(res) + 0.5 - 32.0 - shift
+            covered = np.zeros(res, dtype=bool)
+            for leaf in leaves:
+                covered |= (centres >= leaf) & (centres < leaf + 1.0)
+            column = np.where(covered, 0.25, 1.0).astype("f4")
+            texture = ctx.depth_texture((res, res), np.broadcast_to(column, (res, res)).copy().tobytes())
+            texture.compare_func = "<="
+            texture.filter = (moderngl.LINEAR, moderngl.LINEAR)
+            texture.repeat_x = texture.repeat_y = False
+            texture.use(0)
+            program["gridShift"].value = shift
+            fbo.clear()
             vao.render(moderngl.TRIANGLES)
-            values = np.frombuffer(ctx.fbo.read(components=4, dtype="f4"), dtype="f4")
-            assert np.isfinite(values).all(), "Non-finite filter axis"
-            errors.append(float(values[:2].max()))
+            row = np.frombuffer(fbo.read(components=1, dtype="f4"), dtype="f4").copy()
+            texture.release()
+            assert np.isfinite(row).all(), "Non-finite shadow"
+            rows.append(row)
     assert ctx.error == "GL_NO_ERROR"
-    return {"views": len(errors), "max_normalized_plane_error": max(errors)}
-
+    rows = np.array(rows)
+    # Ignore the row ends, where the filter reaches past the leaves.
+    rows = rows[:, FLICKER_PIXELS // 8: -FLICKER_PIXELS // 8]
+    change = np.abs(np.diff(rows, axis=0))
+    return {"radius": radius, "slides": int(change.shape[0]),
+            "max_change_per_eighth_texel": float(change.max()),
+            "mean_change_per_eighth_texel": float(change.mean()),
+            "darkest": float(rows.min())}
 
 def compile_filter(ctx, source, per_pixel, soft):
     source = re.sub(
@@ -93,8 +141,7 @@ def compile_filter(ctx, source, per_pixel, soft):
     source = source.replace("varying ", "in ").replace("gl_NormalMatrix", "normalMatrix")
     source = source.replace("gl_FragData[0]", "result")
     fragment = """#version 330
-#define shadow2DProj(s, c) vec4(textureProj(s, c))
-uniform mat3 normalMatrix;
+""" + SHADOW_LOOKUPS + """uniform mat3 normalMatrix;
 uniform vec3 passNormal;
 out vec4 result;
 """ + f"#define PER_PIXEL_LIGHTING {int(per_pixel)}\n" + source + """
@@ -132,8 +179,7 @@ def shadow_volume_error(ctx, source, map_count, perspective, soft):
     source = source.replace("gl_FragData[0]", "result")
     fragment = """#version 330
 #define PER_PIXEL_LIGHTING 1
-#define shadow2DProj(s, c) vec4(textureProj(s, c))
-uniform mat3 normalMatrix;
+""" + SHADOW_LOOKUPS + """uniform mat3 normalMatrix;
 uniform vec3 passNormal;
 out vec4 result;
 """ + source + "\nvoid main(){result=vec4(vec3(unshadowedLightRatio(0.0)),1.0);}\n"
@@ -210,7 +256,7 @@ out vec4 shadowRegionCoords{i};
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--shader", type=Path, default=Path(__file__).resolve().parents[1] / "files/shaders/compatibility/shadows_fragment.glsl")
-    parser.add_argument("--baseline", type=Path)
+    parser.add_argument("--baseline", type=Path, help="Old shader used as a moving-map flicker negative control")
     parser.add_argument("--volume-baseline", type=Path, help="Old shader used as an invalid-cascade negative control")
     parser.add_argument("--report", type=Path)
     args = parser.parse_args()
@@ -218,9 +264,15 @@ def main():
     fbo = ctx.simple_framebuffer((1, 1), dtype="f4")
     fbo.use()
     source = args.shader.read_text(encoding="utf-8")
-    results = {name: plane_error(ctx, source, perspective) for name, perspective in (("orthographic", False), ("perspective", True))}
-    for name, result in results.items():
-        assert result["max_normalized_plane_error"] < 1e-5, (name, result)
+    results = {}
+    flicker = [moving_map_flicker(ctx, source, radius) for radius in (0.5, 1.0, 1.5, 3.0)]
+    for result in flicker:
+        # Leaves still cast a shadow, and a slide of an eighth of a texel
+        # only moves it by a small, smooth amount.
+        assert result["darkest"] < .97, result
+        assert result["max_change_per_eighth_texel"] < MAX_FLICKER[result["radius"]], result
+    results["moving_map"] = flicker
+    fbo.use()
     for per_pixel in (False, True):
         for soft in (False, True):
             compile_filter(ctx, source, per_pixel, soft)
@@ -233,9 +285,12 @@ def main():
         assert baseline_volume["max_visibility_error"] > .5, "Baseline no longer exercises invalid cascades"
         results["baseline_volume"] = baseline_volume
     if args.baseline:
-        results["baseline_perspective"] = plane_error(ctx, args.baseline.read_text(encoding="utf-8"), True)
-        assert results["baseline_perspective"]["max_normalized_plane_error"] > .01, "Baseline no longer exercises the regression"
-    report = {"result": "passed", "renderer": ctx.info["GL_RENDERER"], "plane_oracle": results, "shader_variants_compiled": 4,
+        results["baseline_moving_map"] = [moving_map_flicker(ctx, args.baseline.read_text(encoding="utf-8"), radius)
+                                          for radius in (1.0, 1.5)]
+        assert all(r["max_change_per_eighth_texel"] > MAX_FLICKER[r["radius"]] for r in results["baseline_moving_map"]), \
+            "Baseline no longer exercises the flicker"
+        fbo.use()
+    report = {"result": "passed", "renderer": ctx.info["GL_RENDERER"], "filters": results, "shader_variants_compiled": 4,
               "shadow_volume_variants_rendered": len(volume), "shadow_volume": volume}
     rendered = json.dumps(report, indent=2) + "\n"
     print(rendered, end="")

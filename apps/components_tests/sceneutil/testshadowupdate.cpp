@@ -1,6 +1,9 @@
 #include <components/sceneutil/mwshadowtechnique.hpp>
 
 #include <gtest/gtest.h>
+#include <cmath>
+#include <iterator>
+#include <string>
 #include <osg/Geode>
 #include <osg/Geometry>
 #include <osgShadow/ShadowedScene>
@@ -54,7 +57,9 @@ namespace
     class Scene
     {
     public:
-        explicit Scene(unsigned int interval, unsigned int maps = 2)
+        explicit Scene(unsigned int interval, unsigned int maps = 2,
+            osgShadow::ShadowSettings::ShadowMapProjectionHint projection
+            = osgShadow::ShadowSettings::PERSPECTIVE_SHADOW_MAP)
             : mapCount(maps)
             , shadows(new TestShadows)
             , root(new osgShadow::ShadowedScene)
@@ -67,7 +72,7 @@ namespace
             settings->setTextureSize(osg::Vec2s(4096, 4096));
             settings->setMaximumShadowMapDistance(8192);
             settings->setMultipleShadowMapHint(osgShadow::ShadowSettings::CASCADED);
-            settings->setShadowMapProjectionHint(osgShadow::ShadowSettings::PERSPECTIVE_SHADOW_MAP);
+            settings->setShadowMapProjectionHint(projection);
             settings->setComputeNearFarModeOverride(osg::CullSettings::COMPUTE_NEAR_FAR_USING_BOUNDING_VOLUMES);
             root->addChild(triangle(10));
             root->addChild(triangle(1000));
@@ -357,5 +362,62 @@ namespace
         scene.cull(1, 1 + 1 / 60.);
         EXPECT_EQ(scene.shadows->mapUpdates, 2);
         EXPECT_FALSE(data->getShadowDataList().front()->_backgroundTexture);
+    }
+}
+
+namespace
+{
+    // Where a world point lands in one shadow map, in texels.
+    osg::Vec2d shadowTexel(
+        Scene& scene, unsigned int frame, const osg::Matrixd& view, const osg::Vec3d& world, unsigned int map)
+    {
+        auto* data = scene.shadows->getViewDependentData(scene.views[0]->getCullVisitor());
+        const osg::Uniform* uniform = data->getStateSet(frame)->getUniform("shadowSpaceMatrix" + std::to_string(map));
+        EXPECT_NE(uniform, nullptr);
+        osg::Matrixf matrix;
+        if (uniform)
+            EXPECT_TRUE(uniform->get(matrix));
+        const osg::Vec4d point = osg::Vec4d(world, 1) * view * osg::Matrixd(matrix);
+        return osg::Vec2d(point.x(), point.y()) / point.w() * 4096.0;
+    }
+
+    TEST(ShadowUpdateTest, orthographic_maps_keep_their_texel_grid_while_the_camera_turns_and_moves)
+    {
+        // Thin casters such as leaves flicker when the map's texels change
+        // size, turn, or slide by fractions of a texel under them. Stable maps
+        // may only shift by whole texels.
+        Scene scene(1, 2, osgShadow::ShadowSettings::ORTHOGRAPHIC_SHADOW_MAP);
+        const osg::Vec3d points[] = { { 0, 0, -10 }, { 3, 1, -14 }, { -2, 4, -40 } };
+        scene.cull(0, 1);
+        // Render buffers alternate between frames, so record frame 0 now.
+        osg::Vec2d before[2][std::size(points)];
+        for (unsigned int map = 0; map < 2; ++map)
+            for (std::size_t i = 0; i < std::size(points); ++i)
+                before[map][i] = shadowTexel(scene, 0, osg::Matrixd(), points[i], map);
+        const osg::Matrixd views[] = {
+            osg::Matrixd::rotate(.01, osg::Vec3d(0, 1, 0)),
+            osg::Matrixd::rotate(.3, osg::Vec3d(0, 1, 0)),
+            osg::Matrixd::translate(-3.3, 0, -1.7),
+            osg::Matrixd::translate(-.4, .2, 0) * osg::Matrixd::rotate(-.05, osg::Vec3d(1, 0, 0)),
+        };
+        for (unsigned int frame = 1; frame <= std::size(views); ++frame)
+        {
+            SCOPED_TRACE(frame);
+            const osg::Matrixd& view = views[frame - 1];
+            scene.cull(frame, 1 + frame / 60.0, view);
+            for (unsigned int map = 0; map < 2; ++map)
+            {
+                SCOPED_TRACE(map);
+                const osg::Vec2d shift = shadowTexel(scene, frame, view, points[0], map) - before[map][0];
+                EXPECT_NEAR(shift.x(), std::round(shift.x()), 1e-3);
+                EXPECT_NEAR(shift.y(), std::round(shift.y()), 1e-3);
+                for (std::size_t i = 1; i < std::size(points); ++i)
+                {
+                    const osg::Vec2d moved = shadowTexel(scene, frame, view, points[i], map) - before[map][i];
+                    EXPECT_NEAR(moved.x(), shift.x(), 1e-3);
+                    EXPECT_NEAR(moved.y(), shift.y(), 1e-3);
+                }
+            }
+        }
     }
 }

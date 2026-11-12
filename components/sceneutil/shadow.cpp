@@ -83,6 +83,12 @@ namespace SceneUtil
             mShadowTechnique->disableFrontFaceCulling();
 
         mShadowSettings->setMultipleShadowMapHint(osgShadow::ShadowSettings::CASCADED);
+        // Perspective (LiSPSM) maps re-warp with every turn of the camera, which
+        // makes thin casters such as leaves shimmer. Orthographic cascades only
+        // shift as the camera moves; the near cascades still give close detail.
+        mShadowSettings->setShadowMapProjectionHint(settings.mPerspectiveShadowMaps
+                ? osgShadow::ShadowSettings::PERSPECTIVE_SHADOW_MAP
+                : osgShadow::ShadowSettings::ORTHOGRAPHIC_SHADOW_MAP);
 
         if (mEnableShadows && settings.mEnableDebugHud)
             mShadowTechnique->enableDebugHUD();

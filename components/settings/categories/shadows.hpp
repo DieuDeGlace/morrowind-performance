@@ -31,6 +31,7 @@ namespace Settings
         SettingValue<std::string> mComputeSceneBounds{ mIndex, "Shadows", "compute scene bounds",
             makeEnumSanitizerString({ "primitives", "bounds", "none" }) };
         SettingValue<int> mShadowMapResolution{ mIndex, "Shadows", "shadow map resolution" };
+        SettingValue<bool> mPerspectiveShadowMaps{ mIndex, "Shadows", "perspective shadow maps" };
         SettingValue<float> mMinimumLispsmNearFarRatio{ mIndex, "Shadows", "minimum lispsm near far ratio",
             makeMaxStrictSanitizerFloat(0) };
         SettingValue<float> mPolygonOffsetFactor{ mIndex, "Shadows", "polygon offset factor" };

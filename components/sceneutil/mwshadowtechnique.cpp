@@ -1389,7 +1389,12 @@ void MWShadowTechnique::cull(osgUtil::CullVisitor& cv)
     }
 
     double reducedNear, reducedFar;
-    if (cv.getComputeNearFarMode() != osg::CullSettings::DO_NOT_COMPUTE_NEAR_FAR)
+    // Stable orthographic cascades split the view at fixed distances; split
+    // points that follow the visible scene's bounds would resize the cascades
+    // (and so their texels) from frame to frame.
+    const bool stableShadowMaps = settings->getShadowMapProjectionHint() == ShadowSettings::ORTHOGRAPHIC_SHADOW_MAP
+        && minZNear > 0.0 && maxZFar < 1.0e6;
+    if (!stableShadowMaps && cv.getComputeNearFarMode() != osg::CullSettings::DO_NOT_COMPUTE_NEAR_FAR)
     {
         reducedNear = osg::maximum<double>(cv.getCalculatedNearPlane(), minZNear);
         reducedFar = osg::minimum<double>(cv.getCalculatedFarPlane(), maxZFar);
@@ -2147,6 +2152,18 @@ bool MWShadowTechnique::computeShadowCameraSettings(Frustum& frustum, LightData&
     else
     {
         lightSide = positionedLight.lightDir ^ frustum.frustumCenterLine;
+        lightSide.normalize();
+    }
+
+    if (positionedLight.directionalLight
+        && settings->getShadowMapProjectionHint() == ShadowSettings::ORTHOGRAPHIC_SHADOW_MAP)
+    {
+        // Stable orthographic maps: orient the map by the light alone, so
+        // turning the camera never rotates the texel grid under the scene.
+        osg::Vec3d reference(0.0, 0.0, 1.0);
+        if (std::abs(positionedLight.lightDir * reference) > 0.99)
+            reference.set(0.0, 1.0, 0.0);
+        lightSide = positionedLight.lightDir ^ reference;
         lightSide.normalize();
     }
 
@@ -2920,32 +2937,71 @@ bool MWShadowTechnique::cropShadowCameraToMainFrustum(Frustum& frustum, osg::Cam
     else
         return false;
 
-    // Inflate shadow frustum slightly to provide margin for temporal reuse.
-    // On skip frames, the camera moves but the shadow map is frozen — this
-    // extra margin prevents shadows popping at screen edges.
-    if (_frustumExpansionBase > 0.0 || _frustumExpansionPerSkip > 0.0)
+    const ShadowSettings* shadowSettings = getShadowedScene()->getShadowSettings();
+    const bool orthographicLight = light_p(0, 3) == 0.0 && light_p(1, 3) == 0.0 && light_p(2, 3) == 0.0;
+    if (orthographicLight && shadowSettings->getShadowMapProjectionHint() == ShadowSettings::ORTHOGRAPHIC_SHADOW_MAP)
     {
-        double margin = _frustumExpansionBase
-            + _frustumExpansionPerSkip * osg::maximum(0u, _shadowUpdateInterval - 1);
-        xMin = osg::maximum(-1.0, xMin - margin);
-        xMax = osg::minimum( 1.0, xMax + margin);
-        yMin = osg::maximum(-1.0, yMin - margin);
-        yMax = osg::minimum( 1.0, yMax + margin);
-    }
+        // Stable cascade: cover a sphere around this slice of the view. Its
+        // radius depends only on the field of view and the slice distances, so
+        // turning the camera keeps the texel size, and its centre snaps to
+        // whole texels of a world-anchored grid, so moving shifts the map by
+        // whole texels. A still scene then rasterizes identically every frame.
+        const double depthFar = (frustum.centerFarPlane - frustum.eye) * frustum.frustumCenterLine;
+        double spread = 0.0; // lateral corner distance per unit of depth
+        for (int corner : { 2, 3, 6, 7 })
+            spread = osg::maximum(spread, (frustum.corners[corner] - frustum.centerFarPlane).length() / depthFar);
+        const double n = viewNear;
+        const double f = osg::maximum(viewFar, viewNear + 1.0);
+        const double a = n * spread;
+        const double b = f * spread;
+        const double t = osg::clampBetween((f * f - n * n + b * b - a * a) / (2.0 * (f - n)), n, f);
+        double radius = std::ceil(osg::maximum(std::sqrt((f - t) * (f - t) + b * b), std::sqrt((t - n) * (t - n) + a * a)));
+        // The same reuse margin as below, as a fraction of the cascade.
+        radius *= 1.0 + _frustumExpansionBase + _frustumExpansionPerSkip * osg::maximum(0u, _shadowUpdateInterval - 1);
 
-    // Snap shadow frustum to texel grid for temporal stability.
-    // Range stays fixed, only the origin snaps to discrete texel-sized steps.
+        const osg::Vec3d centre = (frustum.eye + frustum.frustumCenterLine * t) * light_v;
+        const osg::Vec3d worldOrigin = osg::Vec3d() * light_v;
+        const double texel = 2.0 * radius / shadowSettings->getTextureSize().x();
+        const double x = std::floor((centre.x() - worldOrigin.x()) / texel + 0.5) * texel + worldOrigin.x();
+        const double y = std::floor((centre.y() - worldOrigin.y()) / texel + 0.5) * texel + worldOrigin.y();
+        xMin = (x - radius) * light_p(0, 0) + light_p(3, 0);
+        xMax = (x + radius) * light_p(0, 0) + light_p(3, 0);
+        yMin = (y - radius) * light_p(1, 1) + light_p(3, 1);
+        yMax = (y + radius) * light_p(1, 1) + light_p(3, 1);
+        if (xMin > xMax)
+            std::swap(xMin, xMax);
+        if (yMin > yMax)
+            std::swap(yMin, yMax);
+    }
+    else
     {
-        const ShadowSettings* settings = getShadowedScene()->getShadowSettings();
-        double shadowMapRes = settings->getTextureSize().x();
-        double xRange = xMax - xMin;
-        double yRange = yMax - yMin;
-        double texelSizeX = xRange / shadowMapRes;
-        double texelSizeY = yRange / shadowMapRes;
-        xMin = floor(xMin / texelSizeX) * texelSizeX;
-        xMax = xMin + xRange;
-        yMin = floor(yMin / texelSizeY) * texelSizeY;
-        yMax = yMin + yRange;
+        // Inflate shadow frustum slightly to provide margin for temporal reuse.
+        // On skip frames, the camera moves but the shadow map is frozen — this
+        // extra margin prevents shadows popping at screen edges.
+        if (_frustumExpansionBase > 0.0 || _frustumExpansionPerSkip > 0.0)
+        {
+            double margin = _frustumExpansionBase
+                + _frustumExpansionPerSkip * osg::maximum(0u, _shadowUpdateInterval - 1);
+            xMin = osg::maximum(-1.0, xMin - margin);
+            xMax = osg::minimum( 1.0, xMax + margin);
+            yMin = osg::maximum(-1.0, yMin - margin);
+            yMax = osg::minimum( 1.0, yMax + margin);
+        }
+
+        // Snap shadow frustum to texel grid for temporal stability.
+        // Range stays fixed, only the origin snaps to discrete texel-sized steps.
+        {
+            const ShadowSettings* settings = getShadowedScene()->getShadowSettings();
+            double shadowMapRes = settings->getTextureSize().x();
+            double xRange = xMax - xMin;
+            double yRange = yMax - yMin;
+            double texelSizeX = xRange / shadowMapRes;
+            double texelSizeY = yRange / shadowMapRes;
+            xMin = floor(xMin / texelSizeX) * texelSizeX;
+            xMax = xMin + xRange;
+            yMin = floor(yMin / texelSizeY) * texelSizeY;
+            yMax = yMin + yRange;
+        }
     }
 
     if (xMin != -1.0 || yMin != -1.0 || zMin != -1.0 ||

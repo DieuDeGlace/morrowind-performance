@@ -12,124 +12,126 @@
         uniform sampler2DShadow shadowTexture@shadow_texture_unit_index;
         varying vec4 shadowSpaceCoords@shadow_texture_unit_index;
 
-#if @softShadows
-        uniform mat4 shadowSpaceMatrix@shadow_texture_unit_index;
-#endif
-
 #if @perspectiveShadowMaps
         varying vec4 shadowRegionCoords@shadow_texture_unit_index;
 #endif
     @endforeach
 
 // ============================================================================
-// Soft Shadow Filtering (8-tap spiral disc with PCSS penumbra)
+// Soft Shadow Filtering (contiguous texel block, see below)
 // ============================================================================
 #if @softShadows
 
-#define SHADOWMAP_RES (@shadowMapResolution * 0.5)
+// Soft shadows read a contiguous block of shadow-map texels with weights
+// that change smoothly as the receiver moves within a texel (the
+// "optimized PCF" weighting from Ignacio Castaño's The Witness shadow
+// filtering, as in MJP's Shadows sample). Each hardware-filtered lookup
+// covers 2x2 texels, so 4, 9 or 16 lookups give a 3x3, 5x5 or 7x7 texel
+// filter. Because every texel under the filter is read, a thin caster such
+// as a leaf cannot fall between samples: when the shadow map shifts as the
+// camera moves, its shadow keeps the same softness instead of flickering.
 
-// Minimum texels the filter should span (prevents undersampling at distance)
-#ifndef FILTER_MIN_TEXELS
-#define FILTER_MIN_TEXELS 1.3
-#endif
+#define SHADOWMAP_RES @shadowMapResolution
 
-// Penumbra width scaling (pseudo-PCSS)
-#ifndef PENUMBRA_NEAR
-#define PENUMBRA_NEAR 1
-#endif
-
-#ifndef PENUMBRA_FAR
-#define PENUMBRA_FAR 3.0
-#endif
-
-#ifndef PENUMBRA_SCALING
-#define PENUMBRA_SCALING 1
-#endif
-
-// Interleaved Gradient Noise - smooth spatial variation for rotation
-float getIGNRotation()
+float sampleShadowTexels(sampler2DShadow tex, vec2 base, float u, float v, float depth)
 {
-    float noise = fract(52.9829189 * fract(0.06711056 * gl_FragCoord.x + 0.00583715 * gl_FragCoord.y));
-    return noise * 6.283185;
+    return shadow2D(tex, vec3(base + vec2(u, v) / SHADOWMAP_RES, depth)).r;
 }
 
-// Precomputed 8-tap spiral with alternating flip
-// Designed so rotated copies interleave rather than overlap
-const vec2 spiralDisc[8] = vec2[8](
-    vec2(-0.7071,  0.7071),
-    vec2( 0.0000, -0.8750),
-    vec2( 0.5303,  0.5303),
-    vec2(-0.6250,  0.0000),
-    vec2( 0.3536, -0.3536),
-    vec2( 0.0000,  0.3750),
-    vec2(-0.1768, -0.1768),
-    vec2( 0.1250,  0.0000)
-);
-
-float getFilteredShadowing(sampler2DShadow tex, vec4 coord, mat4 matrix)
+float getFilteredShadowing(sampler2DShadow tex, vec4 coord)
 {
     vec3 shadowUV = coord.xyz / coord.w;
-    float texelScale = coord.w / SHADOWMAP_RES;
+    float depth = shadowUV.z;
 
-    // ---- Compute filter directions aligned to surface plane ----
-#if PER_PIXEL_LIGHTING
-    // Use surface normal to derive tangent frame in shadow space
-    vec3 viewNormal = normalize(gl_NormalMatrix * passNormal);
-    vec3 viewTangent = cross(viewNormal, normalize(vec3(0.9153, -0.0115, -0.5141)));
-    vec3 viewBitangent = cross(viewNormal, viewTangent);
+    vec2 texels = shadowUV.xy * SHADOWMAP_RES;
+    vec2 base = floor(texels + vec2(0.5));
+    float s = texels.x + 0.5 - base.x;
+    float t = texels.y + 0.5 - base.y;
+    base = (base - vec2(0.5)) / SHADOWMAP_RES;
 
-    // Transform tangents to shadow space and find resulting UV directions
-    vec4 shadowTangent = matrix * vec4(viewTangent, 0.0);
-    vec4 shadowBitangent = matrix * vec4(viewBitangent, 0.0);
-    // Differentiate homogeneous division; directions can change w under LiSPSM.
-    vec3 filterX = normalize(shadowTangent.xyz - shadowUV * shadowTangent.w);
-    vec3 filterY = normalize(shadowBitangent.xyz - shadowUV * shadowBitangent.w);
-#else
-    // Fallback: use screen-space derivatives
-    vec3 filterX = normalize(dFdx(shadowUV));
-    vec3 filterY = normalize(dFdy(shadowUV));
-#endif
-
-    // Enforce orthogonality between filter axes
-    filterY = normalize(cross(filterX, cross(filterX, filterY)));
-
-    // Build offset vectors (scaled to shadow map texels)
-    vec4 offs_x = vec4(filterX, 0.0) * texelScale;
-    vec4 offs_y = vec4(filterY, 0.0) * texelScale;
-
-    // ---- Ensure minimum texel coverage (prevents undersampling at distance) ----
-    float minSize = texelScale * FILTER_MIN_TEXELS;
-    offs_x *= max(1.0, minSize / length(offs_x.xy));
-    offs_y *= max(1.0, minSize / length(offs_y.xy));
-
-#if PENUMBRA_SCALING
-    // ---- Pseudo-PCSS: widen penumbra based on depth in shadow ----
-    float penumbra = mix(float(PENUMBRA_NEAR), float(PENUMBRA_FAR), clamp(shadowUV.z, 0.0, 1.0));
-    offs_x *= penumbra;
-    offs_y *= penumbra;
-#endif
-
-    // Adjustable footprint, independent of shadow-map resolution and the
-    // preserved eight-sample quality. Radius 1.0 is the original filter.
-    offs_x *= @softShadowRadius;
-    offs_y *= @softShadowRadius;
-
-    // ---- Sample shadow map with rotated spiral disc ----
-    float rotation = getIGNRotation();
-    float c = cos(rotation);
-    float s = sin(rotation);
-
-    float shadow = 0.0;
-    for (int i = 0; i < 8; i++)
+    // soft shadow radius picks the filter width: 0.5 is 3x3 texels,
+    // 1.0 (default) 5x5, 1.5 and wider 7x7.
+    const float radius = @softShadowRadius;
+    float sum = 0.0;
+    if (radius < 0.75)
     {
-        vec2 p = spiralDisc[i];
-        vec2 rotated = vec2(p.x * c - p.y * s, p.x * s + p.y * c);
-        shadow += shadow2DProj(tex, coord + offs_x * rotated.x + offs_y * rotated.y).r;
+        float uw0 = 3.0 - 2.0 * s;
+        float uw1 = 1.0 + 2.0 * s;
+        float u0 = (2.0 - s) / uw0 - 1.0;
+        float u1 = s / uw1 + 1.0;
+        float vw0 = 3.0 - 2.0 * t;
+        float vw1 = 1.0 + 2.0 * t;
+        float v0 = (2.0 - t) / vw0 - 1.0;
+        float v1 = t / vw1 + 1.0;
+
+        sum += uw0 * vw0 * sampleShadowTexels(tex, base, u0, v0, depth);
+        sum += uw1 * vw0 * sampleShadowTexels(tex, base, u1, v0, depth);
+        sum += uw0 * vw1 * sampleShadowTexels(tex, base, u0, v1, depth);
+        sum += uw1 * vw1 * sampleShadowTexels(tex, base, u1, v1, depth);
+        return sum / 16.0;
+    }
+    if (radius < 1.25)
+    {
+        float uw0 = 4.0 - 3.0 * s;
+        float uw1 = 7.0;
+        float uw2 = 1.0 + 3.0 * s;
+        float u0 = (3.0 - 2.0 * s) / uw0 - 2.0;
+        float u1 = (3.0 + s) / uw1;
+        float u2 = s / uw2 + 2.0;
+        float vw0 = 4.0 - 3.0 * t;
+        float vw1 = 7.0;
+        float vw2 = 1.0 + 3.0 * t;
+        float v0 = (3.0 - 2.0 * t) / vw0 - 2.0;
+        float v1 = (3.0 + t) / vw1;
+        float v2 = t / vw2 + 2.0;
+
+        sum += uw0 * vw0 * sampleShadowTexels(tex, base, u0, v0, depth);
+        sum += uw1 * vw0 * sampleShadowTexels(tex, base, u1, v0, depth);
+        sum += uw2 * vw0 * sampleShadowTexels(tex, base, u2, v0, depth);
+        sum += uw0 * vw1 * sampleShadowTexels(tex, base, u0, v1, depth);
+        sum += uw1 * vw1 * sampleShadowTexels(tex, base, u1, v1, depth);
+        sum += uw2 * vw1 * sampleShadowTexels(tex, base, u2, v1, depth);
+        sum += uw0 * vw2 * sampleShadowTexels(tex, base, u0, v2, depth);
+        sum += uw1 * vw2 * sampleShadowTexels(tex, base, u1, v2, depth);
+        sum += uw2 * vw2 * sampleShadowTexels(tex, base, u2, v2, depth);
+        return sum / 144.0;
     }
 
-    return shadow * 0.125;
-}
+    float uw0 = 5.0 * s - 6.0;
+    float uw1 = 11.0 * s - 28.0;
+    float uw2 = -(11.0 * s + 17.0);
+    float uw3 = -(5.0 * s + 1.0);
+    float u0 = (4.0 * s - 5.0) / uw0 - 3.0;
+    float u1 = (4.0 * s - 16.0) / uw1 - 1.0;
+    float u2 = -(7.0 * s + 5.0) / uw2 + 1.0;
+    float u3 = -s / uw3 + 3.0;
+    float vw0 = 5.0 * t - 6.0;
+    float vw1 = 11.0 * t - 28.0;
+    float vw2 = -(11.0 * t + 17.0);
+    float vw3 = -(5.0 * t + 1.0);
+    float v0 = (4.0 * t - 5.0) / vw0 - 3.0;
+    float v1 = (4.0 * t - 16.0) / vw1 - 1.0;
+    float v2 = -(7.0 * t + 5.0) / vw2 + 1.0;
+    float v3 = -t / vw3 + 3.0;
 
+    sum += uw0 * vw0 * sampleShadowTexels(tex, base, u0, v0, depth);
+    sum += uw1 * vw0 * sampleShadowTexels(tex, base, u1, v0, depth);
+    sum += uw2 * vw0 * sampleShadowTexels(tex, base, u2, v0, depth);
+    sum += uw3 * vw0 * sampleShadowTexels(tex, base, u3, v0, depth);
+    sum += uw0 * vw1 * sampleShadowTexels(tex, base, u0, v1, depth);
+    sum += uw1 * vw1 * sampleShadowTexels(tex, base, u1, v1, depth);
+    sum += uw2 * vw1 * sampleShadowTexels(tex, base, u2, v1, depth);
+    sum += uw3 * vw1 * sampleShadowTexels(tex, base, u3, v1, depth);
+    sum += uw0 * vw2 * sampleShadowTexels(tex, base, u0, v2, depth);
+    sum += uw1 * vw2 * sampleShadowTexels(tex, base, u1, v2, depth);
+    sum += uw2 * vw2 * sampleShadowTexels(tex, base, u2, v2, depth);
+    sum += uw3 * vw2 * sampleShadowTexels(tex, base, u3, v2, depth);
+    sum += uw0 * vw3 * sampleShadowTexels(tex, base, u0, v3, depth);
+    sum += uw1 * vw3 * sampleShadowTexels(tex, base, u1, v3, depth);
+    sum += uw2 * vw3 * sampleShadowTexels(tex, base, u2, v3, depth);
+    sum += uw3 * vw3 * sampleShadowTexels(tex, base, u3, v3, depth);
+    return sum / 2704.0;
+}
 #endif // @softShadows
 
 #endif // SHADOWS
@@ -168,8 +170,7 @@ float unshadowedLightRatio(float distance)
 #if @softShadows
                 shadowing = min(getFilteredShadowing(
                     shadowTexture@shadow_texture_unit_index,
-                    shadowSpaceCoords@shadow_texture_unit_index,
-                    shadowSpaceMatrix@shadow_texture_unit_index
+                    shadowSpaceCoords@shadow_texture_unit_index
                 ), shadowing);
 #else
                 shadowing = min(shadow2DProj(shadowTexture@shadow_texture_unit_index, shadowSpaceCoords@shadow_texture_unit_index).r, shadowing);
