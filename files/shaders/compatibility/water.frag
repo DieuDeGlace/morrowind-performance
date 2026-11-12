@@ -171,6 +171,15 @@ void main(void)
     float depthSample = linearizeDepth(sampleOpaqueDepthTex(screenCoords).r, near, far);
     float surfaceDepth = linearizeDepth(gl_FragCoord.z, near, far);
     float realWaterDepth = depthSample - surfaceDepth;  // undistorted water depth in view direction, independent of frustum
+    // OPENMW_ANDROID_053_WATER_DEPTH_GUARD: the water is depth tested, so the
+    // opaque scene behind it can never be much nearer than the surface. If it
+    // reads that way the depth copy is unusable on this device; treat the
+    // water as deep instead of fading the whole surface out at the "shore".
+    if (!(depthSample >= surfaceDepth * 0.9))
+    {
+        depthSample = far;
+        realWaterDepth = far - surfaceDepth;
+    }
 
 #if @waterRefraction
     refractionCoordsOffset = reflectionCoordsOffset;
