@@ -103,7 +103,8 @@ namespace MWRender
         clear();
     }
 
-    bool ShatterEffects::add(const osg::PositionAttitudeTransform& object, const osg::Vec3f& velocity, float floor)
+    bool ShatterEffects::add(const osg::Group& object, const osg::Vec3f& position, const osg::Quat& attitude,
+        const osg::Vec3f& objectScale, const osg::Vec3f& velocity, float floor)
     {
         DrawableCollector source;
         for (unsigned int child = 0; child < object.getNumChildren(); ++child)
@@ -156,13 +157,13 @@ namespace MWRender
             ++sizes[shard];
         }
 
-        const float scale = object.getScale().x();
-        const osg::Matrix placement = osg::Matrix::scale(object.getScale()) * osg::Matrix::rotate(object.getAttitude());
+        const float scale = objectScale.x();
+        const osg::Matrix placement = osg::Matrix::scale(objectScale) * osg::Matrix::rotate(attitude);
         osg::Vec3f objectCentre;
         for (const auto& centroid : centroids)
             objectCentre += centroid;
         objectCentre /= static_cast<float>(centroids.size());
-        const osg::Vec3f worldCentre = objectCentre * placement + object.getPosition();
+        const osg::Vec3f worldCentre = objectCentre * placement + position;
 
         Effect effect;
         for (std::size_t shard = 0; shard < count; ++shard)
@@ -203,14 +204,14 @@ namespace MWRender
             piece.mNode->setNodeMask(Mask_Effect);
             piece.mNode->addChild(model);
             piece.mNode->addCullCallback(new SceneUtil::LightListCallback);
-            const osg::Vec3f position = centre * placement + object.getPosition();
-            piece.mNode->setPosition(position);
-            osg::Vec3f outward = position - worldCentre;
+            const osg::Vec3f start = centre * placement + position;
+            piece.mNode->setPosition(start);
+            osg::Vec3f outward = start - worldCentre;
             outward.z() = 0.f;
             if (outward.length2() < 1e-4f)
                 outward = osg::Vec3f(std::cos(static_cast<float>(shard)), std::sin(static_cast<float>(shard)), 0.f);
             outward.normalize();
-            piece.mMotion.mPosition = position;
+            piece.mMotion.mPosition = start;
             piece.mMotion.mVelocity = velocity * .5f + outward * 90.f + osg::Vec3f(0, 0, 70.f + 15.f * (shard % 3));
             piece.mMotion.mSpin = 6.f + 2.f * static_cast<float>(shard % 4);
             piece.mSpinAxis = outward ^ osg::Vec3f(0, 0, 1);
