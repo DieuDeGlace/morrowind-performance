@@ -8,6 +8,7 @@
 
 #ifdef ANDROID
 #include <osg/BlendFunc>
+#include <osg/Camera>
 #include <osg/ColorMask>
 #include <osg/Depth>
 #include <osg/Geometry>
@@ -292,7 +293,7 @@ void main()
             packedFbo->apply(state, osg::FrameBufferObject::READ_DRAW_FRAMEBUFFER);
             mCopyGeometry->draw(renderInfo);
             state.popStateSet();
-            logPackedDepth(state, sceneDepth, packed);
+            logPackedDepth(state, renderInfo, sceneDepth, packed);
         }
         else if (!mLoggedNoPackedFbo)
         {
@@ -313,10 +314,16 @@ void main()
     // Logs what water will read as the depth below it, a few times per session,
     // so a missing shore fade can be traced to the depth copy on the device.
     // Must run while the packed framebuffer is bound for reading.
-    void OpaqueColorBinCallback::logPackedDepth(
-        osg::State& state, const osg::Texture* sceneDepth, const osg::Texture* packed)
+    AndroidWaterDiagnostic& AndroidWaterDiagnostic::get()
     {
-        static const unsigned int reportAt[] = { 120, 600, 1800, 3600 };
+        static AndroidWaterDiagnostic instance;
+        return instance;
+    }
+
+    void OpaqueColorBinCallback::logPackedDepth(
+        osg::State& state, osg::RenderInfo& renderInfo, const osg::Texture* sceneDepth, const osg::Texture* packed)
+    {
+        static const unsigned int reportAt[] = { 600, 1800, 3600, 7200 };
         constexpr unsigned int reportCount = sizeof(reportAt) / sizeof(reportAt[0]);
         ++mCopyCount;
         if (mDiagnosticReports >= reportCount || mCopyCount != reportAt[mDiagnosticReports])
@@ -341,12 +348,43 @@ void main()
         if (width <= 0 || height <= 0)
             return;
 
+        // Where the water plane would be at each sampled pixel, computed on the
+        // CPU from the same camera, so the log shows whether water would see the
+        // ground behind it as nearer than its own surface (which turns the
+        // shore fade off through the depth guard in water.frag).
+        const AndroidWaterDiagnostic& diag = AndroidWaterDiagnostic::get();
+        const osg::Camera* camera = renderInfo.getCurrentCamera();
+        const bool haveCamera = camera && diag.mHaveProjection;
+        osg::Matrixd viewProjection;
+        osg::Matrixd inverseViewProjection;
+        if (haveCamera)
+        {
+            viewProjection = camera->getViewMatrix() * diag.mProjection;
+            inverseViewProjection = osg::Matrixd::inverse(viewProjection);
+            const osg::Vec3d eye = osg::Vec3d(0, 0, 0) * osg::Matrixd::inverse(camera->getViewMatrix());
+            double fovy = 0, aspect = 0, projNear = 0, projFar = 0;
+            const bool perspective = diag.mProjection.getPerspective(fovy, aspect, projNear, projFar);
+            Log(Debug::Info) << "Android water diagnostic: camera \"" << camera->getName() << "\" eye "
+                             << std::setprecision(7) << eye.x() << "," << eye.y() << "," << eye.z() << ", water level "
+                             << diag.mWaterLevel << (diag.mHaveWaterLevel ? "" : " (unset)") << ", shader near/far "
+                             << diag.mNear << "/" << diag.mFar << ", projection "
+                             << (perspective ? "" : "not perspective ") << "near/far " << projNear << "/" << projFar
+                             << " fovy " << fovy << " aspect " << aspect;
+        }
+        else
+            Log(Debug::Info) << "Android water diagnostic: no camera or projection, water depth not computed";
+
+        const auto linearize = [&diag](double d) {
+            const double zn = 2.0 * d - 1.0;
+            return 2.0 * diag.mNear * diag.mFar / (diag.mFar + diag.mNear - zn * (diag.mFar - diag.mNear));
+        };
+
         // 3x3 grid; the bottom row is usually ground or water, the top row sky.
         const float fractions[] = { 0.1f, 0.5f, 0.9f };
         for (float fy : fractions)
         {
             std::ostringstream row;
-            row << "Android water diagnostic: row " << static_cast<int>(fy * 100.f) << "% up:";
+            row << std::setprecision(7) << "Android water diagnostic: row " << static_cast<int>(fy * 100.f) << "% up:";
             for (float fx : fractions)
             {
                 const GLint x = std::min(width - 1, static_cast<int>(fx * width));
@@ -355,7 +393,32 @@ void main()
                 glReadPixels(x, y, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
                 const double depth = (rgba[0] * 65536.0 + rgba[1] * 256.0 + rgba[2]) / 16777215.0;
                 row << " (" << int(rgba[0]) << "," << int(rgba[1]) << "," << int(rgba[2]) << "," << int(rgba[3])
-                    << ")=" << std::setprecision(7) << depth;
+                    << ")=" << depth;
+
+                if (!haveCamera || !diag.mHaveWaterLevel)
+                    continue;
+                const double nx = 2.0 * (x + 0.5) / width - 1.0;
+                const double ny = 2.0 * (y + 0.5) / height - 1.0;
+                const osg::Vec4d nearPoint = osg::Vec4d(nx, ny, -1.0, 1.0) * inverseViewProjection;
+                const osg::Vec4d farPoint = osg::Vec4d(nx, ny, 1.0, 1.0) * inverseViewProjection;
+                const osg::Vec3d a(
+                    nearPoint.x() / nearPoint.w(), nearPoint.y() / nearPoint.w(), nearPoint.z() / nearPoint.w());
+                const osg::Vec3d b(
+                    farPoint.x() / farPoint.w(), farPoint.y() / farPoint.w(), farPoint.z() / farPoint.w());
+                const double dz = b.z() - a.z();
+                const double t = dz != 0.0 ? (diag.mWaterLevel - a.z()) / dz : -1.0;
+                if (t <= 0.0 || t >= 1.0)
+                {
+                    row << " [no water]";
+                    continue;
+                }
+                const osg::Vec3d hit = a + (b - a) * t;
+                const osg::Vec4d clip = osg::Vec4d(hit, 1.0) * viewProjection;
+                const double waterDepth = 0.5 * clip.z() / clip.w() + 0.5;
+                const double opaqueLinear = linearize(depth);
+                const double waterLinear = linearize(waterDepth);
+                row << " [water " << waterDepth << ", linear " << opaqueLinear << " vs " << waterLinear
+                    << (opaqueLinear >= waterLinear * 0.9 ? ", fade ok]" : ", guard fires]");
             }
             Log(Debug::Info) << row.str();
         }

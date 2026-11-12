@@ -85,6 +85,9 @@
 #include "npcanimation.hpp"
 #include "objectpaging.hpp"
 #include "occlusionculling.hpp"
+#ifdef ANDROID
+#include "opaqueblit.hpp"
+#endif
 #include "pathgrid.hpp"
 #include "postprocessor.hpp"
 #include "recastmesh.hpp"
@@ -1409,6 +1412,15 @@ namespace MWRender
 
         mSharedUniformStateUpdater->setNear(mNearClip);
         mSharedUniformStateUpdater->setFar(mViewDistance);
+#ifdef ANDROID
+        {
+            AndroidWaterDiagnostic& diagnostic = AndroidWaterDiagnostic::get();
+            diagnostic.mProjection = projectionMatrix;
+            diagnostic.mHaveProjection = true;
+            diagnostic.mNear = mNearClip;
+            diagnostic.mFar = mViewDistance;
+        }
+#endif
 
         if (Stereo::getStereo())
         {

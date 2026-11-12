@@ -41,6 +41,9 @@
 
 #include "../mwworld/cellstore.hpp"
 
+#ifdef ANDROID
+#include "opaqueblit.hpp"
+#endif
 #include "renderbin.hpp"
 #include "ripples.hpp"
 #include "ripplesimulation.hpp"
@@ -703,6 +706,10 @@ namespace MWRender
     void Water::setHeight(const float height)
     {
         mTop = height;
+#ifdef ANDROID
+        AndroidWaterDiagnostic::get().mWaterLevel = height;
+        AndroidWaterDiagnostic::get().mHaveWaterLevel = true;
+#endif
 
         mSimulation->setWaterHeight(height);
 
