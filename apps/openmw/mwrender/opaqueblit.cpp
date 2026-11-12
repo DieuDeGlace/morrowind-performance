@@ -16,6 +16,10 @@
 #include <osg/Uniform>
 #include <osg/Viewport>
 
+#include <algorithm>
+#include <cstdlib>
+#include <iomanip>
+#include <sstream>
 #include <string>
 
 #include <components/debug/debuglog.hpp>
@@ -288,6 +292,12 @@ void main()
             packedFbo->apply(state, osg::FrameBufferObject::READ_DRAW_FRAMEBUFFER);
             mCopyGeometry->draw(renderInfo);
             state.popStateSet();
+            logPackedDepth(state, sceneDepth, packed);
+        }
+        else if (!mLoggedNoPackedFbo)
+        {
+            mLoggedNoPackedFbo = true;
+            Log(Debug::Warning) << "Android water diagnostic: no packed depth framebuffer, so water has no depth";
         }
 
         mFbo[frameId]->apply(state, osg::FrameBufferObject::READ_DRAW_FRAMEBUFFER);
@@ -297,6 +307,62 @@ void main()
             osgUtil::StateGraph::moveStateGraph(state, nullptr, previous->_parent->_parent);
             state.apply(previous->_parent->getStateSet());
         }
+    }
+
+    // OPENMW_ANDROID_053_PACKED_DEPTH_DIAGNOSTIC
+    // Logs what water will read as the depth below it, a few times per session,
+    // so a missing shore fade can be traced to the depth copy on the device.
+    // Must run while the packed framebuffer is bound for reading.
+    void OpaqueColorBinCallback::logPackedDepth(
+        osg::State& state, const osg::Texture* sceneDepth, const osg::Texture* packed)
+    {
+        static const unsigned int reportAt[] = { 120, 600, 1800, 3600 };
+        constexpr unsigned int reportCount = sizeof(reportAt) / sizeof(reportAt[0]);
+        ++mCopyCount;
+        if (mDiagnosticReports >= reportCount || mCopyCount != reportAt[mDiagnosticReports])
+            return;
+        ++mDiagnosticReports;
+
+        osg::GLExtensions* ext = state.get<osg::GLExtensions>();
+        const GLenum errorBefore = glGetError();
+        const GLenum status
+            = ext->glCheckFramebufferStatus ? ext->glCheckFramebufferStatus(GL_FRAMEBUFFER_EXT) : GLenum(0);
+        const int width = packed->getTextureWidth();
+        const int height = packed->getTextureHeight();
+        const char* noHighp = std::getenv("LIBGL_NOHIGHP");
+
+        Log(Debug::Info) << "Android water diagnostic " << mDiagnosticReports << "/" << reportCount << " (copy "
+                         << mCopyCount << "): packed " << width << "x" << height << ", scene depth "
+                         << sceneDepth->getTextureWidth() << "x" << sceneDepth->getTextureHeight()
+                         << ", depth internal format 0x" << std::hex << sceneDepth->getInternalFormat()
+                         << ", framebuffer status 0x" << status << ", GL error before read 0x" << errorBefore
+                         << std::dec << ", LIBGL_NOHIGHP=" << (noHighp ? noHighp : "unset");
+
+        if (width <= 0 || height <= 0)
+            return;
+
+        // 3x3 grid; the bottom row is usually ground or water, the top row sky.
+        const float fractions[] = { 0.1f, 0.5f, 0.9f };
+        for (float fy : fractions)
+        {
+            std::ostringstream row;
+            row << "Android water diagnostic: row " << static_cast<int>(fy * 100.f) << "% up:";
+            for (float fx : fractions)
+            {
+                const GLint x = std::min(width - 1, static_cast<int>(fx * width));
+                const GLint y = std::min(height - 1, static_cast<int>(fy * height));
+                unsigned char rgba[4] = { 0, 0, 0, 0 };
+                glReadPixels(x, y, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
+                const double depth = (rgba[0] * 65536.0 + rgba[1] * 256.0 + rgba[2]) / 16777215.0;
+                row << " (" << int(rgba[0]) << "," << int(rgba[1]) << "," << int(rgba[2]) << "," << int(rgba[3])
+                    << ")=" << std::setprecision(7) << depth;
+            }
+            Log(Debug::Info) << row.str();
+        }
+        const GLenum errorAfter = glGetError();
+        if (errorAfter != GL_NO_ERROR)
+            Log(Debug::Warning) << "Android water diagnostic: reading the packed depth raised GL error 0x" << std::hex
+                                << errorAfter;
     }
 #endif
 }

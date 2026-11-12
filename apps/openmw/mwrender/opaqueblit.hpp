@@ -46,6 +46,11 @@ namespace MWRender
         osg::ref_ptr<osg::StateSet> mCopyStateSet[2];
         osg::ref_ptr<osg::StateSet> mPackStateSet[2];
         bool mLogged = false;
+        // OPENMW_ANDROID_053_PACKED_DEPTH_DIAGNOSTIC
+        void logPackedDepth(osg::State& state, const osg::Texture* sceneDepth, const osg::Texture* packed);
+        unsigned int mCopyCount = 0;
+        unsigned int mDiagnosticReports = 0;
+        bool mLoggedNoPackedFbo = false;
 #endif
     };
 }
