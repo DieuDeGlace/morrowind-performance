@@ -50,6 +50,9 @@ namespace MWPhysics
         class Body;
         std::shared_ptr<Body> getOrCreate(const MWWorld::Ptr& item);
         bool fracture(const std::shared_ptr<Body>& body);
+        bool breakable(const MWWorld::Ptr& item);
+        const std::vector<VFS::Path::Normalized>* findDebris(const MWWorld::Ptr& item);
+        void reportDestruction(const std::shared_ptr<Body>& body);
         void buildDebrisIndex();
         PhysicsSystem& mPhysics;
         Resource::ResourceSystem* mResources;

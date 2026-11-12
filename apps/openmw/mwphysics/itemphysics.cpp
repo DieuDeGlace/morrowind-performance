@@ -9,7 +9,7 @@
 #include <vector>
 
 #include <BulletCollision/CollisionDispatch/btCollisionDispatcher.h>
-#include <BulletCollision/CollisionShapes/btSphereShape.h>
+#include <BulletCollision/CollisionShapes/btBoxShape.h>
 #include <BulletCollision/NarrowPhaseCollision/btPersistentManifold.h>
 #include <BulletDynamics/Dynamics/btRigidBody.h>
 #include <osg/ComputeBoundsVisitor>
@@ -32,6 +32,7 @@
 #include "../mwbase/world.hpp"
 #include "../mwmechanics/creaturestats.hpp"
 #include "../mwmechanics/drawstate.hpp"
+#include "../mwrender/renderingmanager.hpp"
 #include "../mwworld/cellstore.hpp"
 #include "../mwworld/class.hpp"
 #include "../mwworld/esmstore.hpp"
@@ -119,8 +120,11 @@ namespace MWPhysics
             if (!finite(half) || !finite(mCenter) || half.length2() < .0001f || half.length2() > 1e10f)
                 return false;
             mProperties = ItemPhysicsRules::properties(half);
-            mLargestHalfExtent = std::max({ half.x(), half.y(), half.z() });
-            mShape = std::make_unique<btSphereShape>(mProperties.mRadius);
+            const osg::Vec3f box = ItemPhysicsRules::collisionHalfExtents(half);
+            mLargestHalfExtent = std::max({ box.x(), box.y(), box.z() });
+            const float smallest = std::min({ box.x(), box.y(), box.z() });
+            mShape = std::make_unique<btBoxShape>(Misc::Convert::toBullet(box));
+            mShape->setMargin(std::min(btScalar(.04), btScalar(smallest * .25f)));
             btVector3 inertia;
             mShape->calculateLocalInertia(mProperties.mMass, inertia);
             const osg::Quat rotation
@@ -130,7 +134,8 @@ namespace MWPhysics
             btRigidBody::btRigidBodyConstructionInfo info(mProperties.mMass, nullptr, mShape.get(), inertia);
             info.m_startWorldTransform = mInitialTransform;
             info.m_restitution = mProperties.mRestitution;
-            info.m_friction = .6f;
+            info.m_friction = ItemPhysicsRules::Friction;
+            info.m_rollingFriction = ItemPhysicsRules::RollingFriction;
             info.m_linearDamping = mProperties.mLinearDamping;
             info.m_angularDamping = mProperties.mAngularDamping;
             mBody = std::make_unique<btRigidBody>(info);
@@ -138,13 +143,9 @@ namespace MWPhysics
             mBody->setSleepingThresholds(0, 0); // Use the Lua mod's one-second, linear-speed sleep rule.
             mBody->setFlags(mBody->getFlags() | BT_DISABLE_WORLD_GRAVITY);
             mBody->setGravity(btVector3(0, 0, -ItemPhysicsRules::Gravity));
-            mBody->setCcdMotionThreshold(mProperties.mRadius * .5f);
-            mBody->setCcdSweptSphereRadius(mProperties.mRadius * .8f);
-            // The sphere proxy must slide, not roll: friction on a rolling
-            // sphere never brings it to rest on uneven terrain. Orientation
-            // is driven by mSpin instead of the solver.
-            mBody->setAngularFactor(btScalar(0));
-            mRotation = mInitialTransform.getRotation();
+            // Thin items such as books must not tunnel through the ground.
+            mBody->setCcdMotionThreshold(smallest * .5f);
+            mBody->setCcdSweptSphereRadius(smallest * .8f);
             mSnapshot = mInitialTransform;
             return true;
         }
@@ -211,7 +212,6 @@ namespace MWPhysics
             mNeedsSync = true;
             mActivityTime += elapsed;
             bool contact = false;
-            btVector3 normal(0, 0, 0);
             auto* dispatcher = mPhysics.getRagdollWorld()->getDispatcher();
             for (int index = 0; index < dispatcher->getNumManifolds(); ++index)
             {
@@ -220,42 +220,23 @@ namespace MWPhysics
                     && (manifold->getBody0() == mBody.get() || manifold->getBody1() == mBody.get()))
                 {
                     contact = true;
-                    // m_normalWorldOnB points from body 1 towards body 0.
-                    normal = manifold->getContactPoint(0).m_normalWorldOnB;
-                    if (manifold->getBody1() == mBody.get())
-                        normal = -normal;
                     break;
                 }
             }
             const bool grabbed = mPhysics.getRagdollWorld()->isGrabbed(*this);
-            // Sliding over a triangle mesh loses and regains contact constantly;
-            // only a landing after real air time counts as an impact.
-            if (contact && !mHadContact && !grabbed && mAirTime >= .1f)
-                mSpin.impact(osg::Vec3f(Misc::Convert::toOsg(normal)),
-                    osg::Vec3f(Misc::Convert::toOsg(mBody->getLinearVelocity())), mProperties.mRadius,
-                    mLargestHalfExtent);
-            mAirTime = contact ? 0.f : mAirTime + elapsed;
-            using ItemPhysicsRules::Support;
-            const Support support = grabbed ? Support::Held : contact ? Support::Ground : Support::Air;
-            osg::Vec3f spin = mSpin.advance(elapsed, support);
-            // Settle only on floor-like surfaces, not against walls or actors.
-            if (support == Support::Ground && normal.z() > btScalar(.5))
-                spin += ItemPhysicsRules::settleTurn(
-                    osg::Vec3f(Misc::Convert::toOsg(quatRotate(mRotation, btVector3(0, 0, 1)))),
-                    osg::Vec3f(Misc::Convert::toOsg(normal)), elapsed);
-            const btVector3 turn = Misc::Convert::toBullet(spin);
-            if (const btScalar angle = turn.length(); angle > btScalar(1e-6))
+            if (grabbed != mWasGrabbed)
             {
-                mRotation = btQuaternion(turn / angle, angle) * mRotation;
-                mRotation.normalize();
+                mBody->setDamping(mProperties.mLinearDamping,
+                    grabbed ? ItemPhysicsRules::HeldAngularDamping : mProperties.mAngularDamping);
+                mWasGrabbed = grabbed;
             }
-            mSnapshot = btTransform(mRotation, mBody->getWorldTransform().getOrigin());
+            mSnapshot = mBody->getWorldTransform();
             if (contact && !mHadContact && mPreviousSpeed >= 50.f && mSoundTime >= .1f)
             {
                 mImpact = true;
                 mSoundTime = 0.f;
                 ++mOffenses;
-                if (mPreviousSpeed >= 2.f * ItemPhysicsRules::UnitsPerMetre)
+                if (mPreviousSpeed >= ItemPhysicsRules::DamagingImpactSpeed)
                     ++mDamage;
             }
             mHadContact = contact;
@@ -271,19 +252,17 @@ namespace MWPhysics
             if (!finite(center) || center.z() < mInitialPosition.z() - 7200.f)
             {
                 mSnapshot = mInitialTransform;
-                mRotation = mInitialTransform.getRotation();
-                mSpin.reset();
                 mBody->setWorldTransform(mSnapshot);
                 mActivityTime = 31.f;
             }
-            if (!mSleep.update(static_cast<float>(mBody->getLinearVelocity().length()), elapsed, held)
-                && (held || mActivityTime < 30.f))
+            const float speed = ItemPhysicsRules::restSpeed(static_cast<float>(mBody->getLinearVelocity().length()),
+                static_cast<float>(mBody->getAngularVelocity().length()), mLargestHalfExtent);
+            if (!mSleep.update(speed, elapsed, held) && (held || mActivityTime < 30.f))
                 return true;
 
             mBody->setLinearVelocity(btVector3(0, 0, 0));
             mBody->setAngularVelocity(btVector3(0, 0, 0));
             mBody->forceActivationState(ISLAND_SLEEPING);
-            mSpin.reset();
             // advance() is erasing this island from the awake list itself.
             // Do not mutate that vector through removeItem() here.
             mPhysics.getRagdollWorld()->removeRigidBody(mBody.get());
@@ -299,14 +278,12 @@ namespace MWPhysics
         osg::Vec3f mInitialPosition;
         osg::Vec3f mCenter;
         ItemPhysicsRules::Properties mProperties{};
-        std::unique_ptr<btSphereShape> mShape;
+        std::unique_ptr<btBoxShape> mShape;
         std::unique_ptr<btRigidBody> mBody;
         btTransform mInitialTransform;
         btTransform mSnapshot;
-        btQuaternion mRotation = btQuaternion::getIdentity();
-        ItemPhysicsRules::Spin mSpin;
         float mLargestHalfExtent = 0.f;
-        float mAirTime = 0.f;
+        bool mWasGrabbed = false;
         ItemPhysicsRules::SleepTimer mSleep;
         btCollisionObject* mMirror = nullptr;
         int mMirrorGroup = 0;
@@ -316,7 +293,7 @@ namespace MWPhysics
         float mCrimeTime = 0.f;
         float mPreviousSpeed = 0.f;
         float mSoundTime = 1.f;
-        int mHitPoints = 10;
+        int mHitPoints = ItemPhysicsRules::HitPoints;
         int mDamage = 0;
         bool mImpact = false;
         bool mHadContact = false;
@@ -408,6 +385,7 @@ namespace MWPhysics
         if (!initialized)
             return {};
         body->mUsed = ++mSerial;
+        body->mHitPoints = breakable(item) ? ItemPhysicsRules::GlassHitPoints : ItemPhysicsRules::HitPoints;
         mBodies.emplace(item.mRef, body);
         return body;
     }
@@ -641,12 +619,19 @@ namespace MWPhysics
         }
     }
 
-    bool ItemPhysics::fracture(const std::shared_ptr<Body>& body)
+    void ItemPhysics::reportDestruction(const std::shared_ptr<Body>& body)
     {
-        const auto item = body->mPtr;
-        // Custom scripts can implement their own quest/destruction behaviour.
-        if (item.getType() != ESM::REC_MISC || !item.getClass().getScript(item).empty())
-            return false;
+        const auto& item = body->mPtr;
+        const auto& culprit = body->mCulprit;
+        MWWorld::Ptr victim;
+        const auto mechanics = MWBase::Environment::get().getMechanicsManager();
+        if (!culprit.isEmpty() && !mechanics->isAllowedToUse(culprit, item, victim))
+            mechanics->commitCrime(culprit, victim, MWBase::MechanicsManager::OT_Pickpocket,
+                item.getCellRef().getFaction(), ItemPhysicsRules::crimeAmount(item.getClass().getValue(item), true));
+    }
+
+    const std::vector<VFS::Path::Normalized>* ItemPhysics::findDebris(const MWWorld::Ptr& item)
+    {
         buildDebrisIndex();
         const auto model = item.getClass().getCorrectedModel(item);
         std::string stem(model.stem());
@@ -661,27 +646,65 @@ namespace MWPhysics
                 found = mDebris.find(stem.substr(0, separator));
         }
         if (found == mDebris.end() || found->second.empty() || found->second.size() > 16)
+            return nullptr;
+        return &found->second;
+    }
+
+    bool ItemPhysics::breakable(const MWWorld::Ptr& item)
+    {
+        // Custom scripts can implement their own quest/destruction behaviour.
+        const auto type = item.getType();
+        if ((type != ESM::REC_MISC && type != ESM::REC_ALCH) || !item.getClass().getScript(item).empty())
             return false;
-        const auto awake = std::count_if(
-            mBodies.begin(), mBodies.end(), [](const auto& entry) { return entry.second->mRegistered; });
-        if (static_cast<std::size_t>(awake) + found->second.size() > MaxAwake + (body->mRegistered ? 1 : 0))
+        if (type == ESM::REC_MISC && findDebris(item))
+            return true;
+        return ItemPhysicsRules::glassModel(item.getClass().getCorrectedModel(item).stem());
+    }
+
+    bool ItemPhysics::fracture(const std::shared_ptr<Body>& body)
+    {
+        const auto item = body->mPtr;
+        if (!breakable(item))
             return false;
+        const auto* debris = item.getType() == ESM::REC_MISC ? findDebris(item) : nullptr;
+        if (debris)
+        {
+            const auto awake = std::count_if(
+                mBodies.begin(), mBodies.end(), [](const auto& entry) { return entry.second->mRegistered; });
+            if (static_cast<std::size_t>(awake) + debris->size() > MaxAwake + (body->mRegistered ? 1 : 0))
+                debris = nullptr;
+        }
 
         const auto world = MWBase::Environment::get().getWorld();
+        const osg::Vec3f velocity(Misc::Convert::toOsg(body->mBody->getLinearVelocity()));
+        if (!debris)
+        {
+            // Without installed debris meshes, glass breaks into shards cut
+            // from its own model, which land on the floor below it.
+            const osg::Vec3f centre(Misc::Convert::toOsg(body->mBody->getWorldTransform().getOrigin()));
+            const auto below = mPhysics.castRay(
+                centre, centre - osg::Vec3f(0, 0, 2000.f), { item }, {}, CollisionType_World | CollisionType_HeightMap);
+            const float floor = below.mHit ? below.mHitPos.z() : centre.z() - 2000.f;
+            if (!world->getRenderingManager()->shatterObject(item, velocity, floor))
+                return false;
+        }
+        reportDestruction(body);
+        MWBase::Environment::get().getSoundManager()->playSound3D(
+            item.getRefData().getPosition().asVec3(), item.getClass().getDownSoundId(item), 1.f, .8f);
+        if (!debris)
+        {
+            Log(Debug::Info) << "Item physics: " << item.getCellRef().getRefId() << " shattered";
+            world->deleteObject(item);
+            return true;
+        }
+
         const auto store = MWBase::Environment::get().getESMStore();
         const ESM::Position position = item.getRefData().getPosition();
         const float scale = item.getCellRef().getScale();
-        const osg::Vec3f velocity(Misc::Convert::toOsg(body->mBody->getLinearVelocity()));
         const auto culprit = body->mCulprit;
-        MWWorld::Ptr victim;
-        if (!culprit.isEmpty()
-            && !MWBase::Environment::get().getMechanicsManager()->isAllowedToUse(culprit, item, victim))
-            MWBase::Environment::get().getMechanicsManager()->commitCrime(culprit, victim,
-                MWBase::MechanicsManager::OT_Pickpocket, item.getCellRef().getFaction(),
-                ItemPhysicsRules::crimeAmount(item.getClass().getValue(item), true));
 
         // Copy paths: creating/removing bodies can empty the transient caches.
-        const auto paths = found->second;
+        const auto paths = *debris;
         const int count = item.getCellRef().getCount();
         for (std::size_t index = 0; index < paths.size(); ++index)
         {
@@ -709,8 +732,6 @@ namespace MWPhysics
         }
         Log(Debug::Info) << "Item physics: " << item.getCellRef().getRefId() << " fractured into " << paths.size()
                          << " pieces";
-        MWBase::Environment::get().getSoundManager()->playSound3D(
-            position.asVec3(), item.getClass().getDownSoundId(item), 1.f, .8f);
         world->deleteObject(item);
         // Bound debris clutter without touching pieces already picked up.
         while (mDebrisPieces.size() > 128)

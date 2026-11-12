@@ -12,6 +12,8 @@ file(GLOB UNITTEST_SRC_FILES
     mwphysics/testragdollmorph.cpp
     mwphysics/testitemphysicsrules.cpp
 
+    mwrender/testshatterrules.cpp
+
     mwworld/teststore.cpp
     mwworld/testduration.cpp
     mwworld/testtimestamp.cpp

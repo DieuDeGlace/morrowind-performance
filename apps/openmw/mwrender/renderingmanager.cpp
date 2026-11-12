@@ -35,8 +35,8 @@
 #include <components/sceneutil/cullsafeboundsvisitor.hpp>
 #include <components/sceneutil/depth.hpp>
 #include <components/sceneutil/lightmanager.hpp>
-#include <components/sceneutil/occlusionculling.hpp>
 #include <components/sceneutil/material.hpp>
+#include <components/sceneutil/occlusionculling.hpp>
 #include <components/sceneutil/positionattitudetransform.hpp>
 #include <components/sceneutil/rtt.hpp>
 #include <components/sceneutil/shadow.hpp>
@@ -89,6 +89,7 @@
 #include "postprocessor.hpp"
 #include "recastmesh.hpp"
 #include "screenshotmanager.hpp"
+#include "shattereffect.hpp"
 #include "sky.hpp"
 #include "terrainstorage.hpp"
 #include "util.hpp"
@@ -256,8 +257,7 @@ namespace MWRender
 
         mShadowManager = std::make_unique<SceneUtil::ShadowManager>(sceneRoot, mRootNode, getOutdoorShadowCastingMask(),
             getIndoorShadowCastingMask(), Mask_Terrain | Mask_Object | Mask_Static, Settings::shadows(),
-            mResourceSystem->getSceneManager()->getShaderManager(),
-            Mask_Actor | Mask_Player | Mask_Object);
+            mResourceSystem->getSceneManager()->getShaderManager(), Mask_Actor | Mask_Player | Mask_Object);
 
         Shader::ShaderManager::DefineMap globalDefines = Shader::getDefaultDefines();
         mAppliedShadowDefines = mShadowManager->getShadowDefines(Settings::shadows());
@@ -315,6 +315,7 @@ namespace MWRender
         mResourceSystem->getSceneManager()->setIncrementalCompileOperation(mViewer->getIncrementalCompileOperation());
 
         mEffectManager = std::make_unique<EffectManager>(sceneRoot, mResourceSystem);
+        mShatterEffects = std::make_unique<ShatterEffects>(sceneRoot);
 
         const std::string& normalMapPattern = Settings::shaders().mNormalMapPattern;
         const std::string& heightMapPattern = Settings::shaders().mNormalHeightMapPattern;
@@ -347,9 +348,8 @@ namespace MWRender
             const bool debugMessages = Settings::camera().mOcclusionDebugMessages;
             const bool enableInteriors = Settings::camera().mOcclusionCullingInteriors;
             const unsigned int maxTriangles = static_cast<unsigned int>(Settings::camera().mOcclusionMaxTriangles);
-            mSceneOcclusionCallback = new SceneOcclusionCallback(
-                mOcclusionCuller, mTerrainOccluder.get(), radius, enableTerrain, debugOverlay, debugMessages,
-                enableInteriors);
+            mSceneOcclusionCallback = new SceneOcclusionCallback(mOcclusionCuller, mTerrainOccluder.get(), radius,
+                enableTerrain, debugOverlay, debugMessages, enableInteriors);
             sceneRoot->addCullCallback(mSceneOcclusionCallback);
 
             const float occluderMinRadius = Settings::camera().mOcclusionOccluderMinRadius;
@@ -860,6 +860,7 @@ namespace MWRender
         if (!paused)
         {
             mEffectManager->update(dt);
+            mShatterEffects->update(dt);
             mSky->update(dt);
 
             const MWWorld::Ptr& player = mPlayerAnimation->getPtr();
@@ -1249,9 +1250,19 @@ namespace MWRender
         mEffectManager->removeEffect(effectId);
     }
 
+    bool RenderingManager::shatterObject(const MWWorld::ConstPtr& ptr, const osg::Vec3f& velocity, float floor)
+    {
+        const osg::Node* node = ptr.getRefData().getBaseNode();
+        const auto* object = node ? node->asTransform() : nullptr;
+        if (!object || !object->asPositionAttitudeTransform())
+            return false;
+        return mShatterEffects->add(*object->asPositionAttitudeTransform(), velocity, floor);
+    }
+
     void RenderingManager::notifyWorldSpaceChanged()
     {
         mEffectManager->clear();
+        mShatterEffects->clear();
         mWater->clearRipples();
     }
 
@@ -1623,7 +1634,6 @@ namespace MWRender
                         hud->setVisible(false);
                 }
             }
-
         }
 
         if (updateProjection)
