@@ -396,10 +396,12 @@ namespace MWRender
         mPostProcessor->getStateUpdater()->setSunOcclusion(1.f);
 #endif
 #ifdef ANDROID
-        // Shaders read the opaque depth packed into RGB; see OpaqueColorBinCallback.
+        // Shaders read the opaque depth packed into RGB in the colour copy the
+        // frame does not use (OPENMW_ANDROID_053_DEPTH_IN_SPARE_COLOR_COPY in
+        // opaqueblit.cpp), so frame parity 0 reads colour copy 1 and vice versa.
         resourceSystem->getSceneManager()->setOpaqueDepthTex(
-            mPostProcessor->getTexture(PostProcessor::Tex_OpaqueDepthPacked, 0),
-            mPostProcessor->getTexture(PostProcessor::Tex_OpaqueDepthPacked, 1));
+            mPostProcessor->getTexture(PostProcessor::Tex_OpaqueColor, 1),
+            mPostProcessor->getTexture(PostProcessor::Tex_OpaqueColor, 0));
 #else
         resourceSystem->getSceneManager()->setOpaqueDepthTex(
             mPostProcessor->getTexture(PostProcessor::Tex_OpaqueDepth, 0),
@@ -838,8 +840,7 @@ namespace MWRender
             && std::find(postProcessingChain.begin(), postProcessingChain.end(), "lensflare_android_051_rayocc")
                 != postProcessingChain.end();
 
-        if (useAndroidSunOcclusion && mAndroidSunOcclusionRayTimer <= 0.f
-            && mAndroidSunDiscDirection.length2() > 0.5f)
+        if (useAndroidSunOcclusion && mAndroidSunOcclusionRayTimer <= 0.f && mAndroidSunDiscDirection.length2() > 0.5f)
         {
             mAndroidSunOcclusionRayTimer = 0.05f;
 

@@ -264,7 +264,14 @@ void main()
         mCopyGeometry->draw(renderInfo);
         state.popStateSet();
 
-        if (const auto& packedFbo = mPackedDepthFbo[frameId])
+        // OPENMW_ANDROID_053_DEPTH_IN_SPARE_COLOR_COPY
+        // On the GL4ES device water sampled the dedicated packed depth texture
+        // as (0,0,0,1) whatever its slot, sampler precision or filtering, while
+        // both opaque colour copies always sampled correctly, including when
+        // they held packed depth. So the depth is packed into the colour copy
+        // this frame does not use (the other one of the ping-pong pair), and
+        // RenderingManager hands that texture to shaders as the opaque depth.
+        if (const auto& packedFbo = mOpaqueFbo[1 - frameId])
         {
             const osg::Texture* packed
                 = packedFbo->getAttachment(osg::FrameBufferObject::BufferComponent::COLOR_BUFFER0).getTexture();
@@ -293,21 +300,13 @@ void main()
             packedFbo->apply(state, osg::FrameBufferObject::READ_DRAW_FRAMEBUFFER);
             mCopyGeometry->draw(renderInfo);
             logPackedDepth(state, renderInfo, sceneDepth, packed);
-            // Debug mode 6: also pack the depth into the opaque colour copy,
-            // which water demonstrably can read, to tell whether the packed
-            // values or the packed texture itself are what water fails to see.
-            // Both copies are created at the render size, so the viewport fits.
-            if (AndroidWaterDiagnostic::get().mPendingReadback == 6)
-            {
-                mOpaqueFbo[frameId]->apply(state, osg::FrameBufferObject::READ_DRAW_FRAMEBUFFER);
-                mCopyGeometry->draw(renderInfo);
-            }
             state.popStateSet();
         }
         else if (!mLoggedNoPackedFbo)
         {
             mLoggedNoPackedFbo = true;
-            Log(Debug::Warning) << "Android water diagnostic: no packed depth framebuffer, so water has no depth";
+            Log(Debug::Info) << "Android water diagnostic: the spare colour copy is not set up yet, so this frame's "
+                                "water has no depth";
         }
 
         mFbo[frameId]->apply(state, osg::FrameBufferObject::READ_DRAW_FRAMEBUFFER);
@@ -481,7 +480,7 @@ void main()
         const int height = viewport[3];
         static const char* const modeNames[] = { "", "raw packed texel", "distances and flags",
             "gl_FragCoord distance and screen coordinates", "opaque colour sample",
-            "packed texel alpha, centre texel red and green", "depth packed into the opaque colour copy" };
+            "packed texel alpha, centre texel red and green", "opaque colour sample, repeated" };
         if (mode < 1 || mode > 6)
             return;
         Log(Debug::Info) << "Android water shader output, mode " << mode << " (" << modeNames[mode] << "), viewport "
@@ -515,8 +514,8 @@ void main()
             ext->glActiveTexture(static_cast<GLenum>(activeUnit));
             Log(Debug::Info) << "Android water diagnostic: slot 2 holds texture " << bound[0] << ", slot 3 holds "
                              << bound[1] << "; colour copies " << textureName(mOpaqueFbo[0]) << "/"
-                             << textureName(mOpaqueFbo[1]) << ", packed depth " << textureName(mPackedDepthFbo[0])
-                             << "/" << textureName(mPackedDepthFbo[1]) << ", frame parity "
+                             << textureName(mOpaqueFbo[1])
+                             << " (slot 3 should hold the copy for the other parity), frame parity "
                              << renderInfo.getState()->getFrameStamp()->getFrameNumber() % 2;
         }
 
