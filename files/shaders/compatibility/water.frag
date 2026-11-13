@@ -297,6 +297,8 @@ void main(void)
         }
         else if (androidWaterDebug < 3.5)
             gl_FragData[0] = vec4(clamp(linearizeDepth(gl_FragCoord.z, near, far) / 4096.0, 0.0, 1.0), screenCoords, 1.0);
+        else if (androidWaterDebug > 4.5 && androidWaterDebug < 5.5)
+            gl_FragData[0] = opaqueDepthTexProbe(screenCoords);
         else
             gl_FragData[0] = vec4(sampleOpaqueColorTex(screenCoords).rgb, 1.0);
     }

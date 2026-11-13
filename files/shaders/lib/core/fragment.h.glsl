@@ -17,6 +17,7 @@ vec3 sampleSkyColor(vec2 uv);
 
 vec4 sampleOpaqueDepthTex(vec2 uv);
 vec4 sampleOpaqueDepthTexRaw(vec2 uv);
+vec4 opaqueDepthTexProbe(vec2 uv);
 float opaqueDepthDebugFlags();
 vec4 sampleOpaqueColorTex(vec2 uv);
 

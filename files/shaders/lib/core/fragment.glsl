@@ -28,12 +28,11 @@ vec3 sampleSkyColor(vec2 uv)
 
 // OPENMW_ANDROID_053_PACKED_OPAQUE_DEPTH
 // The opaque depth arrives packed into RGB as a 24-bit integer (see
-// opaqueblit.cpp); full precision is needed to unpack it exactly.
-#if defined(GL_ES) && defined(GL_FRAGMENT_PRECISION_HIGH)
-uniform highp sampler2D opaqueDepthTex;
-#else
+// opaqueblit.cpp). Each byte only needs 8 bits, so the sampler keeps the
+// default precision (OPENMW_ANDROID_053_PLAIN_DEPTH_SAMPLER: on the GL4ES
+// device a highp sampler read zeros while the plain colour sampler worked);
+// the bytes are summed in high precision below.
 uniform sampler2D opaqueDepthTex;
-#endif
 uniform sampler2D opaqueColorTex;
 
 // Unpacking sums the bytes up to 16777215, which overflows 16-bit floats, so
@@ -63,6 +62,15 @@ vec4 sampleOpaqueDepthTex(vec2 uv)
 vec4 sampleOpaqueDepthTexRaw(vec2 uv)
 {
     return texture2D(opaqueDepthTex, uv);
+}
+
+// Alpha of the texel under this pixel (an unbound or incomplete texture reads
+// (0,0,0,1), a cleared one (0,0,0,0)) and the texel at the screen centre.
+vec4 opaqueDepthTexProbe(vec2 uv)
+{
+    vec4 here = texture2D(opaqueDepthTex, uv);
+    vec4 centre = texture2D(opaqueDepthTex, vec2(0.5, 0.5));
+    return vec4(here.a, centre.r, centre.g, 1.0);
 }
 
 float opaqueDepthDebugFlags()
