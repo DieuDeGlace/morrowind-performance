@@ -292,8 +292,17 @@ void main()
             state.apply();
             packedFbo->apply(state, osg::FrameBufferObject::READ_DRAW_FRAMEBUFFER);
             mCopyGeometry->draw(renderInfo);
-            state.popStateSet();
             logPackedDepth(state, renderInfo, sceneDepth, packed);
+            // Debug mode 6: also pack the depth into the opaque colour copy,
+            // which water demonstrably can read, to tell whether the packed
+            // values or the packed texture itself are what water fails to see.
+            // Both copies are created at the render size, so the viewport fits.
+            if (AndroidWaterDiagnostic::get().mPendingReadback == 6)
+            {
+                mOpaqueFbo[frameId]->apply(state, osg::FrameBufferObject::READ_DRAW_FRAMEBUFFER);
+                mCopyGeometry->draw(renderInfo);
+            }
+            state.popStateSet();
         }
         else if (!mLoggedNoPackedFbo)
         {
@@ -333,13 +342,13 @@ void main()
         ++mCopyCount;
         const bool report = mDiagnosticReports < reportCount && mCopyCount == reportAt[mDiagnosticReports];
 
-        // The report frame and the two after it switch water.frag to one of its
+        // The report frame and the five after it switch water.frag to one of its
         // debug outputs; afterWater() reads the result back.
         const unsigned int frame = state.getFrameStamp()->getFrameNumber();
         if (report)
             mDebugBaseFrame = frame;
         int debugMode = 0;
-        if (mDebugBaseFrame != ~0u && frame >= mDebugBaseFrame && frame - mDebugBaseFrame < 4)
+        if (mDebugBaseFrame != ~0u && frame >= mDebugBaseFrame && frame - mDebugBaseFrame < 6)
             debugMode = static_cast<int>(frame - mDebugBaseFrame) + 1;
         AndroidWaterDiagnostic& diagnostic = AndroidWaterDiagnostic::get();
         diagnostic.mDebugUniform->set(static_cast<float>(debugMode));
@@ -471,13 +480,45 @@ void main()
         const int width = viewport[2];
         const int height = viewport[3];
         static const char* const modeNames[] = { "", "raw packed texel", "distances and flags",
-            "gl_FragCoord distance and screen coordinates", "opaque colour sample" };
-        if (mode < 1 || mode > 4)
+            "gl_FragCoord distance and screen coordinates", "opaque colour sample",
+            "packed texel alpha, centre texel red and green", "depth packed into the opaque colour copy" };
+        if (mode < 1 || mode > 6)
             return;
         Log(Debug::Info) << "Android water shader output, mode " << mode << " (" << modeNames[mode] << "), viewport "
                          << viewport[0] << "," << viewport[1] << " " << width << "x" << height;
         if (width <= 0 || height <= 0)
             return;
+
+        if (mode == 1)
+        {
+            // Which textures GL has on the water's slots, against the copies'
+            // texture names, to catch a stale or missing binding.
+            const unsigned int contextId = renderInfo.getState()->getContextID();
+            const auto textureName = [contextId](const osg::ref_ptr<osg::FrameBufferObject>& fbo) -> GLuint {
+                if (!fbo)
+                    return 0;
+                const osg::Texture* texture
+                    = fbo->getAttachment(osg::FrameBufferObject::BufferComponent::COLOR_BUFFER0).getTexture();
+                const osg::Texture::TextureObject* object = texture ? texture->getTextureObject(contextId) : nullptr;
+                return object ? object->id() : 0;
+            };
+            constexpr GLenum texture0 = 0x84C0; // GL_TEXTURE0
+            osg::GLExtensions* ext = renderInfo.getState()->get<osg::GLExtensions>();
+            GLint activeUnit = texture0;
+            glGetIntegerv(0x84E0 /* GL_ACTIVE_TEXTURE */, &activeUnit);
+            GLint bound[2] = { 0, 0 };
+            for (int i = 0; i < 2; ++i)
+            {
+                ext->glActiveTexture(texture0 + 2 + i);
+                glGetIntegerv(0x8069 /* GL_TEXTURE_BINDING_2D */, &bound[i]);
+            }
+            ext->glActiveTexture(static_cast<GLenum>(activeUnit));
+            Log(Debug::Info) << "Android water diagnostic: slot 2 holds texture " << bound[0] << ", slot 3 holds "
+                             << bound[1] << "; colour copies " << textureName(mOpaqueFbo[0]) << "/"
+                             << textureName(mOpaqueFbo[1]) << ", packed depth " << textureName(mPackedDepthFbo[0])
+                             << "/" << textureName(mPackedDepthFbo[1]) << ", frame parity "
+                             << renderInfo.getState()->getFrameStamp()->getFrameNumber() % 2;
+        }
 
         const float fractions[] = { 0.1f, 0.5f, 0.9f };
         for (float fy : fractions)
@@ -492,8 +533,10 @@ void main()
                 unsigned char rgba[4] = { 0, 0, 0, 0 };
                 glReadPixels(x, y, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
                 row << " (" << int(rgba[0]) << "," << int(rgba[1]) << "," << int(rgba[2]) << "," << int(rgba[3]) << ")";
-                if (mode == 1)
+                if (mode == 1 || mode == 6)
                     row << "=" << (rgba[0] * 65536.0 + rgba[1] * 256.0 + rgba[2]) / 16777215.0;
+                else if (mode == 5)
+                    row << "=[alpha " << int(rgba[0]) << ", centre (" << int(rgba[1]) << "," << int(rgba[2]) << ")]";
                 else if (mode == 2)
                 {
                     const int flags = rgba[2];

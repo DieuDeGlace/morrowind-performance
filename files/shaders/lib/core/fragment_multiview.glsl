@@ -42,6 +42,11 @@ vec4 sampleOpaqueDepthTexRaw(vec2 uv)
     return sampleOpaqueDepthTex(uv);
 }
 
+vec4 opaqueDepthTexProbe(vec2 uv)
+{
+    return vec4(0.0, 0.0, 0.0, 1.0);
+}
+
 float opaqueDepthDebugFlags()
 {
     return 0.0;
