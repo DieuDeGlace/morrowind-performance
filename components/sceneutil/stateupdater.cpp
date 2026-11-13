@@ -28,8 +28,8 @@ namespace SceneUtil
         if (mSkyRTT)
             stateset->addUniform(new osg::Uniform("sky", mSkyTextureUnit));
 #ifdef ANDROID
-        // OPENMW_ANDROID_053_LINEAR_PACKED_DEPTH: lets sampleOpaqueDepthTex
-        // read the linearly filtered packed depth at texel centres.
+        // Lets sampleOpaqueDepthTex read the linearly filtered packed depth
+        // (stored in an opaque colour copy) at texel centres.
         stateset->addUniform(new osg::Uniform("opaqueDepthTexSize", osg::Vec2f()));
 #endif
     }

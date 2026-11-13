@@ -27,16 +27,15 @@ vec3 sampleSkyColor(vec2 uv)
 #endif
 
 // OPENMW_ANDROID_053_PACKED_OPAQUE_DEPTH
-// The opaque depth arrives packed into RGB as a 24-bit integer (see
-// opaqueblit.cpp). Each byte only needs 8 bits, so the sampler keeps the
-// default precision (OPENMW_ANDROID_053_PLAIN_DEPTH_SAMPLER: on the GL4ES
-// device a highp sampler read zeros while the plain colour sampler worked);
-// the bytes are summed in high precision below.
+// The opaque depth arrives packed into RGB as a 24-bit integer, written into
+// the spare opaque colour copy (OPENMW_ANDROID_053_DEPTH_IN_SPARE_COLOR_COPY
+// in opaqueblit.cpp). Each byte only needs 8 bits, so the sampler keeps the
+// default precision; the bytes are summed in high precision below.
 uniform sampler2D opaqueDepthTex;
 uniform sampler2D opaqueColorTex;
 // Size of the packed depth copy, or zero when unknown. The copy is linearly
-// filtered (OPENMW_ANDROID_053_LINEAR_PACKED_DEPTH), so reads are snapped to
-// texel centres to keep the packed bytes of neighbouring texels apart.
+// filtered like every colour copy, so reads are snapped to texel centres to
+// keep the packed bytes of neighbouring texels apart.
 uniform vec2 opaqueDepthTexSize;
 
 // Unpacking sums the bytes up to 16777215, which overflows 16-bit floats, so
@@ -65,38 +64,6 @@ vec4 sampleOpaqueDepthTex(vec2 uv)
 #endif
     return vec4(depth);
 #endif
-}
-
-// OPENMW_ANDROID_053_WATER_DEBUG_READBACK
-// The packed texel exactly as sampled, and which of the branches above this
-// shader compiled, so the water diagnostic can read what the GPU saw.
-vec4 sampleOpaqueDepthTexRaw(vec2 uv)
-{
-    return texture2D(opaqueDepthTex, uv);
-}
-
-// Alpha of the texel under this pixel (an unbound or incomplete texture reads
-// (0,0,0,1), a cleared one (0,0,0,0)) and the texel at the screen centre.
-vec4 opaqueDepthTexProbe(vec2 uv)
-{
-    vec4 here = texture2D(opaqueDepthTex, uv);
-    vec4 centre = texture2D(opaqueDepthTex, vec2(0.5, 0.5));
-    return vec4(here.a, centre.r, centre.g, 1.0);
-}
-
-float opaqueDepthDebugFlags()
-{
-    float flags = 0.0;
-#if defined(GL_ES) && defined(GL_FRAGMENT_PRECISION_HIGH)
-    flags += 128.0;
-#endif
-#if @opaqueDepthDisabled
-    flags += 64.0;
-#endif
-#if defined(GL_ES)
-    flags += 8.0;
-#endif
-    return flags;
 }
 
 vec4 sampleOpaqueColorTex(vec2 uv)

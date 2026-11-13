@@ -350,9 +350,6 @@ namespace MWRender
         mOpaqueColorResolve->mFbo[frameId] = mFbos[frameId][FBO_Primary];
         mOpaqueColorResolve->mMsaaFbo[frameId] = mFbos[frameId][FBO_Multisample];
         mOpaqueColorResolve->mOpaqueFbo[frameId] = mFbos[frameId][FBO_OpaqueDepth];
-#ifdef ANDROID
-        mOpaqueColorResolve->mPackedDepthFbo[frameId] = mFbos[frameId][FBO_OpaqueDepthPacked];
-#endif
 
         mDistortionCallback->setFBO(mFbos[frameId][FBO_Distortion], frameId);
         mDistortionCallback->setOriginalFBO(mFbos[frameId][FBO_Primary], frameId);
@@ -533,13 +530,6 @@ namespace MWRender
         setupDepth(textures[Tex_Depth]);
         setupDepth(textures[Tex_OpaqueDepth]);
         textures[Tex_OpaqueDepth]->setName("opaqueTexMap");
-        // OPENMW_ANDROID_053_LINEAR_PACKED_DEPTH
-        // Packed depth must not be blended between texels, but on the GL4ES
-        // device a NEAREST-filtered copy sampled as an incomplete texture
-        // (0,0,0,1) while the identical LINEAR colour copy worked. Keep the
-        // colour copy's filtering; sampleOpaqueDepthTex samples texel centres,
-        // where linear filtering returns the texel unchanged.
-        textures[Tex_OpaqueDepthPacked]->setName("opaqueTexMapPacked");
         textures[Tex_OpaqueColor]->setName("opaqueTexColorMap");
 
         auto& fbos = mFbos[frameId];
@@ -603,10 +593,6 @@ namespace MWRender
         fbos[FBO_Distortion] = new osg::FrameBufferObject;
         fbos[FBO_Distortion]->setAttachment(osg::FrameBufferObject::BufferComponent::COLOR_BUFFER0,
             Stereo::createMultiviewCompatibleAttachment(textures[Tex_Distortion]));
-
-        fbos[FBO_OpaqueDepthPacked] = new osg::FrameBufferObject;
-        fbos[FBO_OpaqueDepthPacked]->setAttachment(osg::FrameBufferObject::BufferComponent::COLOR_BUFFER0,
-            Stereo::createMultiviewCompatibleAttachment(textures[Tex_OpaqueDepthPacked]));
 
         mCanvases[frameId]->dirty();
     }

@@ -16,9 +16,6 @@ vec3 sampleSkyColor(vec2 uv);
 #endif
 
 vec4 sampleOpaqueDepthTex(vec2 uv);
-vec4 sampleOpaqueDepthTexRaw(vec2 uv);
-vec4 opaqueDepthTexProbe(vec2 uv);
-float opaqueDepthDebugFlags();
 vec4 sampleOpaqueColorTex(vec2 uv);
 
 void doLighting(vec2 screenCoord, vec3 viewPos, vec3 viewNormal, float shininess, float shadowing, out vec3 diffuseLight, out vec3 ambientLight, out vec3 specularLight);

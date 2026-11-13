@@ -41,9 +41,6 @@
 
 #include "../mwworld/cellstore.hpp"
 
-#ifdef ANDROID
-#include "opaqueblit.hpp"
-#endif
 #include "renderbin.hpp"
 #include "ripples.hpp"
 #include "ripplesimulation.hpp"
@@ -605,9 +602,6 @@ namespace MWRender
                 stateset->setTextureAttribute(4, mRipples->getColorTexture(), osg::StateAttribute::ON);
             }
             stateset->getUniform("nodePosition")->set(osg::Vec3f(mWater->getPosition()));
-#ifdef ANDROID
-            stateset->addUniform(AndroidWaterDiagnostic::get().mDebugUniform);
-#endif
         }
 
     private:
@@ -719,10 +713,6 @@ namespace MWRender
     void Water::setHeight(const float height)
     {
         mTop = height;
-#ifdef ANDROID
-        AndroidWaterDiagnostic::get().mWaterLevel = height;
-        AndroidWaterDiagnostic::get().mHaveWaterLevel = true;
-#endif
 
         mSimulation->setWaterHeight(height);
 

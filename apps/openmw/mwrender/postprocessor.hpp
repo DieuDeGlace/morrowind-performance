@@ -58,8 +58,8 @@ namespace MWRender
     class PostProcessor : public osg::Group
     {
     public:
-        using FBOArray = std::array<osg::ref_ptr<osg::FrameBufferObject>, 7>;
-        using TextureArray = std::array<osg::ref_ptr<osg::Texture>, 8>;
+        using FBOArray = std::array<osg::ref_ptr<osg::FrameBufferObject>, 6>;
+        using TextureArray = std::array<osg::ref_ptr<osg::Texture>, 7>;
         using TechniqueList = std::vector<std::shared_ptr<Fx::Technique>>;
 
         enum TextureIndex
@@ -71,9 +71,6 @@ namespace MWRender
             Tex_Normal,
             Tex_Distortion,
             Tex_OpaqueColor,
-            // Android: opaque scene depth packed into RGB, for phones that
-            // cannot copy a depth buffer (no gl_FragDepth on GLES2).
-            Tex_OpaqueDepthPacked,
         };
 
         enum FBOIndex
@@ -84,7 +81,6 @@ namespace MWRender
             FBO_OpaqueDepth,
             FBO_Intercept,
             FBO_Distortion,
-            FBO_OpaqueDepthPacked,
         };
 
         enum TextureUnits
