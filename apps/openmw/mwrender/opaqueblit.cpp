@@ -339,7 +339,7 @@ void main()
         if (report)
             mDebugBaseFrame = frame;
         int debugMode = 0;
-        if (mDebugBaseFrame != ~0u && frame >= mDebugBaseFrame && frame - mDebugBaseFrame < 3)
+        if (mDebugBaseFrame != ~0u && frame >= mDebugBaseFrame && frame - mDebugBaseFrame < 4)
             debugMode = static_cast<int>(frame - mDebugBaseFrame) + 1;
         AndroidWaterDiagnostic& diagnostic = AndroidWaterDiagnostic::get();
         diagnostic.mDebugUniform->set(static_cast<float>(debugMode));
@@ -356,6 +356,15 @@ void main()
         const int width = packed->getTextureWidth();
         const int height = packed->getTextureHeight();
         const char* noHighp = std::getenv("LIBGL_NOHIGHP");
+        // GL4ES answers GL_MAX_TEXTURE_IMAGE_UNITS with the hardware count but
+        // accepts glActiveTexture only below its own GL_MAX_TEXTURE_UNITS.
+        GLint maxTextureUnits = 0;
+        GLint maxTextureImageUnits = 0;
+        glGetIntegerv(0x84E2 /* GL_MAX_TEXTURE_UNITS */, &maxTextureUnits);
+        glGetIntegerv(0x8872 /* GL_MAX_TEXTURE_IMAGE_UNITS */, &maxTextureImageUnits);
+        glGetError();
+        Log(Debug::Info) << "Android water diagnostic: GL_MAX_TEXTURE_UNITS " << maxTextureUnits
+                         << ", GL_MAX_TEXTURE_IMAGE_UNITS " << maxTextureImageUnits;
 
         Log(Debug::Info) << "Android water diagnostic " << mDiagnosticReports << "/" << reportCount << " (copy "
                          << mCopyCount << "): packed " << width << "x" << height << ", scene depth "
@@ -461,8 +470,10 @@ void main()
         glGetIntegerv(GL_VIEWPORT, viewport);
         const int width = viewport[2];
         const int height = viewport[3];
-        static const char* const modeNames[]
-            = { "", "raw packed texel", "distances and flags", "gl_FragCoord distance and screen coordinates" };
+        static const char* const modeNames[] = { "", "raw packed texel", "distances and flags",
+            "gl_FragCoord distance and screen coordinates", "opaque colour sample" };
+        if (mode < 1 || mode > 4)
+            return;
         Log(Debug::Info) << "Android water shader output, mode " << mode << " (" << modeNames[mode] << "), viewport "
                          << viewport[0] << "," << viewport[1] << " " << width << "x" << height;
         if (width <= 0 || height <= 0)
@@ -491,7 +502,7 @@ void main()
                         << ((flags & 32) ? ", guard fires" : "") << ((flags & 16) ? ", above water" : "")
                         << ((flags & 8) ? ", GL ES" : "") << "]";
                 }
-                else
+                else if (mode == 3)
                     row << "=[fragcoord distance " << rgba[0] * 4096.0 / 255.0 << ", uv " << rgba[1] / 255.0 << ","
                         << rgba[2] / 255.0 << "]";
             }

@@ -552,6 +552,16 @@ namespace MWRender
             , mOpaqueColorTextureUnit(resourceSystem->getSceneManager()->getShaderManager().reserveGlobalTextureUnits(
                   Shader::ShaderManager::Slot::OpaqueColorTexture))
         {
+#ifdef ANDROID
+            // OPENMW_ANDROID_053_WATER_LOW_TEXTURE_UNITS
+            // The global opaque depth/colour units sit at the top of
+            // GL_MAX_TEXTURE_IMAGE_UNITS, but GL4ES's glActiveTexture rejects any
+            // unit at or above its own, sometimes lower, limit, and the water then
+            // sampled nothing (depth 0: no shore fade). Water uses units 0, 1 and 4,
+            // so give it its own low units for the opaque scene copies.
+            mOpaqueColorTextureUnit = 2;
+            mOpaqueDepthTextureUnit = 3;
+#endif
         }
 
         void setDefaults(osg::StateSet* stateset) override
