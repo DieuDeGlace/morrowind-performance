@@ -295,8 +295,10 @@ void main(void)
             float flags = opaqueDepthDebugFlags() + (depthGuardFired ? 32.0 : 0.0) + (cameraPos.z >= 0.0 ? 16.0 : 0.0);
             gl_FragData[0] = vec4(clamp(rawDepthSample / 4096.0, 0.0, 1.0), clamp(surfaceDepth / 4096.0, 0.0, 1.0), flags / 255.0, 1.0);
         }
-        else
+        else if (androidWaterDebug < 3.5)
             gl_FragData[0] = vec4(clamp(linearizeDepth(gl_FragCoord.z, near, far) / 4096.0, 0.0, 1.0), screenCoords, 1.0);
+        else
+            gl_FragData[0] = vec4(sampleOpaqueColorTex(screenCoords).rgb, 1.0);
     }
 
 #if !@disableNormals
