@@ -3,8 +3,8 @@
 #include <SDL_opengl_glext.h>
 #include <algorithm>
 #include <chrono>
-#include <thread>
 #include <stdexcept>
+#include <thread>
 
 #include <osg/Texture1D>
 #include <osg/Texture2D>
@@ -139,8 +139,7 @@ namespace MWRender
             throw std::runtime_error("OpenMW Android: missing GraphicsContext traits for post-processing");
         mWidth = gc->getTraits()->width;
         mHeight = gc->getTraits()->height;
-        Log(Debug::Info) << "OpenMW 0.51 Android renderer: " << mWidth << "x" << mHeight
-                         << ", Tex_Depth scene binding";
+        Log(Debug::Info) << "OpenMW 0.51 Android renderer: " << mWidth << "x" << mHeight << ", Tex_Depth scene binding";
 #endif
 
         auto& shaderManager = mRendering.getResourceSystem()->getSceneManager()->getShaderManager();
@@ -534,10 +533,12 @@ namespace MWRender
         setupDepth(textures[Tex_Depth]);
         setupDepth(textures[Tex_OpaqueDepth]);
         textures[Tex_OpaqueDepth]->setName("opaqueTexMap");
-        // Packed depth must not be filtered: blending neighbouring texels mixes
-        // the bytes of different depths.
-        textures[Tex_OpaqueDepthPacked]->setFilter(osg::Texture2D::MIN_FILTER, osg::Texture::NEAREST);
-        textures[Tex_OpaqueDepthPacked]->setFilter(osg::Texture2D::MAG_FILTER, osg::Texture::NEAREST);
+        // OPENMW_ANDROID_053_LINEAR_PACKED_DEPTH
+        // Packed depth must not be blended between texels, but on the GL4ES
+        // device a NEAREST-filtered copy sampled as an incomplete texture
+        // (0,0,0,1) while the identical LINEAR colour copy worked. Keep the
+        // colour copy's filtering; sampleOpaqueDepthTex samples texel centres,
+        // where linear filtering returns the texel unchanged.
         textures[Tex_OpaqueDepthPacked]->setName("opaqueTexMapPacked");
         textures[Tex_OpaqueColor]->setName("opaqueTexColorMap");
 

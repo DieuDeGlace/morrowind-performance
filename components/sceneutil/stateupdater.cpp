@@ -27,6 +27,11 @@ namespace SceneUtil
         stateset->addUniform(new osg::Uniform("projectionMatrix", osg::Matrixf{}));
         if (mSkyRTT)
             stateset->addUniform(new osg::Uniform("sky", mSkyTextureUnit));
+#ifdef ANDROID
+        // OPENMW_ANDROID_053_LINEAR_PACKED_DEPTH: lets sampleOpaqueDepthTex
+        // read the linearly filtered packed depth at texel centres.
+        stateset->addUniform(new osg::Uniform("opaqueDepthTexSize", osg::Vec2f()));
+#endif
     }
 
     void PerViewUniformStateUpdater::apply(osg::StateSet* stateset, osg::NodeVisitor* nv)
@@ -42,6 +47,15 @@ namespace SceneUtil
         if (mOpaqueTextureUnit > 0)
             stateset->setTextureAttribute(mOpaqueTextureUnit,
                 mSceneManager->getOpaqueDepthTex(nv->getTraversalNumber()), osg::StateAttribute::ON);
+#ifdef ANDROID
+        if (osg::Uniform* sizeUniform = stateset->getUniform("opaqueDepthTexSize"))
+        {
+            const osg::Texture* depth = mSceneManager->getOpaqueDepthTex(nv->getTraversalNumber());
+            sizeUniform->set(depth ? osg::Vec2f(static_cast<float>(depth->getTextureWidth()),
+                                 static_cast<float>(depth->getTextureHeight()))
+                                   : osg::Vec2f());
+        }
+#endif
         if (mOpaqueColorTextureUnit > 0)
             stateset->setTextureAttribute(mOpaqueColorTextureUnit,
                 mSceneManager->getOpaqueColorTex(nv->getTraversalNumber()), osg::StateAttribute::ON);

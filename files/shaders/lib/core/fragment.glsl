@@ -34,6 +34,10 @@ vec3 sampleSkyColor(vec2 uv)
 // the bytes are summed in high precision below.
 uniform sampler2D opaqueDepthTex;
 uniform sampler2D opaqueColorTex;
+// Size of the packed depth copy, or zero when unknown. The copy is linearly
+// filtered (OPENMW_ANDROID_053_LINEAR_PACKED_DEPTH), so reads are snapped to
+// texel centres to keep the packed bytes of neighbouring texels apart.
+uniform vec2 opaqueDepthTexSize;
 
 // Unpacking sums the bytes up to 16777215, which overflows 16-bit floats, so
 // the sum is always done in high precision. When shaders run at medium
@@ -46,10 +50,17 @@ vec4 sampleOpaqueDepthTex(vec2 uv)
     return vec4(1.0);
 #else
 #if defined(GL_ES)
-    highp vec3 bytes = floor(texture2D(opaqueDepthTex, uv).rgb * 255.0 + vec3(0.5));
+    highp vec2 size = opaqueDepthTexSize;
+    highp vec2 texelUv = uv;
+    if (size.x > 0.0)
+        texelUv = (floor(texelUv * size) + vec2(0.5)) / size;
+    highp vec3 bytes = floor(texture2D(opaqueDepthTex, texelUv).rgb * 255.0 + vec3(0.5));
     highp float depth = dot(bytes, vec3(65536.0, 256.0, 1.0)) / 16777215.0;
 #else
-    vec3 bytes = floor(texture2D(opaqueDepthTex, uv).rgb * 255.0 + vec3(0.5));
+    vec2 texelUv = uv;
+    if (opaqueDepthTexSize.x > 0.0)
+        texelUv = (floor(texelUv * opaqueDepthTexSize) + vec2(0.5)) / opaqueDepthTexSize;
+    vec3 bytes = floor(texture2D(opaqueDepthTex, texelUv).rgb * 255.0 + vec3(0.5));
     float depth = dot(bytes, vec3(65536.0, 256.0, 1.0)) / 16777215.0;
 #endif
     return vec4(depth);
