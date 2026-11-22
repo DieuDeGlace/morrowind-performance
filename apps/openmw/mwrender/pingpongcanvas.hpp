@@ -13,6 +13,7 @@
 #include <components/fx/technique.hpp>
 
 #include "luminancecalculator.hpp"
+#include "temporalaa.hpp"
 
 namespace Shader
 {
@@ -58,6 +59,8 @@ namespace MWRender
 
         void setPostProcessing(bool enabled) { mPostprocessing = enabled; }
 
+        void setTemporalAA(TemporalAA* temporalAA) { mTemporalAA = temporalAA; }
+
         const osg::ref_ptr<osg::Texture>& getSceneTexture(size_t frameId) const { return mTextureScene; }
 
     private:
@@ -80,6 +83,7 @@ namespace MWRender
         osg::ref_ptr<osg::Texture> mTextureDepth;
         osg::ref_ptr<osg::Texture> mTextureNormals;
         osg::ref_ptr<osg::Texture> mTextureDistortion;
+        osg::ref_ptr<TemporalAA> mTemporalAA;
 
         mutable bool mDirty = false;
         mutable std::vector<Fx::Types::RenderTarget> mDirtyAttachments;

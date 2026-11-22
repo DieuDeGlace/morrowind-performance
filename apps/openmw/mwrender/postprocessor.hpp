@@ -22,6 +22,7 @@
 
 #include "opaqueblit.hpp"
 #include "pingpongcanvas.hpp"
+#include "temporalaa.hpp"
 #include "transparentpass.hpp"
 
 #include <memory>
@@ -128,6 +129,8 @@ namespace MWRender
         osg::ref_ptr<osg::Camera> getHUDCamera() { return mHUDCamera; }
 
         osg::ref_ptr<Fx::StateUpdater> getStateUpdater() { return mStateUpdater; }
+
+        TemporalAA* getTemporalAA() { return mTemporalAA.get(); }
 
         const TechniqueList& getTechniques() { return mTechniques; }
 
@@ -278,6 +281,7 @@ namespace MWRender
 
         osg::ref_ptr<Fx::StateUpdater> mStateUpdater;
         osg::ref_ptr<PingPongCull> mPingPongCull;
+        osg::ref_ptr<TemporalAA> mTemporalAA;
         std::array<osg::ref_ptr<PingPongCanvas>, 2> mCanvases;
         osg::ref_ptr<TransparentDepthBinCallback> mTransparentDepthPostPass;
         osg::ref_ptr<OpaqueColorBinCallback> mOpaqueColorResolve;

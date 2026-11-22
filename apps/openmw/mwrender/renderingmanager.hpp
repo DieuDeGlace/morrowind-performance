@@ -296,6 +296,9 @@ namespace MWRender
 
         void updateProjectionMatrix();
 
+        // Re-applies the scene projection with this frame's temporal AA jitter.
+        void applyTemporalJitter();
+
         void setScreenRes(int width, int height);
 
         void setNavMeshMode(Settings::NavMeshRenderMode value);
@@ -397,6 +400,10 @@ namespace MWRender
         float mAndroidSunOcclusionRayTimer = 0.f;
 #endif
         osg::Vec2f mProjectionOffset;
+        // Scene projections without temporal AA jitter (camera / shader variants).
+        osg::Matrix mBaseUnreversedProjection;
+        osg::Matrix mBaseProjection;
+        bool mJitterApplied = false;
         const MWWorld::GroundcoverStore& mGroundCoverStore;
         std::map<std::string, std::string> mAppliedShadowDefines;
 

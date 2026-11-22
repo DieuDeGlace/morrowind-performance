@@ -47,3 +47,15 @@ Post-Processing Settings
       Can be performance heavy with vanilla assets.
       For better performance, use alpha-tested foliage mods (e.g., Morrowind Optimization Patch) and disable this setting.
       Disable if no shaders use the depth buffer.
+
+.. omw-setting::
+   :title: temporal antialiasing
+   :type: boolean
+   :range: true, false
+   :default: true
+   :location: :bdg-info:`settings.cfg`
+
+   Temporal anti-aliasing. Each frame the scene is rendered with a different sub-pixel offset, and the result
+   is blended with the previous frames reprojected through the depth buffer, smoothing jagged and shimmering
+   edges on geometry, foliage and shadows. Runs before post-processing shaders and works without them.
+   Disabled in VR.

@@ -169,6 +169,25 @@ void main()
 
         auto* resolveViewport = state.getCurrentViewport();
 
+        // Temporal anti-aliasing runs first; its history buffer then stands in
+        // for the scene texture as the input of the passes below.
+        osg::Texture* sceneInput = mTextureScene.get();
+        if (mTemporalAA && !Stereo::getMultiview())
+        {
+            osg::Texture* resolved = mTemporalAA->resolve(
+                renderInfo, *this, sceneInput, static_cast<unsigned>(frameId), state.getFrameStamp()->getFrameNumber());
+            if (resolved != sceneInput)
+            {
+                sceneInput = resolved;
+                if (mDestinationFBO)
+                    mDestinationFBO->apply(state, osg::FrameBufferObject::DRAW_FRAMEBUFFER);
+                else
+                    ext->glBindFramebuffer(GL_DRAW_FRAMEBUFFER_EXT, 0);
+                if (resolveViewport)
+                    resolveViewport->apply(state);
+            }
+        }
+
         if (filtered.empty() || !mPostprocessing)
         {
 #ifdef ANDROID
@@ -176,7 +195,7 @@ void main()
             {
                 state.pushStateSet(mAndroidGammaStateSet);
                 state.apply();
-                state.applyTextureAttribute(0, mTextureScene);
+                state.applyTextureAttribute(0, sceneInput);
                 resolveViewport->apply(state);
                 drawGeometry(renderInfo);
                 state.popStateSet();
@@ -192,7 +211,7 @@ void main()
                 state.apply();
             }
 
-            state.applyTextureAttribute(0, mTextureScene);
+            state.applyTextureAttribute(0, sceneInput);
             resolveViewport->apply(state);
 
             drawGeometry(renderInfo);
@@ -353,7 +372,7 @@ void main()
 
                 // VR-TODO: This won't actually work for tex2darrays
                 if (lastShader == 0)
-                    pass.mStateSet->setTextureAttribute(PostProcessor::Unit_LastShader, mTextureScene);
+                    pass.mStateSet->setTextureAttribute(PostProcessor::Unit_LastShader, sceneInput);
                 else
                     pass.mStateSet->setTextureAttribute(PostProcessor::Unit_LastShader,
                         (osg::Texture*)mFbos[lastShader - GL_COLOR_ATTACHMENT0_EXT]
@@ -361,7 +380,7 @@ void main()
                             .getTexture());
 
                 if (lastDraw == 0)
-                    pass.mStateSet->setTextureAttribute(PostProcessor::Unit_LastPass, mTextureScene);
+                    pass.mStateSet->setTextureAttribute(PostProcessor::Unit_LastPass, sceneInput);
                 else
                     pass.mStateSet->setTextureAttribute(PostProcessor::Unit_LastPass,
                         (osg::Texture*)mFbos[lastDraw - GL_COLOR_ATTACHMENT0_EXT]
