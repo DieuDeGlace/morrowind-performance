@@ -53,6 +53,17 @@ namespace MWRender
         mPostProcessor->getStateUpdater()->setEyePos(cv->getEyePoint());
         mPostProcessor->getStateUpdater()->setEyeVec(cv->getLookVectorLocal());
 
+        if (!Stereo::getStereo())
+        {
+            // Temporal anti-aliasing reprojects with this frame's scene matrices
+            // and samples the previous frame's depth (the other frame's buffer).
+            const osg::Matrixd view = cv->getCurrentCamera()->getViewMatrix();
+            mPostProcessor->getTemporalAA()->cull(frameId, view, osg::Matrixd::inverse(view).getTrans(),
+                mPostProcessor->getTexture(PostProcessor::Tex_Depth, frameId),
+                mPostProcessor->getTexture(PostProcessor::Tex_Depth, !frameId), mPostProcessor->renderWidth(),
+                mPostProcessor->renderHeight());
+        }
+
         if (!mPostProcessor->getFbo(PostProcessor::FBO_Multisample, frameId))
         {
             renderStage->setFrameBufferObject(mPostProcessor->getFbo(PostProcessor::FBO_Primary, frameId));

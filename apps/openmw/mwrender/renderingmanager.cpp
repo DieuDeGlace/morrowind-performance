@@ -826,6 +826,7 @@ namespace MWRender
             updateProjectionMatrix();
         }
         mCamera->update(dt, paused);
+        applyTemporalJitter();
 
         float fogStart = mFog->getFogStart(false);
         float fogEnd = mFog->getFogEnd(false);
@@ -1336,6 +1337,12 @@ namespace MWRender
 
         mPerViewUniformStateUpdater->setProjectionMatrix(projectionMatrix);
 
+        mBaseUnreversedProjection = unreversedProjectionMatrix;
+        mBaseProjection = projectionMatrix;
+        mJitterApplied = false;
+        if (mPostProcessor)
+            mPostProcessor->getTemporalAA()->setProjection(projectionMatrix);
+
         mSharedUniformStateUpdater->setNear(mNearClip);
         mSharedUniformStateUpdater->setFar(mViewDistance);
 
@@ -1360,6 +1367,35 @@ namespace MWRender
             mPostProcessor->getStateUpdater()->setProjectionMatrix(mPerViewUniformStateUpdater->getProjectionMatrix());
             mPostProcessor->getStateUpdater()->setFov(fov);
         }
+    }
+
+    void RenderingManager::applyTemporalJitter()
+    {
+        if (Stereo::getStereo() || !mPostProcessor)
+            return;
+
+        TemporalAA* temporalAA = mPostProcessor->getTemporalAA();
+        const osg::Vec2f jitter = temporalAA->advanceJitter();
+        const int width = mPostProcessor->renderWidth();
+        const int height = mPostProcessor->renderHeight();
+        if (jitter == osg::Vec2f() || width <= 0 || height <= 0)
+        {
+            if (mJitterApplied)
+            {
+                mViewer->getCamera()->setProjectionMatrix(mBaseUnreversedProjection);
+                mPerViewUniformStateUpdater->setProjectionMatrix(mBaseProjection);
+                mJitterApplied = false;
+            }
+            return;
+        }
+
+        // A clip-space shift of the jitter (in pixels), proportional to w so it is
+        // a constant sub-pixel offset on screen. Depth is unaffected.
+        const osg::Matrix shift
+            = osg::Matrix::translate(2.0 * jitter.x() / width, 2.0 * jitter.y() / height, 0.0);
+        mViewer->getCamera()->setProjectionMatrix(mBaseUnreversedProjection * shift);
+        mPerViewUniformStateUpdater->setProjectionMatrix(mBaseProjection * shift);
+        mJitterApplied = true;
     }
 
     void RenderingManager::setScreenRes(int width, int height)

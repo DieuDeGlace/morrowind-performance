@@ -133,8 +133,13 @@ namespace MWRender
 
         std::shared_ptr<LuminanceCalculator> luminanceCalculator = std::make_shared<LuminanceCalculator>(shaderManager);
 
+        mTemporalAA = new TemporalAA(SceneUtil::AutoDepth::isReversed());
+
         for (auto& canvas : mCanvases)
+        {
             canvas = new PingPongCanvas(shaderManager, luminanceCalculator);
+            canvas->setTemporalAA(mTemporalAA);
+        }
 
         mHUDCamera->setReferenceFrame(osg::Camera::ABSOLUTE_RF);
         mHUDCamera->setRenderOrder(osg::Camera::POST_RENDER);
@@ -259,6 +264,7 @@ namespace MWRender
         size_t frameId = frame() % 2;
 
         createObjectsForFrame(frameId);
+        mTemporalAA->reset();
 
         mRendering.updateProjectionMatrix();
         mRendering.setScreenRes(renderWidth(), renderHeight());
