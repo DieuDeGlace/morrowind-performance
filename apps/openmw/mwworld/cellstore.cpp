@@ -402,13 +402,13 @@ namespace MWWorld
     };
 
     template <typename X>
-    void CellRefList<X>::load(ESM::CellRef& ref, bool deleted, const MWWorld::ESMStore& esmStore)
+    void CellRefList<X>::load(ESM::CellRef& ref, bool deleted, bool replaceExisting, const MWWorld::ESMStore& esmStore)
     {
         const MWWorld::Store<X>& store = esmStore.get<X>();
 
         if (const X* ptr = store.search(ref.mRefID))
         {
-            typename std::list<LiveRef>::iterator iter = std::find(mList.begin(), mList.end(), ref.mRefNum);
+            auto iter = replaceExisting ? std::find(mList.begin(), mList.end(), ref.mRefNum) : mList.end();
 
             LiveRef liveCellRef(ref, ptr);
 
@@ -433,7 +433,7 @@ namespace MWWorld
     }
 
     template <typename X, typename R>
-    static void loadImpl(const R& ref, const MWWorld::ESMStore& esmStore, auto& list)
+    static void loadImpl(const R& ref, const MWWorld::ESMStore& esmStore, auto& list, MWWorld::CellStore& cellStore)
     {
         const MWWorld::Store<X>& store = esmStore.get<X>();
         const X* ptr = store.search(ref.mBaseObj);
@@ -446,19 +446,23 @@ namespace MWWorld
         if (!isEnabled(ref, esmStore))
             liveCellRef.mData.disable();
         list.push_back(std::move(liveCellRef));
+        // Register at load so refs disabled here (enable-parent ESM4 REFRs) stay resolvable by FormId —
+        // scene insertion skips disabled objects. Idempotent; dereg is destruction-bound.
+        if (!list.back().isDeleted())
+            MWBase::Environment::get().getWorldModel()->registerPtr(MWWorld::Ptr(&list.back(), &cellStore));
     }
 
     template <typename X>
-    void CellRefList<X>::load(const ESM4::Reference& ref, const MWWorld::ESMStore& esmStore)
+    void CellRefList<X>::load(const ESM4::Reference& ref, const MWWorld::ESMStore& esmStore, CellStore& cellStore)
     {
         if constexpr (ESM::isESM4Rec(X::sRecordId) && !isESM4ActorRec(X::sRecordId))
-            loadImpl<X>(ref, esmStore, mList);
+            loadImpl<X>(ref, esmStore, mList, cellStore);
     }
     template <typename X>
-    void CellRefList<X>::load(const ESM4::ActorCharacter& ref, const MWWorld::ESMStore& esmStore)
+    void CellRefList<X>::load(const ESM4::ActorCharacter& ref, const MWWorld::ESMStore& esmStore, CellStore& cellStore)
     {
         if constexpr (isESM4ActorRec(X::sRecordId))
-            loadImpl<X>(ref, esmStore, mList);
+            loadImpl<X>(ref, esmStore, mList, cellStore);
     }
 
     template <typename X>
@@ -929,8 +933,8 @@ namespace MWWorld
 
         ESM::RecNameInts foundType = static_cast<ESM::RecNameInts>(store.find(ref.mBaseObj));
 
-        Misc::tupleForEach(this->mCellStoreImp->mRefLists, [&ref, &store, foundType](auto& x) {
-            recNameSwitcher(x, foundType, [&ref, &store](auto& storeIn) { storeIn.load(ref, store); });
+        Misc::tupleForEach(this->mCellStoreImp->mRefLists, [this, &ref, &store, foundType](auto& x) {
+            recNameSwitcher(x, foundType, [this, &ref, &store](auto& storeIn) { storeIn.load(ref, store, *this); });
         });
     }
 
@@ -939,8 +943,8 @@ namespace MWWorld
         const MWWorld::ESMStore& store = mStore;
         ESM::RecNameInts foundType = static_cast<ESM::RecNameInts>(store.find(ref.mBaseObj));
 
-        Misc::tupleForEach(this->mCellStoreImp->mRefLists, [&ref, &store, foundType](auto& x) {
-            recNameSwitcher(x, foundType, [&ref, &store](auto& storeIn) { storeIn.load(ref, store); });
+        Misc::tupleForEach(this->mCellStoreImp->mRefLists, [this, &ref, &store, foundType](auto& x) {
+            recNameSwitcher(x, foundType, [this, &ref, &store](auto& storeIn) { storeIn.load(ref, store, *this); });
         });
     }
 
@@ -949,7 +953,8 @@ namespace MWWorld
         const MWWorld::ESMStore& store = mStore;
 
         auto it = refNumToID.find(ref.mRefNum);
-        if (it != refNumToID.end())
+        const bool replaceExisting = it != refNumToID.end();
+        if (replaceExisting)
         {
             if (it->second != ref.mRefID)
             {
@@ -968,12 +973,13 @@ namespace MWWorld
         bool handledType = false;
         if (foundType != 0)
         {
-            Misc::tupleForEach(
-                this->mCellStoreImp->mRefLists, [&ref, &deleted, &store, foundType, &handledType](auto& x) {
-                    recNameSwitcher(x, foundType, [&ref, &deleted, &store, &handledType](auto& storeIn) {
-                        handledType = true;
-                        storeIn.load(ref, deleted, store);
-                    });
+            Misc::tupleForEach(this->mCellStoreImp->mRefLists,
+                [&ref, &deleted, replaceExisting, &store, foundType, &handledType](auto& x) {
+                    recNameSwitcher(
+                        x, foundType, [&ref, &deleted, replaceExisting, &store, &handledType](auto& storeIn) {
+                            handledType = true;
+                            storeIn.load(ref, deleted, replaceExisting, store);
+                        });
                 });
         }
         else

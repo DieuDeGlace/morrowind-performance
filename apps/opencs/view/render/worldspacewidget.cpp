@@ -18,6 +18,7 @@
 #include <apps/opencs/model/world/columns.hpp>
 #include <apps/opencs/model/world/data.hpp>
 #include <apps/opencs/model/world/record.hpp>
+#include <apps/opencs/model/world/variantconversion.hpp>
 #include <apps/opencs/view/render/editmode.hpp>
 #include <apps/opencs/view/render/scenewidget.hpp>
 #include <apps/opencs/view/widget/modebutton.hpp>
@@ -183,9 +184,9 @@ void CSVRender::WorldspaceWidget::centerOrbitCameraOnSelection()
 {
     std::vector<osg::ref_ptr<TagBase>> selection = getSelection(Mask_Reference);
 
-    for (std::vector<osg::ref_ptr<TagBase>>::iterator it = selection.begin(); it != selection.end(); ++it)
+    for (auto& selectedTag : selection)
     {
-        if (CSVRender::ObjectTag* objectTag = static_cast<CSVRender::ObjectTag*>(it->get()))
+        if (CSVRender::ObjectTag* objectTag = static_cast<CSVRender::ObjectTag*>(selectedTag.get()))
         {
             mOrbitCamControl->setCenter(objectTag->mObject->getPosition().asVec3());
         }
@@ -268,12 +269,12 @@ CSVWidget::SceneToolRun* CSVRender::WorldspaceWidget::makeRunTool(CSVWidget::Sce
 
     for (int i = 0; i < size; ++i)
     {
-        int state = debugProfiles.data(debugProfiles.index(i, stateColumn)).toInt();
+        int state = debugProfiles.getData(i, stateColumn).toInt();
 
-        const bool defaultValue = debugProfiles.data(debugProfiles.index(i, defaultColumn)).toInt();
+        const bool defaultValue = debugProfiles.getData(i, defaultColumn).toInt();
 
         if (state != CSMWorld::RecordBase::State_Deleted && defaultValue)
-            profiles.emplace_back(debugProfiles.data(debugProfiles.index(i, idColumn)).toString().toUtf8().constData());
+            profiles.emplace_back(CSMWorld::getString(debugProfiles.getData(i, idColumn)));
     }
 
     std::sort(profiles.begin(), profiles.end());
@@ -302,7 +303,7 @@ CSVRender::WorldspaceWidget::DropType CSVRender::WorldspaceWidget::getDropType(
 {
     DropType output = Type_Other;
 
-    for (std::vector<CSMWorld::UniversalId>::const_iterator iter(data.begin()); iter != data.end(); ++iter)
+    for (auto iter(data.cbegin()); iter != data.end(); ++iter)
     {
         DropType type = Type_Other;
 
@@ -337,9 +338,8 @@ bool CSVRender::WorldspaceWidget::handleDrop(const std::vector<CSMWorld::Univers
     {
         if (mRun)
         {
-            for (std::vector<CSMWorld::UniversalId>::const_iterator iter(universalIdData.begin());
-                 iter != universalIdData.end(); ++iter)
-                mRun->addProfile(iter->getId());
+            for (const auto& universalId : universalIdData)
+                mRun->addProfile(universalId.getId());
         }
 
         return true;
@@ -585,14 +585,14 @@ void CSVRender::WorldspaceWidget::debugProfileDataChanged(const QModelIndex& top
 
     for (int i = topLeft.row(); i <= bottomRight.row(); ++i)
     {
-        int state = debugProfiles.data(debugProfiles.index(i, stateColumn)).toInt();
+        int state = debugProfiles.getData(i, stateColumn).toInt();
 
         // As of version 0.33 this case can not happen because debug profiles exist only in
         // project or session scope, which means they will never be in deleted state. But we
         // are adding the code for the sake of completeness and to avoid surprises if debug
         // profile ever get extended to content scope.
         if (state == CSMWorld::RecordBase::State_Deleted)
-            mRun->removeProfile(debugProfiles.data(debugProfiles.index(i, idColumn)).toString().toUtf8().constData());
+            mRun->removeProfile(CSMWorld::getString(debugProfiles.getData(i, idColumn)));
     }
 }
 
@@ -611,7 +611,7 @@ void CSVRender::WorldspaceWidget::debugProfileAboutToBeRemoved(const QModelIndex
 
     for (int i = start; i <= end; ++i)
     {
-        mRun->removeProfile(debugProfiles.data(debugProfiles.index(i, idColumn)).toString().toUtf8().constData());
+        mRun->removeProfile(CSMWorld::getString(debugProfiles.getData(i, idColumn)));
     }
 }
 

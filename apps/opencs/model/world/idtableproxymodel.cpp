@@ -38,9 +38,9 @@ void CSMWorld::IdTableProxyModel::updateColumnMap()
     if (mFilter)
     {
         std::vector<int> columns = mFilter->getReferencedColumns();
-        for (std::vector<int>::const_iterator iter(columns.begin()); iter != columns.end(); ++iter)
+        for (const auto& columnId : columns)
             mColumnMap.insert(std::make_pair(
-                *iter, mSourceModel->searchColumnIndex(static_cast<CSMWorld::Columns::ColumnId>(*iter))));
+                columnId, mSourceModel->searchColumnIndex(static_cast<CSMWorld::Columns::ColumnId>(columnId))));
     }
 }
 
@@ -126,7 +126,7 @@ QString CSMWorld::IdTableProxyModel::getRecordId(int sourceRow) const
     Q_ASSERT(mSourceModel != nullptr);
 
     int idColumn = mSourceModel->findColumnIndex(Columns::ColumnId_Id);
-    return mSourceModel->data(mSourceModel->index(sourceRow, idColumn)).toString();
+    return mSourceModel->getData(sourceRow, idColumn).toString();
 }
 
 void CSMWorld::IdTableProxyModel::timerTimeout()

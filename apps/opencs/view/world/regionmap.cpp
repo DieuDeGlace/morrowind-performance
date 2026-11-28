@@ -26,6 +26,7 @@
 #include "../../model/world/regionmap.hpp"
 #include "../../model/world/tablemimedata.hpp"
 #include "../../model/world/universalid.hpp"
+#include "../../model/world/variantconversion.hpp"
 
 void CSVWorld::RegionMap::contextMenuEvent(QContextMenuEvent* event)
 {
@@ -112,12 +113,12 @@ QModelIndexList CSVWorld::RegionMap::getSelectedCells(bool existent, bool nonExi
 
     QModelIndexList list;
 
-    for (QModelIndexList::const_iterator iter(selected.begin()); iter != selected.end(); ++iter)
+    for (const auto& modelIndex : selected)
     {
-        bool exists = model->data(*iter, Qt::BackgroundRole) != QBrush(Qt::DiagCrossPattern);
+        bool exists = model->data(modelIndex, Qt::BackgroundRole) != QBrush(Qt::DiagCrossPattern);
 
         if ((exists && existent) || (!exists && nonExistent))
-            list.push_back(*iter);
+            list.push_back(modelIndex);
     }
 
     return list;
@@ -131,9 +132,10 @@ QModelIndexList CSVWorld::RegionMap::getMissingRegionCells() const
 
     std::set<std::string> regions;
 
-    for (QModelIndexList::const_iterator iter(selected.begin()); iter != selected.end(); ++iter)
+    for (const auto& modelIndex : selected)
     {
-        std::string_view region = model->data(*iter, CSMWorld::RegionMap::Role_Region).toString().toUtf8().constData();
+        std::string_view region
+            = model->data(modelIndex, CSMWorld::RegionMap::Role_Region).toString().toUtf8().constData();
 
         if (!region.empty())
             regions.emplace(region);
@@ -143,12 +145,12 @@ QModelIndexList CSVWorld::RegionMap::getMissingRegionCells() const
 
     QModelIndexList unselected = getUnselectedCells();
 
-    for (QModelIndexList::const_iterator iter(unselected.begin()); iter != unselected.end(); ++iter)
+    for (const auto& modelIndex : unselected)
     {
-        std::string region = model->data(*iter, CSMWorld::RegionMap::Role_Region).toString().toUtf8().constData();
+        std::string region = CSMWorld::getString(model->data(modelIndex, CSMWorld::RegionMap::Role_Region));
 
         if (!region.empty() && regions.find(region) != regions.end())
-            list.push_back(*iter);
+            list.push_back(modelIndex);
     }
 
     return list;
@@ -161,15 +163,15 @@ void CSVWorld::RegionMap::setRegion(const std::string& regionId)
     QAbstractItemModel* regionModel = model();
 
     CSMWorld::IdTable* cellsModel
-        = &dynamic_cast<CSMWorld::IdTable&>(*mDocument.getData().getTableModel(CSMWorld::UniversalId::Type_Cells));
+        = &mDocument.getData().getTableModel<CSMWorld::IdTable>(CSMWorld::UniversalId::Type_Cells);
 
     QString regionId2 = QString::fromUtf8(regionId.c_str());
 
     CSMWorld::CommandMacro macro(mDocument.getUndoStack(), selected.size() > 1 ? tr("Set Region") : "");
 
-    for (QModelIndexList::const_iterator iter(selected.begin()); iter != selected.end(); ++iter)
+    for (const auto& modelIndex : selected)
     {
-        std::string cellId = regionModel->data(*iter, CSMWorld::RegionMap::Role_CellId).toString().toUtf8().constData();
+        std::string cellId = CSMWorld::getString(regionModel->data(modelIndex, CSMWorld::RegionMap::Role_CellId));
 
         QModelIndex index
             = cellsModel->getModelIndex(cellId, cellsModel->findColumnIndex(CSMWorld::Columns::ColumnId_Region));
@@ -234,8 +236,8 @@ void CSVWorld::RegionMap::selectAll()
 {
     QModelIndexList unselected = getUnselectedCells();
 
-    for (QModelIndexList::const_iterator iter(unselected.begin()); iter != unselected.end(); ++iter)
-        selectionModel()->select(*iter, QItemSelectionModel::Select);
+    for (const auto& modelIndex : unselected)
+        selectionModel()->select(modelIndex, QItemSelectionModel::Select);
 }
 
 void CSVWorld::RegionMap::clearSelection()
@@ -247,8 +249,8 @@ void CSVWorld::RegionMap::selectRegions()
 {
     QModelIndexList unselected = getMissingRegionCells();
 
-    for (QModelIndexList::const_iterator iter(unselected.begin()); iter != unselected.end(); ++iter)
-        selectionModel()->select(*iter, QItemSelectionModel::Select);
+    for (const auto& modelIndex : unselected)
+        selectionModel()->select(modelIndex, QItemSelectionModel::Select);
 }
 
 void CSVWorld::RegionMap::createCells()
@@ -259,13 +261,13 @@ void CSVWorld::RegionMap::createCells()
     QModelIndexList selected = getSelectedCells(false, true);
 
     CSMWorld::IdTable* cellsModel
-        = &dynamic_cast<CSMWorld::IdTable&>(*mDocument.getData().getTableModel(CSMWorld::UniversalId::Type_Cells));
+        = &mDocument.getData().getTableModel<CSMWorld::IdTable>(CSMWorld::UniversalId::Type_Cells);
 
     CSMWorld::CommandMacro macro(mDocument.getUndoStack(), selected.size() > 1 ? tr("Create cells") : "");
 
-    for (QModelIndexList::const_iterator iter(selected.begin()); iter != selected.end(); ++iter)
+    for (const auto& modelIndex : selected)
     {
-        std::string cellId = model()->data(*iter, CSMWorld::RegionMap::Role_CellId).toString().toUtf8().constData();
+        std::string cellId = CSMWorld::getString(model()->data(modelIndex, CSMWorld::RegionMap::Role_CellId));
 
         macro.push(new CSMWorld::CreateCommand(*cellsModel, cellId));
     }
@@ -296,9 +298,9 @@ void CSVWorld::RegionMap::view()
 
     bool first = true;
 
-    for (QModelIndexList::const_iterator iter(selected.begin()); iter != selected.end(); ++iter)
+    for (const auto& modelIndex : selected)
     {
-        std::string cellId = model()->data(*iter, CSMWorld::RegionMap::Role_CellId).toString().toUtf8().constData();
+        std::string cellId = CSMWorld::getString(model()->data(modelIndex, CSMWorld::RegionMap::Role_CellId));
 
         if (first)
             first = false;
@@ -322,9 +324,9 @@ void CSVWorld::RegionMap::viewInTable()
 
     bool first = true;
 
-    for (QModelIndexList::const_iterator iter(selected.begin()); iter != selected.end(); ++iter)
+    for (const auto& modelIndex : selected)
     {
-        std::string cellId = model()->data(*iter, CSMWorld::RegionMap::Role_CellId).toString().toUtf8().constData();
+        std::string cellId = CSMWorld::getString(model()->data(modelIndex, CSMWorld::RegionMap::Role_CellId));
 
         if (first)
             first = false;
@@ -350,14 +352,14 @@ std::vector<CSMWorld::UniversalId> CSVWorld::RegionMap::getDraggedRecords() cons
     std::vector<CSMWorld::UniversalId> ids;
     for (const QModelIndex& it : selected)
     {
-        ids.emplace_back(CSMWorld::UniversalId::Type_Cell,
-            model()->data(it, CSMWorld::RegionMap::Role_CellId).toString().toUtf8().constData());
+        ids.emplace_back(
+            CSMWorld::UniversalId::Type_Cell, CSMWorld::getString(model()->data(it, CSMWorld::RegionMap::Role_CellId)));
     }
     selected = getSelectedCells(false, true);
     for (const QModelIndex& it : selected)
     {
         ids.emplace_back(CSMWorld::UniversalId::Type_Cell_Missing,
-            model()->data(it, CSMWorld::RegionMap::Role_CellId).toString().toUtf8().constData());
+            CSMWorld::getString(model()->data(it, CSMWorld::RegionMap::Role_CellId)));
     }
     return ids;
 }
@@ -395,9 +397,9 @@ void CSVWorld::RegionMap::dropEvent(QDropEvent* event)
         QAbstractItemModel* regionModel = model();
 
         CSMWorld::IdTable* cellsModel
-            = &dynamic_cast<CSMWorld::IdTable&>(*mDocument.getData().getTableModel(CSMWorld::UniversalId::Type_Cells));
+            = &mDocument.getData().getTableModel<CSMWorld::IdTable>(CSMWorld::UniversalId::Type_Cells);
 
-        std::string cellId(regionModel->data(index, CSMWorld::RegionMap::Role_CellId).toString().toUtf8().constData());
+        std::string cellId = CSMWorld::getString(regionModel->data(index, CSMWorld::RegionMap::Role_CellId));
 
         QModelIndex index2(
             cellsModel->getModelIndex(cellId, cellsModel->findColumnIndex(CSMWorld::Columns::ColumnId_Region)));

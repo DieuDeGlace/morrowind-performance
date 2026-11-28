@@ -37,7 +37,6 @@
 #include <components/files/conversion.hpp>
 #include <components/misc/helpviewer.hpp>
 #include <components/misc/scalableicon.hpp>
-#include <components/misc/timeconvert.hpp>
 #include <components/version/version.hpp>
 
 #include "globaldebugprofilemenu.hpp"
@@ -476,8 +475,8 @@ void CSVDoc::View::updateActions()
     bool editing = !(mDocument->getState() & CSMDoc::State_Locked);
     bool running = mDocument->getState() & CSMDoc::State_Running;
 
-    for (std::vector<QAction*>::iterator iter(mEditingActions.begin()); iter != mEditingActions.end(); ++iter)
-        (*iter)->setEnabled(editing);
+    for (auto* action : mEditingActions)
+        action->setEnabled(editing);
 
     mUndo->setEnabled(editing && mDocument->getUndoStack().canUndo());
     mRedo->setEnabled(editing && mDocument->getUndoStack().canRedo());
@@ -577,8 +576,8 @@ void CSVDoc::View::updateDocumentState()
 
     QList<CSVDoc::SubView*> subViews = findChildren<CSVDoc::SubView*>();
 
-    for (QList<CSVDoc::SubView*>::iterator iter(subViews.begin()); iter != subViews.end(); ++iter)
-        (*iter)->setEditLock(state & CSMDoc::State_Locked);
+    for (auto* subView : subViews)
+        subView->setEditLock(state & CSMDoc::State_Locked);
 }
 
 void CSVDoc::View::updateProgress(int current, int max, int type, int threads)
@@ -808,8 +807,7 @@ void CSVDoc::View::infoAbout()
                               .c_str();
 #endif
 
-    // Get current year
-    const auto copyrightInfo = Misc::timeToString(std::chrono::system_clock::now(), "Copyright © 2008-%Y OpenMW Team");
+    const auto copyrightInfo = tr("Copyright © 2008-%1 OpenMW Team").arg(Version::getCopyrightYear());
 
     QString aboutText = QString(
         "<p style=\"white-space: pre-wrap;\">"
@@ -828,8 +826,7 @@ void CSVDoc::View::infoAbout()
                             .arg(versionInfo,
                                 tr("OpenMW-CS is a content file editor for OpenMW, a modern, free and open source game "
                                    "engine."),
-                                tr(copyrightInfo.c_str()), tr("Home Page:"), tr("Forum:"), tr("Bug Tracker:"),
-                                tr("IRC:"));
+                                copyrightInfo, tr("Home Page:"), tr("Forum:"), tr("Bug Tracker:"), tr("IRC:"));
 
     QMessageBox::about(this, "About OpenMW-CS", aboutText);
 }
@@ -1114,9 +1111,9 @@ void CSVDoc::View::updateScrollbar()
         rect = this->rect();
 
     int newWidth = 0;
-    for (int i = 0; i < mSubViews.size(); ++i)
+    for (auto* subView : mSubViews)
     {
-        newWidth += mSubViews[i]->width();
+        newWidth += subView->width();
     }
 
     int frameWidth = frameGeometry().width() - width();

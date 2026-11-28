@@ -40,13 +40,13 @@ void CSVTools::SearchSubView::replace(bool selection)
 
     // We are running through the indices in reverse order to avoid messing up multiple results
     // in a single string.
-    for (std::vector<int>::const_reverse_iterator iter(indices.rbegin()); iter != indices.rend(); ++iter)
+    for (auto iter(indices.crbegin()); iter != indices.rend(); ++iter)
     {
         const CSMWorld::UniversalId& id = model->getUniversalId(*iter);
 
         CSMWorld::UniversalId::Type type = CSMWorld::UniversalId::getParentType(id.getType());
 
-        CSMWorld::IdTableBase* table = &dynamic_cast<CSMWorld::IdTableBase&>(*mDocument.getData().getTableModel(type));
+        CSMWorld::IdTableBase* table = &mDocument.getData().getTableModel<CSMWorld::IdTableBase>(type);
 
         if (table != currentTable)
         {
