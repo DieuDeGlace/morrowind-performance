@@ -22,6 +22,7 @@
 
 #include "collectionbase.hpp"
 #include "columnbase.hpp"
+#include "variantconversion.hpp"
 
 CSMWorld::IdTable::IdTable(CollectionBase* idCollection, unsigned int features)
     : IdTableBase(features)
@@ -199,9 +200,9 @@ void CSMWorld::IdTable::addRecordWithData(
 
     mIdCollection->appendBlankRecord(refId, type);
 
-    for (std::map<int, QVariant>::const_iterator iter(data.begin()); iter != data.end(); ++iter)
+    for (const auto& [column, value] : data)
     {
-        mIdCollection->setData(index, iter->first, iter->second);
+        mIdCollection->setData(index, column, value);
     }
 
     endInsertRows();
@@ -316,8 +317,8 @@ std::pair<CSMWorld::UniversalId, std::string> CSMWorld::IdTable::view(int row) c
 
         if (cellColumn != -1 && idColumn != -1)
         {
-            id = mIdCollection->getData(row, cellColumn).toString().toUtf8().constData();
-            hint = "r:" + std::string(mIdCollection->getData(row, idColumn).toString().toUtf8().constData());
+            id = getString(mIdCollection->getData(row, cellColumn));
+            hint = "r:" + getString(mIdCollection->getData(row, idColumn));
         }
     }
     else if (getFeatures() & Feature_ViewId)
@@ -326,7 +327,7 @@ std::pair<CSMWorld::UniversalId, std::string> CSMWorld::IdTable::view(int row) c
 
         if (column != -1)
         {
-            id = mIdCollection->getData(row, column).toString().toUtf8().constData();
+            id = getString(mIdCollection->getData(row, column));
             hint = "c:" + id;
         }
     }

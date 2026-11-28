@@ -29,6 +29,7 @@ if (GIT_CHECKOUT)
             -DOPENMW_LUA_API_REVISION=${OPENMW_LUA_API_REVISION}
             -DOPENMW_POSTPROCESSING_API_REVISION=${OPENMW_POSTPROCESSING_API_REVISION}
             -DOPENMW_VERSION=${OPENMW_VERSION}
+            -DOPENMW_COPYRIGHT_YEAR=${OPENMW_COPYRIGHT_YEAR}
             -DOPENMW_DOC_BASEURL=${OPENMW_DOC_BASEURL}
             -DMACROSFILE=${CMAKE_SOURCE_DIR}/cmake/OpenMWMacros.cmake
             "-DCMAKE_CONFIGURATION_TYPES=${CMAKE_CONFIGURATION_TYPES}"
@@ -111,6 +112,10 @@ add_component_dir (bgsm
     stream file
     )
 
+add_component_dir (spt
+    stream file readtree readprop readmap readmisc readext
+    )
+
 add_component_dir (bsa
     bsafile compressedbsafile ba2gnrlfile ba2dx10file ba2file memorystream
     )
@@ -129,7 +134,7 @@ add_component_dir (vfs
 
 add_component_dir (resource
     scenemanager keyframemanager imagemanager animblendrulesmanager bulletshapemanager bulletshape niffilemanager objectcache resourcesystem
-    resourcemanager stats animation foreachbulletobject errormarker selectionmarker cachestats bgsmfilemanager
+    resourcemanager stats animation foreachbulletobject errormarker selectionmarker cachestats bgsmfilemanager sptfilemanager
     )
 
 add_component_dir (shader
@@ -152,6 +157,10 @@ add_component_dir (nifosg
     autotransform nifloader controller particle matrixtransform
     )
 
+add_component_dir (sptosg
+    sptloader
+    )
+
 add_component_dir (nifbullet
     bulletnifloader
     )
@@ -161,7 +170,7 @@ add_component_dir (toutf8
     toutf8
     )
 
-add_component_dir(esm attr common defs esmcommon records util luascripts format refid esmbridge esmterrain
+add_component_dir(esm attr common defs gameformat esmcommon records util luascripts format refid esmbridge esmterrain
     formid
     fourcc
     stringrefid
@@ -315,7 +324,7 @@ add_component_dir (debug
 add_component_dir (files
     linuxpath androidpath windowspath macospath fixedpath multidircollection collections configurationmanager
     constrainedfilestream memorystream hash configfileparser openfile constrainedfilestreambuf conversion
-    istreamptr streamwithbuffer utils
+    istreamptr streamwithbuffer utils binarystream
     )
 
 if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "MSVC" AND NOT CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
@@ -485,6 +494,7 @@ add_component_dir(serialization
 
 add_component_dir(sqlite3
     db
+    error
     request
     statement
     transaction
@@ -628,6 +638,7 @@ target_link_libraries(components
     Base64
     SQLite3::SQLite3
     smhasher
+    glm::glm
     ${ICU_LIBRARIES}
     ZLIB::ZLIB
     )

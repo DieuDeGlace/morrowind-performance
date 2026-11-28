@@ -18,6 +18,7 @@
 
 #include "../../model/doc/document.hpp"
 #include "../../model/world/idtable.hpp"
+#include "../../model/world/variantconversion.hpp"
 
 #include "cellarrow.hpp"
 #include "cellborder.hpp"
@@ -193,8 +194,7 @@ CSVRender::Cell::Cell(CSMDoc::Document& document, ObjectMarker* selectionMarker,
 
     if (!mDeleted)
     {
-        CSMWorld::IdTable& references
-            = dynamic_cast<CSMWorld::IdTable&>(*mData.getTableModel(CSMWorld::UniversalId::Type_References));
+        CSMWorld::IdTable& references = mData.getTableModel<CSMWorld::IdTable>(CSMWorld::UniversalId::Type_References);
 
         int rows = references.rowCount();
 
@@ -205,8 +205,7 @@ CSVRender::Cell::Cell(CSMDoc::Document& document, ObjectMarker* selectionMarker,
             int landIndex = document.getData().getLand().searchId(mId);
             if (landIndex == -1)
             {
-                CSMWorld::IdTable& landTable
-                    = dynamic_cast<CSMWorld::IdTable&>(*mData.getTableModel(CSMWorld::UniversalId::Type_Land));
+                CSMWorld::IdTable& landTable = mData.getTableModel<CSMWorld::IdTable>(CSMWorld::UniversalId::Type_Land);
                 document.getUndoStack().push(new CSMWorld::CreateCommand(landTable, mId.getRefIdString()));
             }
             updateLand();
@@ -219,8 +218,8 @@ CSVRender::Cell::Cell(CSMDoc::Document& document, ObjectMarker* selectionMarker,
 
 CSVRender::Cell::~Cell()
 {
-    for (std::map<std::string, Object*>::iterator iter(mObjects.begin()); iter != mObjects.end(); ++iter)
-        delete iter->second;
+    for (auto& [_, cell] : mObjects)
+        delete cell;
 
     mCellNode->getParent(0)->removeChild(mCellNode);
 }
@@ -234,7 +233,7 @@ bool CSVRender::Cell::referenceableDataChanged(const QModelIndex& topLeft, const
 {
     bool modified = false;
 
-    for (std::map<std::string, Object*>::iterator iter(mObjects.begin()); iter != mObjects.end(); ++iter)
+    for (auto iter(mObjects.begin()); iter != mObjects.end(); ++iter)
         if (iter->second->referenceableDataChanged(topLeft, bottomRight))
             modified = true;
 
@@ -248,7 +247,7 @@ bool CSVRender::Cell::referenceableAboutToBeRemoved(const QModelIndex& parent, i
 
     bool modified = false;
 
-    for (std::map<std::string, Object*>::iterator iter(mObjects.begin()); iter != mObjects.end(); ++iter)
+    for (auto iter(mObjects.begin()); iter != mObjects.end(); ++iter)
         if (iter->second->referenceableAboutToBeRemoved(parent, start, end))
             modified = true;
 
@@ -260,8 +259,7 @@ bool CSVRender::Cell::referenceDataChanged(const QModelIndex& topLeft, const QMo
     if (mDeleted)
         return false;
 
-    CSMWorld::IdTable& references
-        = dynamic_cast<CSMWorld::IdTable&>(*mData.getTableModel(CSMWorld::UniversalId::Type_References));
+    CSMWorld::IdTable& references = mData.getTableModel<CSMWorld::IdTable>(CSMWorld::UniversalId::Type_References);
 
     int idColumn = references.findColumnIndex(CSMWorld::Columns::ColumnId_Id);
     int cellColumn = references.findColumnIndex(CSMWorld::Columns::ColumnId_Cell);
@@ -272,15 +270,13 @@ bool CSVRender::Cell::referenceDataChanged(const QModelIndex& topLeft, const QMo
 
     for (int i = topLeft.row(); i <= bottomRight.row(); ++i)
     {
-        auto cell
-            = ESM::RefId::stringRefId(references.data(references.index(i, cellColumn)).toString().toUtf8().constData());
+        auto cell = CSMWorld::getRefId(references.getData(i, cellColumn));
 
         if (cell == mId)
         {
-            std::string id = Misc::StringUtils::lowerCase(
-                references.data(references.index(i, idColumn)).toString().toUtf8().constData());
+            std::string id = Misc::StringUtils::lowerCase(CSMWorld::getString(references.getData(i, idColumn)));
 
-            int state = references.data(references.index(i, stateColumn)).toInt();
+            int state = references.getData(i, stateColumn).toInt();
 
             ids.insert(std::make_pair(id, state == CSMWorld::RecordBase::State_Deleted));
         }
@@ -314,11 +310,11 @@ bool CSVRender::Cell::referenceDataChanged(const QModelIndex& topLeft, const QMo
     }
 
     // add new objects
-    for (std::map<std::string, bool>::iterator mapIter(ids.begin()); mapIter != ids.end(); ++mapIter)
+    for (auto& [id, deleted] : ids)
     {
-        if (!mapIter->second)
+        if (!deleted)
         {
-            mObjects.insert(std::make_pair(mapIter->first, new Object(mData, mCellNode, mapIter->first, false)));
+            mObjects.insert(std::make_pair(id, new Object(mData, mCellNode, id, false)));
 
             modified = true;
         }
@@ -335,15 +331,14 @@ bool CSVRender::Cell::referenceAboutToBeRemoved(const QModelIndex& parent, int s
     if (mDeleted)
         return false;
 
-    CSMWorld::IdTable& references
-        = dynamic_cast<CSMWorld::IdTable&>(*mData.getTableModel(CSMWorld::UniversalId::Type_References));
+    CSMWorld::IdTable& references = mData.getTableModel<CSMWorld::IdTable>(CSMWorld::UniversalId::Type_References);
 
     int idColumn = references.findColumnIndex(CSMWorld::Columns::ColumnId_Id);
 
     bool modified = false;
 
     for (int row = start; row <= end; ++row)
-        if (removeObject(references.data(references.index(row, idColumn)).toString().toUtf8().constData()))
+        if (removeObject(CSMWorld::getString(references.getData(row, idColumn))))
             modified = true;
 
     return modified;
@@ -428,9 +423,9 @@ void CSVRender::Cell::landTextureAdded(const QModelIndex& parent, int start, int
 
 void CSVRender::Cell::reloadAssets()
 {
-    for (std::map<std::string, Object*>::const_iterator iter(mObjects.begin()); iter != mObjects.end(); ++iter)
+    for (const auto& [_, object] : mObjects)
     {
-        iter->second->reloadAssets();
+        object->reloadAssets();
     }
 
     if (mTerrain)
@@ -447,7 +442,7 @@ void CSVRender::Cell::setSelection(int elementMask, Selection mode)
 {
     if (elementMask & Mask_Reference)
     {
-        for (std::map<std::string, Object*>::const_iterator iter(mObjects.begin()); iter != mObjects.end(); ++iter)
+        for (const auto& [_, object] : mObjects)
         {
             bool selected = false;
 
@@ -460,13 +455,13 @@ void CSVRender::Cell::setSelection(int elementMask, Selection mode)
                     selected = true;
                     break;
                 case Selection_Invert:
-                    selected = !iter->second->getSelected();
+                    selected = !object->getSelected();
                     break;
             }
 
-            iter->second->setSelected(selected);
+            object->setSelected(selected);
             if (selected)
-                mSelectionMarker->addToSelectionHistory(iter->second->getReferenceId(), false);
+                mSelectionMarker->addToSelectionHistory(object->getReferenceId(), false);
         }
         mSelectionMarker->updateSelectionMarker();
     }
@@ -497,18 +492,18 @@ void CSVRender::Cell::selectAllWithSameParentId(int elementMask)
 {
     std::set<std::string> ids;
 
-    for (std::map<std::string, Object*>::const_iterator iter(mObjects.begin()); iter != mObjects.end(); ++iter)
+    for (const auto& [_, object] : mObjects)
     {
-        if (iter->second->getSelected())
-            ids.insert(iter->second->getReferenceableId());
+        if (object->getSelected())
+            ids.insert(object->getReferenceableId());
     }
 
-    for (std::map<std::string, Object*>::const_iterator iter(mObjects.begin()); iter != mObjects.end(); ++iter)
+    for (const auto& [_, object] : mObjects)
     {
-        if (!iter->second->getSelected() && ids.find(iter->second->getReferenceableId()) != ids.end())
+        if (!object->getSelected() && ids.find(object->getReferenceableId()) != ids.end())
         {
-            iter->second->setSelected(true);
-            mSelectionMarker->addToSelectionHistory(iter->second->getReferenceId(), false);
+            object->setSelected(true);
+            mSelectionMarker->addToSelectionHistory(object->getReferenceId(), false);
         }
     }
     mSelectionMarker->updateSelectionMarker();
@@ -658,9 +653,9 @@ std::vector<osg::ref_ptr<CSVRender::TagBase>> CSVRender::Cell::getSelection(unsi
     std::vector<osg::ref_ptr<TagBase>> result;
 
     if (elementMask & Mask_Reference)
-        for (std::map<std::string, Object*>::const_iterator iter(mObjects.begin()); iter != mObjects.end(); ++iter)
-            if (iter->second->getSelected())
-                result.push_back(iter->second->getTag());
+        for (const auto& [_, object] : mObjects)
+            if (object->getSelected())
+                result.push_back(object->getTag());
     if (mPathgrid && elementMask & Mask_Pathgrid)
         if (mPathgrid->isSelected())
             result.emplace_back(mPathgrid->getTag());
@@ -673,9 +668,9 @@ std::vector<osg::ref_ptr<CSVRender::TagBase>> CSVRender::Cell::getEdited(unsigne
     std::vector<osg::ref_ptr<TagBase>> result;
 
     if (elementMask & Mask_Reference)
-        for (std::map<std::string, Object*>::const_iterator iter(mObjects.begin()); iter != mObjects.end(); ++iter)
-            if (iter->second->isEdited())
-                result.push_back(iter->second->getTag());
+        for (const auto& [_, object] : mObjects)
+            if (object->isEdited())
+                result.push_back(object->getTag());
 
     return result;
 }
@@ -692,8 +687,8 @@ void CSVRender::Cell::setSubMode(int subMode, unsigned int elementMask)
 void CSVRender::Cell::reset(unsigned int elementMask)
 {
     if (elementMask & Mask_Reference)
-        for (std::map<std::string, Object*>::const_iterator iter(mObjects.begin()); iter != mObjects.end(); ++iter)
-            iter->second->reset();
+        for (const auto& [_, object] : mObjects)
+            object->reset();
     if (mPathgrid && elementMask & Mask_Pathgrid)
         mPathgrid->resetIndicators();
 }

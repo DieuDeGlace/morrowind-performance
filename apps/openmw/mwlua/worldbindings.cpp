@@ -19,6 +19,7 @@
 #include <components/esm3/loadstat.hpp>
 #include <components/esm3/loadweap.hpp>
 #include <components/lua/luastate.hpp>
+#include <components/misc/convert.hpp>
 #include <components/misc/finitevalues.hpp>
 
 #include "../mwbase/environment.hpp"
@@ -171,9 +172,10 @@ namespace MWLua
         api["activeActors"] = GObjectList{ objectLists->getActorsInScene() };
         api["players"] = GObjectList{ objectLists->getPlayers() };
 
-        api["getObjectsInRange"] = [](osg::Vec3f position, Misc::FiniteFloat range) -> GObjectList {
+        api["getObjectsInRange"] = [](const glm::vec3& position, Misc::FiniteFloat range) -> GObjectList {
             std::vector<MWWorld::Ptr> objects;
-            MWBase::Environment::get().getMechanicsManager()->getObjectsInRange(position, range, objects);
+            MWBase::Environment::get().getMechanicsManager()->getObjectsInRange(
+                Misc::Convert::toOsg(position), range, objects);
             GObjectList objList;
             objList.mIds = std::make_shared<std::vector<ObjectId>>();
             objList.mIds->reserve(objects.size());
@@ -335,7 +337,9 @@ namespace MWLua
             auto* system = MWBase::Environment::get().getWorld()->getRagdollPhysics();
             return system && system->getItemPhysics() && system->getItemPhysics()->enabled();
         };
-        physics["applyImpulse"] = [context](const GObject& item, osg::Vec3f impulse, sol::optional<GObject> culprit) {
+        physics["applyImpulse"]
+            = [context](const GObject& item, const glm::vec3& luaImpulse, sol::optional<GObject> culprit) {
+            const osg::Vec3f impulse = Misc::Convert::toOsg(luaImpulse);
             if (!std::isfinite(impulse.x()) || !std::isfinite(impulse.y()) || !std::isfinite(impulse.z())
                 || impulse.length2() > 1e12f)
                 throw std::runtime_error("A finite physics impulse with magnitude at most 1000000 is required");
@@ -351,7 +355,8 @@ namespace MWLua
                 },
                 "NativePhysicsImpulse");
         };
-        physics["grab"] = [context](const GObject& item, osg::Vec3f point) {
+        physics["grab"] = [context](const GObject& item, const glm::vec3& luaPoint) {
+            const osg::Vec3f point = Misc::Convert::toOsg(luaPoint);
             if (!std::isfinite(point.x()) || !std::isfinite(point.y()) || !std::isfinite(point.z()))
                 throw std::runtime_error("A finite grab point is required");
             context.mLuaManager->addAction(
