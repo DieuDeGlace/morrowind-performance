@@ -25,14 +25,18 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends g++ libopenscenegraph-dev libbullet-dev libboost-dev libgtest-dev libluajit-5.1-dev libmygui-dev libsdl2-dev
+      - name: Fetch glm headers
+        run: |
+          curl -sSL https://github.com/g-truc/glm/archive/refs/tags/1.0.1.tar.gz | tar -xz -C /tmp
+          echo "GLM_FLAGS=-I/tmp/glm-1.0.1 -DGLM_FORCE_CTOR_INIT -DGLM_ENABLE_EXPERIMENTAL" >> "$GITHUB_ENV"
       - name: Check actor physics regressions compile
         run: |
-          g++ -std=c++20 -fsyntax-only -I. -I/usr/include/bullet apps/openmw_tests/mwphysics/testragdollautorig.cpp apps/openmw_tests/mwphysics/testragdollcontrollers.cpp apps/openmw_tests/mwphysics/testragdollmorph.cpp
+          g++ -std=c++20 $GLM_FLAGS -fsyntax-only -I. -I/usr/include/bullet apps/openmw_tests/mwphysics/testragdollautorig.cpp apps/openmw_tests/mwphysics/testragdollcontrollers.cpp apps/openmw_tests/mwphysics/testragdollmorph.cpp
 
 
       - name: Run automatic rig generation tests against real scene utilities
         run: |
-          g++ -std=c++20 -O0 -ffunction-sections -fdata-sections -I. -I/usr/include/bullet \
+          g++ -std=c++20 $GLM_FLAGS -O0 -ffunction-sections -fdata-sections -I. -I/usr/include/bullet \
             apps/openmw_tests/mwphysics/testragdollautorig.cpp apps/components_tests/sceneutil/testriggeometry.cpp \
             components/sceneutil/riggeometry.cpp components/sceneutil/morphgeometry.cpp \
             components/sceneutil/skeleton.cpp components/sceneutil/riggeometryosgaextension.cpp \
@@ -42,15 +46,15 @@ jobs:
           /tmp/ragdoll-autorig-tests
       - name: Test animation-guided morph fitting
         run: |
-          g++ -std=c++20 -O2 -I. apps/openmw_tests/mwphysics/testragdollmorphfit.cpp -lgtest_main -lgtest -losg -lOpenThreads -pthread -o /tmp/morph-fit-tests
+          g++ -std=c++20 $GLM_FLAGS -O2 -I. apps/openmw_tests/mwphysics/testragdollmorphfit.cpp -lgtest_main -lgtest -losg -lOpenThreads -pthread -o /tmp/morph-fit-tests
           /tmp/morph-fit-tests
       - name: Check native item integration compiles
         run: |
-          g++ -std=c++20 -fsyntax-only -I. -I/usr/include/bullet -Iextern/sol3 -Iextern/sol_config -I/usr/include/MYGUI -I/usr/include/SDL2 apps/openmw/mwphysics/itemphysics.cpp apps/openmw/mwphysics/ragdoll.cpp
-          g++ -std=c++20 -fsyntax-only -I. -I/usr/include/bullet -Iextern/sol3 -Iextern/sol_config -I/usr/include/luajit-2.1 -I/usr/include/MYGUI -I/usr/include/SDL2 apps/openmw/mwlua/worldbindings.cpp
+          g++ -std=c++20 $GLM_FLAGS -fsyntax-only -I. -I/usr/include/bullet -Iextern/sol3 -Iextern/sol_config -I/usr/include/MYGUI -I/usr/include/SDL2 apps/openmw/mwphysics/itemphysics.cpp apps/openmw/mwphysics/ragdoll.cpp
+          g++ -std=c++20 $GLM_FLAGS -fsyntax-only -I. -I/usr/include/bullet -Iextern/sol3 -Iextern/sol_config -I/usr/include/luajit-2.1 -I/usr/include/MYGUI -I/usr/include/SDL2 apps/openmw/mwlua/worldbindings.cpp
       - name: Run native item policy tests
         run: |
-          g++ -std=c++20 -I. -I/usr/include/bullet apps/openmw_tests/mwphysics/testitemphysicsrules.cpp -lgtest_main -lgtest -lBulletDynamics -lBulletCollision -lLinearMath -pthread -o /tmp/item-physics-tests
+          g++ -std=c++20 $GLM_FLAGS -I. -I/usr/include/bullet apps/openmw_tests/mwphysics/testitemphysicsrules.cpp -lgtest_main -lgtest -lBulletDynamics -lBulletCollision -lLinearMath -pthread -o /tmp/item-physics-tests
           /tmp/item-physics-tests
-          g++ -std=c++20 -I. apps/openmw_tests/mwrender/testshatterrules.cpp -lgtest_main -lgtest -pthread -o /tmp/shatter-tests
+          g++ -std=c++20 $GLM_FLAGS -I. apps/openmw_tests/mwrender/testshatterrules.cpp -lgtest_main -lgtest -pthread -o /tmp/shatter-tests
           /tmp/shatter-tests
